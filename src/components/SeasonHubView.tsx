@@ -1,3 +1,5 @@
+import { CURRENT_SEASON_ID } from '../lib/seasonParticipationPolicy';
+import { SeasonPreparationCard } from './SeasonPreparationCard';
 import { isSeasonCompetitionEnabled } from '../lib/seasonParticipationPolicy';
 import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -135,6 +137,7 @@ export const SeasonHubView: React.FC<SeasonHubViewProps> = ({ onNavigateTab }) =
 
   return (
     <div className="space-y-4 pb-20 animate-in fade-in duration-200">
+      {activeSeasonId === CURRENT_SEASON_ID && <SeasonPreparationCard />}
       {/* 1. Header Banner */}
       <div className="preview-surface p-5 sm:p-6 rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 shadow-xs relative overflow-hidden">
         <div className="relative flex items-start justify-between gap-4">

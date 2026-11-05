@@ -1,3 +1,4 @@
+import { SeasonPreparationCard } from './SeasonPreparationCard';
 import { CURRENT_SEASON_ID, isSeasonLeagueEnabled } from '../lib/seasonParticipationPolicy';
 import React, { useEffect } from 'react';
 import { ArrowRight, Globe2, Moon, Sun } from 'lucide-react';
@@ -91,10 +92,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
                 </li>
               ))}
             </ul>
-            {seasonId === CURRENT_SEASON_ID && <div className="efl-upcoming-league mt-2">
-              <img src="/welcome/ligue-1.svg" alt="" aria-hidden="true" className="welcome-monochrome" />
-              <span>Ligue 1</span><span className="efl-upcoming-league-season">{language === 'uz' ? 'Keyingi mavsum' : language === 'ru' ? 'Следующий сезон' : 'Next season'} · 2027/28</span>
-            </div>}
+            {seasonId === CURRENT_SEASON_ID && <SeasonPreparationCard compact />}
           </section>
 
           <ol className="welcome-steps">

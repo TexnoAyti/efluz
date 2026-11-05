@@ -1,3 +1,4 @@
+import { SeasonPreparationCard } from './SeasonPreparationCard';
 import { seasonQualificationRanges } from '../lib/seasonQualificationPolicy';
 import { CURRENT_SEASON_ID } from '../lib/seasonParticipationPolicy';
 import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings} from './CompetitionContent';
@@ -601,12 +602,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         )}
       </div>
 
-      {activeSeasonId === CURRENT_SEASON_ID && (
-        <div className="efl-upcoming-league">
-          <img src="/welcome/ligue-1.svg" alt="" aria-hidden="true" className="efl-league-icon-monochrome" />
-          <span>Ligue 1</span><span className="efl-upcoming-league-season">{language === 'uz' ? 'Keyingi mavsum' : language === 'ru' ? 'Следующий сезон' : 'Next season'} · 2027/28</span>
-        </div>
-      )}
+      {activeSeasonId === CURRENT_SEASON_ID && <SeasonPreparationCard compact />}
 
       {/* 2. Dedicated Selected League Header Banner */}
       {currentLeague && (

@@ -332,6 +332,7 @@ adminSeasonOperationsRouter.post('/rollover', async (req: Request, res: Response
         createdAt: now,
         createdBy: req.user!.id,
         rolloverMode: 'SHELL_ONLY_NON_DESTRUCTIVE',
+        ...(preview.preparation ? { preparation: preview.preparation } : {}),
       });
       trackFirestoreWrite('seasons', 1, 'rolloverSeasonShell');
     }

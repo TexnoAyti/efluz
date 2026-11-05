@@ -99,12 +99,19 @@ for (const admin of [false, true]) {
   const icons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
   assert.equal((icons.match(/<li/g) || []).length,4,'Current season has four active league icons');
   assert.doesNotMatch(icons,/ligue-1/);
-  assert.match(current,/Keyingi mavsum/);
-  assert.match(current,/2027\/28/);
+  assert.match(current,/EFL · 2-mavsum/);
+  assert.match(current,/Tayyorgarlik/);
+  assert.match(current,/1-mavsum davom etmoqda/);
+  assert.match(current,/klub tanlash hali ochilmagan/);
+  const preparation = current.match(/<section class="season-preparation"([\s\S]*?)<\/section>/)?.[1] || '';
+  assert.equal((preparation.match(/season-preparation-name/g) || []).length,9,'The preparation catalog includes five European and four Asian leagues');
+  for (const name of ['Ligue 1','O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(preparation.includes(name),name);
+  assert.match(preparation,/<details><summary>/,'Long league list is expandable on onboarding');
+  assert.doesNotMatch(preparation,/<button|<a /,'The preparation list cannot claim a club or switch seasons');
   const next = await render({admin,completed:false,seasonId:'season-2027-28'});
   const nextIcons = next.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
   assert.equal((nextIcons.match(/<li/g) || []).length,5,'Next season restores all five league icons');
   assert.match(nextIcons,/ligue-1/);
-  assert.doesNotMatch(next,/Keyingi mavsum/);
+  assert.doesNotMatch(next,/class="season-preparation"/);
 }
-console.log('PASS real welcome render: four active leagues plus next-season Ligue 1, five active leagues next season, both roles');
+console.log('PASS real welcome render: four active leagues, separate closed season-two preparation with nine leagues, both roles');

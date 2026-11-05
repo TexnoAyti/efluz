@@ -1,3 +1,4 @@
+import { getSeasonPreparation } from '../../lib/seasonPreparation';
 import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import {loadPostgresSeasonFixtures} from './postgresSeasonRead';
 import { filterRetiredFixtures } from './retiredFixtureService';
@@ -320,6 +321,7 @@ export async function getSeasonRolloverPreview(seasonId = 'season-2026-27') {
   return {
     seasonId,
     nextSeasonId,
+    preparation: getSeasonPreparation(seasonId),
     canRollover: unresolved === 0 && incompletePhases.length === 0,
     blockers: [
       ...(unresolved > 0 ? [`${unresolved} unresolved/pending/overdue match records remain`] : []),
