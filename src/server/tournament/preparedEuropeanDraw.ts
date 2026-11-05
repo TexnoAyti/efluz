@@ -20,9 +20,10 @@ export function generatePreparedEuropeanDraw(code:EuropeanCode,clubs:DrawClub[],
   const groups=Array.from({length:pots},(_,p)=>clubs.flatMap((c,i)=>c.pot===p+1?[i]:[]));
   if(groups.some(g=>g.length!==size))fail('INVALID_POT_COUNTS');
   if(clubs.some(c=>clubs.filter(other=>other.association===c.association).length>36-rounds))fail('DRAW_CONSTRAINTS_UNSATISFIABLE');
-  const rng=random(seed);
+  const rng=random(seed),deadline=Date.now()+4000;
   // Each attempt is bounded; an impossible roster returns an explicit error, never an invalid fallback.
-  for(let attempt=0;attempt<32;attempt++){
+  for(let attempt=0;attempt<24;attempt++){
+    if(Date.now()>deadline)break;
     const edges:Edge[]=[],used=new Set<string>(),associationCounts=clubs.map(()=>new Map<string,number>());
     const key=(a:number,b:number)=>a<b?a+':'+b:b+':'+a;
     const allowed=(a:number,b:number)=>a!==b&&clubs[a].association!==clubs[b].association&&!used.has(key(a,b))&&(associationCounts[a].get(clubs[b].association)||0)<2&&(associationCounts[b].get(clubs[a].association)||0)<2;
@@ -37,7 +38,7 @@ export function generatePreparedEuropeanDraw(code:EuropeanCode,clubs:DrawClub[],
     }
     let nodes=0;
     function matching(left:number[],right:number[],self=false):boolean{
-      if(++nodes>30000)return false;
+      if(++nodes>10000||(nodes%128===0&&Date.now()>deadline))return false;
       if(!left.length)return true;
       let selected=left[0],options:number[]=[],minimum=Infinity;
       for(const a of left){
@@ -92,7 +93,7 @@ export function generatePreparedEuropeanDraw(code:EuropeanCode,clubs:DrawClub[],
     let searchNodes=0;
     function color(remaining:number):boolean{
       if(!remaining)return true;
-      if(++searchNodes>150000)return false;
+      if(++searchNodes>40000||(searchNodes%128===0&&Date.now()>deadline))return false;
       let chosen=-1,available=0,minimum=Infinity;
       for(let i=0;i<edges.length;i++)if(colors[i]<0){
         const e=edges[i],bits=full&~(masks[e.a]|masks[e.b]);
