@@ -27,6 +27,9 @@ import {
   isPremiumPublicEnabled,
 } from '../services/premiumService';
 import { createAuditLog } from '../services/adminService';
+import { canUseDangerZone } from '../../lib/adminPermissions';
+import { readSeasonPreparationWorkflow, saveSeasonPreparationDraft } from '../services/seasonPreparationWorkflow';
+import { rankPreparedLeagueResults } from '../services/preparedStandingsService';
 import { archiveCompletedSeason, getSeasonArchive, listSeasonArchives } from '../services/seasonArchiveService';
 
 export const seasonOperationsRouter = Router();
@@ -304,6 +307,35 @@ adminSeasonOperationsRouter.post('/no-show/:reportId/resolve', async (req: Reque
 });
 
 const rolloverSchema = z.object({ confirmation: z.literal('CREATE_NEXT_SEASON_SHELL') });
+
+adminSeasonOperationsRouter.get('/preparation', async (req: Request, res: Response) => {
+  try {
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await readSeasonPreparationWorkflow(req.user!));
+  } catch(error:any) { res.status(error.statusCode||503).json({error:error.message}); }
+});
+
+const preparationDraftSchema=z.object({startDate:z.string().max(10).nullable(),expectedRevision:z.number().int().min(0)}).strict();
+adminSeasonOperationsRouter.post('/preparation/draft',async(req:Request,res:Response)=>{
+  const parsed=preparationDraftSchema.safeParse(req.body);
+  if(!parsed.success){res.status(400).json({error:'INVALID_PREPARATION_DRAFT'});return;}
+  try { res.json(await saveSeasonPreparationDraft(req.user!,{startDate:parsed.data.startDate??null,expectedRevision:parsed.data.expectedRevision})); }
+  catch(error:any){res.status(error.statusCode||503).json({error:error.message});}
+});
+
+const resultPreviewSchema=z.object({
+  leagueId:z.string().max(80),
+  fixtures:z.array(z.object({id:z.string().min(1).max(120),seasonId:z.literal('season-2027-28'),homeClubId:z.string().max(80),awayClubId:z.string().max(80),homeScore:z.number().int().min(0).max(99),awayScore:z.number().int().min(0).max(99),status:z.literal('CONFIRMED'),matchday:z.number().int().min(1).max(38).optional(),technicalLossClubId:z.string().max(80).nullable().optional()})).max(400),
+  final:z.boolean().optional(),
+  europeanFinalistClubIds:z.array(z.string().max(80)).max(20).optional(),
+}).strict();
+adminSeasonOperationsRouter.post('/preparation/standings-preview',(req:Request,res:Response)=>{
+  if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_ADMIN_REQUIRED'});return;}
+  const parsed=resultPreviewSchema.safeParse(req.body);
+  if(!parsed.success){res.status(400).json({error:'INVALID_PREPARED_RESULTS'});return;}
+  try {res.json(rankPreparedLeagueResults(parsed.data.leagueId,parsed.data.fixtures,{final:parsed.data.final,europeanFinalistClubIds:parsed.data.europeanFinalistClubIds}));}
+  catch(error:any){res.status(400).json({error:error.message});}
+});
 
 adminSeasonOperationsRouter.post('/rollover', async (req: Request, res: Response) => {
   const parsed = rolloverSchema.safeParse(req.body);

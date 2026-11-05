@@ -20,9 +20,14 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
   const c = copy[language];
   const intl = internationalCopy[language];
   const labels = {
-    uz: { clubs: 'klub', rounds: 'tur', matches: 'o‘yin', season: 'Real mavsum', verified: 'Tekshirilgan', source: 'Rasmiy manba', format: 'Ikki davra · uy va safar' },
-    ru: { clubs: 'клубов', rounds: 'туров', matches: 'матчей', season: 'Реальный сезон', verified: 'Проверено', source: 'Официальный источник', format: 'Два круга · дома и в гостях' },
-    en: { clubs: 'clubs', rounds: 'rounds', matches: 'matches', season: 'Real season', verified: 'Verified', source: 'Official source', format: 'Two legs · home and away' },
+    uz: { clubs: 'klub', rounds: 'tur', matches: 'o‘yin', season: 'Real mavsum', verified: 'Tekshirilgan', source: 'Rasmiy manba', format: 'Ikki davra · uy va safar', ranking:'Teng ochkoda', review:'Yakuniy tekshiruv kerak', cups:'Milliy kuboklar', europe:'UEFA turnirlari', missing:'Qatnashchilar tekshirilmoqda', entries:'qatnashchi', perClub:'Har klubga', slots:'Saralash yo‘llari rasmiy UEFA ro‘yxati bo‘yicha tayyorlanmoqda.' },
+    ru: { clubs: 'клубов', rounds: 'туров', matches: 'матчей', season: 'Реальный сезон', verified: 'Проверено', source: 'Официальный источник', format: 'Два круга · дома и в гостях',ranking:'При равенстве очков',review:'Нужна финальная проверка',cups:'Национальные кубки',europe:'Турниры УЕФА',missing:'Участники проверяются',entries:'участников',perClub:'На клуб',slots:'Пути квалификации готовятся по официальному списку УЕФА.' },
+    en: { clubs: 'clubs', rounds: 'rounds', matches: 'matches', season: 'Real season', verified: 'Verified', source: 'Official source', format: 'Two legs · home and away',ranking:'Level on points',review:'Final review required',cups:'Domestic cups',europe:'UEFA competitions',missing:'Entrants under review',entries:'entrants',perClub:'Per club',slots:'Qualification paths are being prepared from the official UEFA access list.' },
+  }[language];
+  const metrics:Record<string,string> = {
+    uz:{goalDifference:'gollar farqi',goalsFor:'urilgan gollar',won:'g‘alabalar',awayGoals:'safardagi gollar',awayWins:'safardagi g‘alabalar',h2hForfeits:'o‘zaro texnik mag‘lubiyatlar',h2hPoints:'o‘zaro ochkolar',h2hGoalDifference:'o‘zaro gollar farqi',h2hGoalsFor:'o‘zaro urilgan gollar',h2hAwayGoals:'o‘zaro safar gollari',discipline:'intizom',forfeits:'texnik mag‘lubiyatlar'},
+    ru:{goalDifference:'разница голов',goalsFor:'забитые голы',won:'победы',awayGoals:'гостевые голы',awayWins:'гостевые победы',h2hForfeits:'технические поражения в личных встречах',h2hPoints:'очки в личных встречах',h2hGoalDifference:'разница личных встреч',h2hGoalsFor:'голы в личных встречах',h2hAwayGoals:'гостевые голы личных встреч',discipline:'дисциплина',forfeits:'технические поражения'},
+    en:{goalDifference:'goal difference',goalsFor:'goals scored',won:'wins',awayGoals:'away goals',awayWins:'away wins',h2hForfeits:'head-to-head forfeits',h2hPoints:'head-to-head points',h2hGoalDifference:'head-to-head goal difference',h2hGoalsFor:'head-to-head goals',h2hAwayGoals:'head-to-head away goals',discipline:'discipline',forfeits:'forfeits'},
   }[language];
   const asianChampionsLeague = EFL_SECOND_SEASON.internationalCompetitions[0];
   const sourceLeagues = EFL_SECOND_SEASON.leagues.filter(league =>
@@ -38,6 +43,8 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
           </summary>
           <p className="season-preparation-note">{`${labels.season}: ${league.roster.realSeason} · ${labels.verified}: ${league.roster.verifiedAt}`}</p>
           <p className="season-preparation-note">{`${labels.format} · ${league.format.totalMatchdays} ${labels.rounds} · ${league.format.totalFixtures} ${labels.matches}`}</p>
+          <p className="season-preparation-note">{labels.ranking}: {league.rankingRule.criteria.filter(metric=>metric!=='points').map(metric=>metrics[metric]).join(' → ')}.</p>
+          {league.rankingRule.verification!=='VERIFIED'&&<p className="season-preparation-note">{labels.review}</p>}
           <ul className="season-preparation-clubs">{league.roster.clubs.map(club => <li key={club.id}>{club.name}</li>)}</ul>
           <a className="season-preparation-source" href={league.roster.sources[0].url} target="_blank" rel="noopener noreferrer">{labels.source}</a>
         </details>
@@ -53,6 +60,13 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
       <p className="season-preparation-note">{intl.pending}</p>
       <p className="season-preparation-note">{intl.format}</p>
     </div>
+    <details className="season-preparation-regulations"><summary>{labels.europe}</summary>
+      <p className="season-preparation-note">{labels.slots}</p>
+      <ul>{EFL_SECOND_SEASON.europeanCompetitions.map(comp=><li key={comp.id} className="season-preparation-rule-entry"><strong>{comp.name}</strong><span>{`${comp.totalTeams} ${labels.clubs} · ${labels.perClub} ${comp.matchesPerTeam} ${labels.matches}`}</span><span>{labels.missing}</span><a href={comp.source} target="_blank" rel="noopener noreferrer">{labels.source}</a></li>)}</ul>
+    </details>
+    <details className="season-preparation-regulations"><summary>{labels.cups}</summary>
+      <ul>{EFL_SECOND_SEASON.domesticCups.map(cup=><li key={cup.id} className="season-preparation-rule-entry"><strong>{cup.name}</strong><span>{cup.expectedEntrants?`${cup.expectedEntrants} ${labels.entries}`:labels.review}</span><span>{labels.missing}</span><a href={cup.source} target="_blank" rel="noopener noreferrer">{labels.source}</a></li>)}</ul>
+    </details>
     <p className="season-preparation-pending">{c.pending}</p>
   </>;
 
