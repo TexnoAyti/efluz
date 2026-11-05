@@ -1,3 +1,4 @@
+import { SeasonPreparationWorkbench } from './admin/SeasonPreparationWorkbench';
 import {canSeeTeamPreview} from '../types/teamLeaguePreview';
 import { AdminFixtureSchedule } from './admin/AdminFixtureSchedule';
 import { AdminMatchdayControl } from './admin/AdminMatchdayControl';
@@ -913,6 +914,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       {/* ========================================================================= */}
       {/* SECTION TABS (HIGH DENSITY NAVIGATION) */}
       {/* ========================================================================= */}
+      {canUseDangerZone && <SeasonPreparationWorkbench />}
       <p className="px-1 text-[11px] font-semibold text-slate-400 sm:hidden">{t.adminSectionsHint}</p>
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         {/* 1. OVERVIEW */}

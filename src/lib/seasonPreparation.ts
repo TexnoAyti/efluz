@@ -1,3 +1,4 @@
+import { PREPARED_TIE_RULES, PREPARED_DOMESTIC_CUPS, PREPARED_UEFA_COMPETITIONS } from '../content/season2Rules';
 import { SEASON_TWO_ROSTERS } from '../content/season2Rosters';
 import { CURRENT_SEASON_ID } from './seasonParticipationPolicy';
 
@@ -27,6 +28,7 @@ export const EFL_SECOND_SEASON = {
       ...league,
       competitionId: league.id.replace(/^league-/, 'comp-') + '-2027',
       roster,
+      rankingRule: PREPARED_TIE_RULES[league.id],
       format: {
         type: 'ROUND_ROBIN' as const,
         homeAndAway: true,
@@ -37,6 +39,8 @@ export const EFL_SECOND_SEASON = {
       },
     };
   }),
+  domesticCups: PREPARED_DOMESTIC_CUPS,
+  europeanCompetitions: PREPARED_UEFA_COMPETITIONS,
   internationalCompetitions: [
     {
       id: 'comp-asian-champions-league-2027',
@@ -65,7 +69,7 @@ export const EFL_SECOND_SEASON = {
       },
     },
   ],
-  pendingDecisions: ['DOMESTIC_CUPS', 'TIEBREAK_RULES', 'EUROPEAN_QUALIFICATION', 'START_DATE', 'ACTIVATION'],
+  pendingDecisions: ['CUP_PARTICIPANTS', 'FINAL_RULE_VERIFICATION', 'UEFA_ACCESS_LIST', 'START_DATE', 'RUNTIME_TRANSITION', 'ACTIVATION'],
 } as const;
 
 export function getSeasonPreparation(sourceSeasonId: string) {

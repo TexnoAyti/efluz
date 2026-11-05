@@ -126,7 +126,7 @@ for (const admin of [false, true]) {
   assert.match(preparation,/2026-11-05/);
   assert.match(preparation,/Elche CF/);
   assert.doesNotMatch(preparation,/Girona FC|VfL Wolfsburg|Hellas Verona|Montpellier HSC/);
-  assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,9);
+  assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,21);
 
   const next = await render({admin,completed:false,seasonId:'season-2027-28'});
   const nextIcons = next.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';

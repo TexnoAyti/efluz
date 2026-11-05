@@ -16,6 +16,8 @@ async function seasonRequest<T>(path: string, init: RequestInit = {}): Promise<T
 }
 
 export const seasonOpsApi = {
+  preparation: () => seasonRequest<any>('/api/admin/season-ops/preparation'),
+  savePreparation: (startDate:string|null,expectedRevision:number) => seasonRequest<any>('/api/admin/season-ops/preparation/draft',{method:'POST',body:JSON.stringify({startDate,expectedRevision})}),
   overview: (seasonId: string) => seasonRequest<any>(`/api/season-ops/overview?seasonId=${encodeURIComponent(seasonId)}`),
   myOverview: (seasonId: string) => seasonRequest<any>(`/api/season-ops/me?seasonId=${encodeURIComponent(seasonId)}`),
   career: (seasonId: string) => seasonRequest<any>(`/api/season-ops/me/career?seasonId=${encodeURIComponent(seasonId)}`),

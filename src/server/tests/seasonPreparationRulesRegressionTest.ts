@@ -1,0 +1,82 @@
+import assert from 'node:assert/strict';
+import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
+import { PREPARED_TIE_RULES } from '../../content/season2Rules';
+import { rankPreparedLeagueResults, type PreparedResult } from '../services/preparedStandingsService';
+import { readSeasonPreparationWorkflow,saveSeasonPreparationDraft,preparationReadiness } from '../services/seasonPreparationWorkflow';
+import { previewPreparedLeagueSchedule } from '../services/seasonPreparationService';
+import { getFirestoreDb } from '../firebase/admin';
+import { adminSeasonOperationsRouter } from '../routes/seasonOperations.routes';
+const seasonId=EFL_SECOND_SEASON.id;
+const ids=(leagueId:string)=>EFL_SECOND_SEASON.leagues.find(l=>l.id===leagueId)!.roster.clubs.map(c=>c.id);
+const result=(clubs:string[],h:number,a:number,hs:number,as:number):PreparedResult=>({id:`${h}-${a}`,seasonId,homeClubId:clubs[h],awayClubId:clubs[a],homeScore:hs,awayScore:as,status:'CONFIRMED'});
+for(const league of EFL_SECOND_SEASON.leagues){
+  const empty=rankPreparedLeagueResults(league.id,[]);
+  assert.ok(empty.standings.every(row=>row.position===1&&row.tied));
+  assert.equal(empty.canFinalize,false);
+  assert.equal(empty.persisted,false);
+  assert.throws(()=>rankPreparedLeagueResults(league.id,[],{final:true}),/INCOMPLETE/);
+}
+const scenario=(leagueId:string)=>{
+  const c=ids(leagueId);const fixtures=[result(c,0,1,1,0),result(c,1,0,2,0),result(c,0,2,4,0),result(c,1,2,2,0)];
+  return rankPreparedLeagueResults(leagueId,fixtures).standings.slice(0,2).map(row=>row.id);
+};
+assert.deepEqual(scenario('league-ligue-1'),[ids('league-ligue-1')[1],ids('league-ligue-1')[0]],'Updated Ligue 1 prefers complete head-to-head after overall goal difference');
+assert.deepEqual(scenario('league-j1'),[ids('league-j1')[0],ids('league-j1')[1]],'Japan prefers overall goals before head-to-head');
+assert.deepEqual(scenario('league-la-liga'),[ids('league-la-liga')[1],ids('league-la-liga')[0]],'Spanish two-team head-to-head goal difference wins');
+assert.ok(!PREPARED_TIE_RULES['league-ligue-1'].criteria.includes('h2hAwayGoals'));
+const saudi=ids('league-saudi-pro-league');
+const saudiFixtures=[result(saudi,0,1,1,0),result(saudi,1,0,0,0),result(saudi,0,2,10,0),result(saudi,2,0,0,0),result(saudi,1,2,1,0),result(saudi,2,1,2,0),result(saudi,0,3,0,0),result(saudi,1,3,1,0),result(saudi,2,3,1,0),result(saudi,1,4,0,0),result(saudi,2,4,0,0),result(saudi,1,5,0,0),result(saudi,2,5,0,0)];
+saudiFixtures.push(result(saudi,1,6,1,0),result(saudi,2,6,1,0));
+const saudiOverrides=new Map(saudiFixtures.map(f=>[f.homeClubId+'|'+f.awayClubId,f]));
+const fullSaudi=previewPreparedLeagueSchedule('league-saudi-pro-league')!.fixtures.map((f,index)=>({
+  ...f,id:'saudi-full-'+index,seasonId,status:'CONFIRMED' as const,
+  homeScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.homeScore||0,
+  awayScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.awayScore||0,
+}));
+assert.deepEqual(rankPreparedLeagueResults('league-saudi-pro-league',fullSaudi,{final:true}).standings.slice(0,3).map(row=>row.id),saudi.slice(0,3),'Saudi mini-table criteria must finish before reapplying to a reduced tie');
+const pl=ids('league-premier-league');
+const first=result(pl,0,1,1,0);
+assert.throws(()=>rankPreparedLeagueResults('league-premier-league',[first,{...first,id:'duplicate'}]),/DUPLICATE/);
+assert.throws(()=>rankPreparedLeagueResults('league-premier-league',[{...first,seasonId:'season-2026-27'}]),/INVALID/);
+assert.throws(()=>rankPreparedLeagueResults('league-premier-league',[{...first,homeScore:-1}]),/INVALID/);
+assert.throws(()=>rankPreparedLeagueResults('league-premier-league',[{...first,awayClubId:'club-fake'}]),/INVALID/);
+const full=previewPreparedLeagueSchedule('league-premier-league')!.fixtures.map((f,index)=>{
+  const h=pl.indexOf(f.homeClubId),a=pl.indexOf(f.awayClubId);
+  return {...f,id:'full-'+index,seasonId,status:'CONFIRMED' as const,homeScore:h>a?h-a:0,awayScore:a>h?a-h:0};
+});
+assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}).canFinalize,true);
+assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}).standings[0].id,pl.at(-1));
+for(const comp of EFL_SECOND_SEASON.europeanCompetitions){assert.equal(comp.totalTeams,36);assert.equal(comp.totalFixtures,comp.code==='UECL'?108:144);assert.equal(comp.qualificationSlots,null);assert.equal(comp.participantClubIds.length,0);}
+assert.equal(EFL_SECOND_SEASON.domesticCups.length,9);
+assert.ok(EFL_SECOND_SEASON.domesticCups.every(cup=>cup.participantClubIds.length===0&&cup.participantStatus==='MISSING'));
+const actor={id:'user-5209126900',telegramId:'5209126900',isAdmin:true,isSuspended:false} as any;
+const db=getFirestoreDb();
+const source={id:EFL_SECOND_SEASON.sourceSeasonId,status:'active'};
+await db.collection('seasons').doc(source.id).set(source);
+await db.collection('fixtures').doc('preserved-source-result').set({seasonId:source.id,homeScore:3,awayScore:2,status:'CONFIRMED'});
+await assert.rejects(readSeasonPreparationWorkflow({...actor,isAdmin:false}),/MAIN_ADMIN_REQUIRED/);
+await assert.rejects(saveSeasonPreparationDraft({...actor,telegramId:'other'},{startDate:null,expectedRevision:0}),/MAIN_ADMIN_REQUIRED/);
+await assert.rejects(saveSeasonPreparationDraft(actor,{startDate:'2027-02-30',expectedRevision:0}),/INVALID_START_DATE/);
+await assert.rejects(saveSeasonPreparationDraft(actor,{startDate:'2027-13-01',expectedRevision:0}),/INVALID_START_DATE/);
+const firstSave=await saveSeasonPreparationDraft(actor,{startDate:'2027-01-10',expectedRevision:0});
+assert.equal(firstSave.draft?.revision,1);
+assert.equal(firstSave.readiness.canActivate,false);
+assert.ok(firstSave.readiness.blockers.some(b=>b.code==='SOURCE_SEASON_ONGOING'));
+assert.ok(firstSave.readiness.blockers.some(b=>b.code==='RUNTIME_TRANSITION_REQUIRED'));
+const retry=await saveSeasonPreparationDraft(actor,{startDate:'2027-01-10',expectedRevision:0});assert.equal(retry.draft?.revision,1,'Identical retry is idempotent');
+await assert.rejects(saveSeasonPreparationDraft(actor,{startDate:'2027-01-11',expectedRevision:0}),/REVISION_CONFLICT/);
+const races=await Promise.allSettled([saveSeasonPreparationDraft(actor,{startDate:'2027-01-12',expectedRevision:1}),saveSeasonPreparationDraft(actor,{startDate:'2027-01-13',expectedRevision:1})]);
+assert.equal(races.filter(item=>item.status==='fulfilled').length,1);
+assert.equal(races.filter(item=>item.status==='rejected').length,1);
+const saved=(await db.collection('season_preparation_drafts').doc(seasonId).get()).data()!;
+assert.equal(saved.status,'PREPARATION');assert.equal(saved.registrationOpen,false);assert.deepEqual(saved.plan,EFL_SECOND_SEASON);
+assert.deepEqual((await db.collection('seasons').doc(source.id).get()).data(),source);
+assert.equal((await db.collection('seasons').doc(seasonId).get()).exists,false);
+assert.equal((await db.collection('fixtures').doc('preserved-source-result').get()).data()?.homeScore,3);
+assert.ok(preparationReadiness({sourceArchived:true,startDate:'2027-01-01',draftFingerprint:saved.fingerprint}).blockers.some(b=>b.code==='UEFA_ACCESS_LIST_REQUIRED'));
+const post=(adminSeasonOperationsRouter as any).stack.find((layer:any)=>layer.route?.path==='/preparation/standings-preview');
+let code=200;const response={status(n:number){code=n;return this;},json(){}};
+post.route.stack[0].handle({user:{isAdmin:false},body:{}},response);assert.equal(code,403);
+const draftPost=(adminSeasonOperationsRouter as any).stack.find((layer:any)=>layer.route?.path==='/preparation/draft');
+await draftPost.route.stack[0].handle({user:actor,body:{startDate:null,expectedRevision:2,status:'active'}},response);assert.equal(code,400,'A client cannot inject activation into a draft');
+console.log('SEASON_PREPARATION_RULES_PASS: actual ranking differences, no fake tie winner, 36-team UEFA plans, owner-only versioned drafts and live-season preservation');
