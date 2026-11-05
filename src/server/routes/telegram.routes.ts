@@ -93,11 +93,12 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     }
 
     const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
-    console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat) }));
+    console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat), hasPhoto:Boolean(sourceMessage?.photo?.length), imageDocument:Boolean(sourceMessage?.document&&['image/jpeg','image/png'].includes(sourceMessage.document.mime_type)), forwarded:Boolean(sourceMessage?.forward_origin||sourceMessage?.forward_from||sourceMessage?.forward_from_chat), groupMatched:sourceMessage?.chat?.username?.toLowerCase()==='efleagueuz' }));
     // Result ingestion must not wait for the optional community archive.
     const earlyTopicResult=sourceMessage?.chat?.username?.toLowerCase()==='efleagueuz'&&sourceMessage.message_thread_id===UZEFLIFE_RESULT_TOPIC?await handleTopicResultUpdate(update):undefined;
+    const privateResultPhoto=sourceMessage?.chat?.type==='private'&&isPrimaryOwner(sourceMessage?.from?.id)&&sourceMessage.chat.id===sourceMessage.from.id&&!sourceMessage.sender_chat&&!sourceMessage.from.is_bot&&!sourceMessage.is_automatic_forward&&Boolean(sourceMessage.photo?.length||['image/jpeg','image/png'].includes(sourceMessage.document?.mime_type));
     let archivedCommunityPost: Awaited<ReturnType<typeof archiveCommunityMessage>> = null;
-    if (sourceMessage&&!earlyTopicResult?.handled) {
+    if (sourceMessage&&!earlyTopicResult?.handled&&!privateResultPhoto) {
       try { archivedCommunityPost = await archiveCommunityMessage(sourceMessage); }
       catch (error) {
         console.warn('[AI_COMMUNITY_ARCHIVE_UNAVAILABLE]');
@@ -145,7 +146,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       const message = update.message;
       const emojiText = message?.text || message?.caption || '';
       const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
-      if (archivedCommunityPost && message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) && message.forward_origin?.type === 'channel') {
+      if (archivedCommunityPost && message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) && message.forward_origin?.type === 'channel' && !message.photo?.length && !['image/jpeg','image/png'].includes(message.document?.mime_type)) {
         await sendTelegramMessage(message.chat.id, `Kanal posti AI manbasiga saqlandi:\n${archivedCommunityPost.url}\nMatn yoki rasm ostidagi yozuv o‘qildi. Rasm ichidagi matn avtomatik o‘qilmaydi.`, { parse_mode: null, reply_to_message_id: message.message_id });
         response = { ok: true, handled: 'ai_channel_post_imported' };
       } else if (message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) &&
@@ -170,7 +171,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         response = { ok: true, handled: 'premium_successful_payment', result };
       } else if ((message?.photo?.length || message?.document&&['image/jpeg','image/png'].includes(message.document.mime_type)) && message.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
         message.chat.id === message.from.id && !message.sender_chat && !message.from.is_bot &&
-        !message.forward_origin && !message.forward_from && !message.forward_from_chat) {
+        !message.is_automatic_forward) {
         const photos = [...(message.photo||[]),...(message.document&&['image/jpeg','image/png'].includes(message.document.mime_type)?[message.document]:[])].filter((p: any) => typeof p.file_id === 'string' && p.file_id.length <= 256 && (!p.file_size || p.file_size <= 4 * 1024 * 1024));
         const photo = photos.at(-1);
         if (photo) {

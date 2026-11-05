@@ -5,6 +5,7 @@ import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
 import {initialUState,readUState} from '../services/uzeflifeService';
 import {createULeagueMatches,uLeagueStandings} from '../../lib/uzeflifeLeague';
+import {DEFAULT_AI_CONFIG,setTestConfigOverride} from '../services/telegramAiConfigService';
 import {UZEFLIFE_RESULT_TOPIC} from '../../lib/uzeflifeResultTopic';
 
 await initDatabase();
@@ -23,6 +24,9 @@ await db.collection('users').doc(sender.id).set({id:sender.id,telegramId:'10150'
 await db.collection('uzeflife').doc('championship').set(state);
 const originalFetch=globalThis.fetch,collection=db.collection,sent:any[]=[];
 globalThis.fetch=async(input:any,init?:any)=>{
+ if(String(input).includes('generativelanguage.googleapis.com'))return Response.json({candidates:[{content:{role:'model',parts:[{text:JSON.stringify({home:'Visible left',away:'Visible right',homeScore:2,awayScore:1})}]},finishReason:'STOP'}]});
+ if(String(input).endsWith('/getFile'))return Response.json({ok:true,result:{file_path:'photos/forwarded.jpg',file_size:4}});
+ if(String(input).includes('/file/bot'))return new Response(new Uint8Array([255,216,255,217]));
  if(!String(input).startsWith('https://api.telegram.org/'))return originalFetch(input,init);
  const body=JSON.parse(init?.body||'{}');if(body.callback_query_id)return Response.json({ok:true});
  sent.push(body);return Response.json({ok:true,result:{message_id:9500+sent.length}});
@@ -53,5 +57,9 @@ try{
  const nextCallback=structuredClone(callback);nextCallback.update_id=930004;nextCallback.callback_query.id='other-round-approve';nextCallback.callback_query.from.id=33000;nextCallback.callback_query.data=nextPreview.reply_markup.inline_keyboard[0][0].callback_data;nextCallback.callback_query.message.message_id=9500+sent.length;
  assert.equal((await post(nextCallback)).body.result,'executing');const final=await readUState();assert.equal(final.round,1);
  assert.equal(final.matches.find(m=>m.id===later.id)?.[later.home===sender.id?'homeScore':'awayScore'],2);assert.equal(uLeagueStandings(final).find(p=>p.id===sender.id)?.points,6);assert.equal(archiveReads,0);
+ process.env.GEMINI_API_KEY='isolated-forward-test';
+ setTestConfigOverride({...DEFAULT_AI_CONFIG,enabled:true,allowedChatId:-100123,allowedThreadId:3503});
+ const photo={update_id:930010,message:{message_id:940010,chat:{id:5209126900,type:'private'},from:{id:5209126900,is_bot:false},caption:'2-1',photo:[{file_id:'private-forwarded-image',file_size:4}],forward_origin:{type:'channel',chat:{username:'efl_uz',type:'channel'},message_id:1,date:1}}};
+ assert.equal((await post(photo)).body.handled,'ai_result_photo');assert.match(sent.at(-1).text,/Visible left 2-1 Visible right/);assert.match(sent.at(-1).text,/Hali saqlanmadi/);assert.equal(archiveReads,0,'A forwarded owner screenshot does not depend on channel archive availability');
  console.log('PASS signed UZEFLIFE webhook: plain 2-1/current-round question, explicit round 3, assigned nonglobal admin approval, sender-first orientation, optional archive isolation, proposal/admin approval, standings and replay protection; Telegram mocked.');
-}finally{db.collection=collection;globalThis.fetch=originalFetch;await new Promise<void>(resolve=>server.close(()=>resolve()));}
+}finally{setTestConfigOverride(null);db.collection=collection;globalThis.fetch=originalFetch;await new Promise<void>(resolve=>server.close(()=>resolve()));}
