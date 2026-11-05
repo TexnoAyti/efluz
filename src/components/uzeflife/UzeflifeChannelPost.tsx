@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {Send,RefreshCw,CheckCircle2} from 'lucide-react';
+import {useRef} from 'react';
 import {uzeflifeRequest,type UViewState} from '../../lib/uzeflifeApi';
 import {normalizeUChannelDelivery,type UChannelDelivery} from '../../lib/uzeflifeChannelDelivery';
 
@@ -7,6 +8,7 @@ const labels:Record<string,string>={idle:'Hali yuborilmagan',pending:'Yuborish n
 export function UzeflifeChannelPost({state:s}:{state:UViewState}) {
  const [round,setRound]=useState(s.round||1),[receipt,setDelivery]=useState<UChannelDelivery|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0),[loading,setLoading]=useState(true);
  const delivery=receipt?.round===round?receipt:null;
+ const submitting=useRef(false);
  const [checked,setChecked]=useState(false),[confirmed,setConfirmed]=useState('');
  useEffect(()=>{
   let cancelled=false,timer:ReturnType<typeof setTimeout>|undefined;
@@ -20,11 +22,16 @@ export function UzeflifeChannelPost({state:s}:{state:UViewState}) {
   void load();return()=>{cancelled=true;controller.abort();if(timer)clearTimeout(timer);};
  },[round,refresh]);
  const submit=async(reconcile=false)=>{
+  if(submitting.current)return;
+  submitting.current=true;
   setBusy(true);setError('');
   try{
    const result=await uzeflifeRequest(reconcile?'publish-reconcile':'publish-round',reconcile?{round,checkpoint:delivery?.checkpoint,confirmedPages:Number(confirmed),checkedChannel:checked}:{round,expectedRevision:s.revision},{timeoutMs:30000});
    setDelivery(normalizeUChannelDelivery(result,round,s.matches.filter(m=>m.round===round).length));setRefresh(n=>n+1);
-  }catch(e:any){setError(e.message||'Yuborishni boshlab bo‘lmadi.');}finally{setBusy(false);}
+  }catch(e:any){
+   setError(e.uncertain?'So‘rov javobi kelmadi. Yuborish holati tekshirilmoqda; qayta yuborishga shoshilmang.':e.message||'Yuborishni boshlab bo‘lmadi.');
+   if(e.uncertain)setRefresh(n=>n+1);
+  }finally{submitting.current=false;setBusy(false);}
  };
  const active=delivery&&['pending','sending'].includes(delivery.state),sent=delivery?.state==='sent';
  const rounds=[...new Set(s.matches.filter(m=>m.round<=s.round).map(m=>m.round))].sort((a,b)=>a-b);

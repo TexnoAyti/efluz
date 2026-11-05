@@ -195,6 +195,15 @@ export class PostgresDocumentStore {
   patchSnapshot(ids: string[], row: any, merge: boolean, ttl: number, version: string): Promise<boolean> {
     return this.rpc('efl_runtime_patch_snapshot', {p_space:this.databaseId,p_ids:ids,p_row:clean(row),p_merge:merge,p_ttl:ttl,p_version:version});
   }
+  async requestRoundPhoto(round:number,revision:number,payload:Record<string,any>){
+    const body={p_space:this.databaseId,p_round:round,p_revision:revision,p_payload:clean(payload)};
+    // The database returns an existing receipt without resetting progress.
+    // A lost acknowledgement can therefore repeat this request safely.
+    try{return await this.rpc('efl_runtime_round_post_request',body);}catch(error:any){
+      if(error.httpStatus&&error.httpStatus<500||error.message==='RUNTIME_FROZEN')throw error;
+      return this.rpc('efl_runtime_round_post_request',body);
+    }
+  }
   transitionRoundPhoto(round:number,action:string,token:string,payload:Record<string,any>){
     const body={p_space:this.databaseId,p_round:round,p_action:action,p_token:token,p_payload:payload};
     // Repeating the same token is safe for claims and acknowledgements, even
