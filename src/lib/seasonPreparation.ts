@@ -20,6 +20,34 @@ export const EFL_SECOND_SEASON = {
     // EFL competition grouping follows the organizer's season plan.
     { id: 'league-turkey-super-lig', name: 'Süper Lig', country: 'Turkey', flag: '🇹🇷', group: 'ASIA', change: 'OPENING' },
   ],
+  internationalCompetitions: [
+    {
+      id: 'comp-asian-champions-league-2027',
+      name: 'Osiyo Chempionlar ligasi',
+      group: 'ASIA',
+      status: 'PREPARATION',
+      registrationOpen: false,
+      sourceSeasonId: 'season-2027-28',
+      qualification: {
+        // EFL grouping includes Turkey by the organizer's choice.
+        sourceLeagueIds: ['league-uzbekistan-superliga', 'league-saudi-pro-league', 'league-j1', 'league-turkey-super-lig'],
+        slotsByLeague: {
+          'league-uzbekistan-superliga': 8,
+          'league-saudi-pro-league': 8,
+          'league-j1': 8,
+          'league-turkey-super-lig': 8,
+        },
+        totalTeams: 32,
+        selection: 'TOP_RANKED',
+        fromPosition: 1,
+      },
+      format: {
+        templateCompetitionId: 'comp-champions-league-2026',
+        type: 'LEAGUE_PHASE',
+        config: { leaguePhaseTeams: 32, matchesPerTeam: 8, directQualifiers: 8, playoffTeams: 16, knockoutTeams: 16 },
+      },
+    },
+  ],
   pendingDecisions: ['CLUB_ROSTERS', 'TEAM_COUNTS', 'FORMAT', 'QUALIFICATION', 'START_DATE'],
 } as const;
 

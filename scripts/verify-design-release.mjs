@@ -29,7 +29,7 @@ const result = await build({
       if (args.path === 'auth') return { contents: 'export const AuthProvider=({children})=>children; export const useAuth=()=>globalThis.releaseAuth; export const usePremiumClubIds=()=>[]; export const APP_BUILD_ID="release-test";' };
       if (args.path === 'profiles') return { contents: 'export const UserProfileProvider=({children})=>children;' };
       if (args.path === 'api') return { contents: 'export const api={};' };
-      if (args.path === 'i18n') return { contents: 'export const I18nProvider=({children})=>children; export const useI18n=()=>({language:"uz",setLanguage:()=>{},t:{navHome:"Bosh sahifa",navLeagues:"Turnirlar",navAdmin:"Admin"}});' };
+      if (args.path === 'i18n') return { contents: 'export const I18nProvider=({children})=>children; export const useI18n=()=>({language:globalThis.releaseLanguage||"uz",setLanguage:()=>{},t:{navHome:"Bosh sahifa",navLeagues:"Turnirlar",navAdmin:"Admin"}});' };
       return { resolveDir: root, contents: `import React from 'react'; export const ${args.path}=()=>React.createElement('div',{'data-test-view':'${args.path}'});` };
     });
   }}],
@@ -42,7 +42,8 @@ context.exports = context.module.exports;
 vm.createContext(context);
 vm.runInContext(result.outputFiles[0].text, context);
 const App = context.module.exports.default;
-async function render({ id = 'player-1', admin = false, route = '/', completed = true, theme = 'dark', anonymous = false, seasonId = 'test-season' } = {}) {
+async function render({ id = 'player-1', admin = false, route = '/', completed = true, theme = 'dark', anonymous = false, seasonId = 'test-season', language = 'uz' } = {}) {
+  context.releaseLanguage = language;
   context.releaseAuth = { user: anonymous ? null : { id, username: 'testplayer', isAdmin: admin }, isLoading: false,
     authStatus: anonymous ? 'AUTH_ANONYMOUS' : 'AUTHENTICATED', unreadNotificationCount: 2,
     seasons: [], activeSeasonId: seasonId, devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
@@ -106,6 +107,16 @@ for (const admin of [false, true]) {
   const preparation = current.match(/<section class="season-preparation"([\s\S]*?)<\/section>/)?.[1] || '';
   assert.equal((preparation.match(/season-preparation-name/g) || []).length,9,'The preparation catalog includes five European and four Asian leagues');
   for (const name of ['Ligue 1','O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(preparation.includes(name),name);
+  assert.match(preparation,/Osiyo Chempionlar ligasi/,'Asian Champions League is visible in the same preparation plan');
+  assert.match(preparation,/32 klub/);
+  assert.match(preparation,/Har bir ligadan 8 tadan klub/);
+  assert.match(preparation,/Yevropa UCL kabi/);
+  assert.match(preparation,/har klubga 8 ta o‘yin/);
+  assert.match(preparation,/9–24: o‘tish pley-offi/);
+  const aclSources = preparation.match(/<ul class="season-preparation-sources">([\s\S]*?)<\/ul>/)?.[1] || '';
+  assert.equal((aclSources.match(/<li/g) || []).length,4);
+  for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(aclSources.includes(name));
+  assert.doesNotMatch(aclSources,/Premier League|La Liga|Serie A|Bundesliga|Ligue 1/);
   assert.match(preparation,/<details><summary>/,'Long league list is expandable on onboarding');
   assert.doesNotMatch(preparation,/<button|<a /,'The preparation list cannot claim a club or switch seasons');
   const next = await render({admin,completed:false,seasonId:'season-2027-28'});
@@ -115,3 +126,11 @@ for (const admin of [false, true]) {
   assert.doesNotMatch(next,/class="season-preparation"/);
 }
 console.log('PASS real welcome render: four active leagues, separate closed season-two preparation with nine leagues, both roles');
+
+for (const [language, title] of [['uz','Osiyo Chempionlar ligasi'],['ru','Лига чемпионов Азии'],['en','Asian Champions League']]) {
+  const html = await render({ completed:false, seasonId:'season-2026-27', language });
+  assert.ok(html.includes(title), `ACL description is translated into ${language}`);
+  assert.match(html,/32/);
+  assert.match(html,/9–24/);
+}
+console.log('PASS ACL preparation: approved 32-team format and eight places per Asian league, localized into three languages');
