@@ -99,7 +99,7 @@ export async function planUzeflifeTopicResult(text:string,sender:number,resoluti
  const roundMentions=[...remaining.matchAll(roundPattern())].map(m=>Number(m[2]||m[3]));
  const rounds=[...new Set(roundMentions)];
  if(rounds.length>1)clarify('Bitta xabarda faqat bitta turni ko‘rsating. Masalan: 2-tur 2-1.');
- const requestedRound=rounds[0],targetRound=requestedRound??state.round;
+ let requestedRound=rounds[0],inferredPastRound=false;const targetRound=requestedRound??state.round;
  if(!Number.isInteger(targetRound)||targetRound<1||targetRound>(isULeague(state)?UZEFLIFE_LEAGUE_ROUNDS:8))clarify(`Tur noto‘g‘ri. 1–${isULeague(state)?UZEFLIFE_LEAGUE_ROUNDS:8} oralig‘idagi turni yozing.`);
  if(!isULeague(state)&&targetRound!==state.round)clarify('Pley-offda faqat joriy bosqich natijasi qabul qilinadi.');
  const normalized=normalizeAiEntity(remaining.replace(roundPattern(),' '));
@@ -117,6 +117,12 @@ export async function planUzeflifeTopicResult(text:string,sender:number,resoluti
  const noisyBare=onlyResultNoise(remaining.replace(roundPattern(),' '));
  if(!bare&&!explicitGame&&(mentions.length||!noisyBare))games=games.filter(m=>{const h=named(m.home),a=named(m.away);return h.name!==a.name&&(admin?(h.position>=0||a.position>=0):winner&&mentions.length===1?(h.position>=0||a.position>=0):h.position>=0&&a.position>=0);});
  if(admin&&bare)games=games.filter(m=>[m.home,m.away].includes(user.id));
+ // Two verified opponents uniquely identify an unfinished past league fixture.
+ // Carry its round into the existing guarded approval; never select a future game.
+ if(!games.length&&requestedRound===undefined&&!resolution&&!setka&&!game&&mentions.length===2&&isULeague(state)){
+  const past=state.matches.filter(m=>m.round<state.round&&m.home&&m.away&&!uMatchFinished(m)&&(admin||[m.home,m.away].includes(user.id))&&named(m.home).position>=0&&named(m.away).position>=0);
+  if(past.length===1){games=past;requestedRound=past[0].round;inferredPastRound=true;}
+ }
  if(games.length!==1)clarify(`UZEFLIFE’da bitta joriy o‘yin aniqlanmadi (${targetRound}-tur). O‘zingizning joriy o‘yiningiz uchun “2-1”, boshqa tur uchun “2-tur 2-1” deb yozing. Admin turni va o‘yinchi username’ini yozsin: “2-tur @username 2-1”. Ikki o‘yinchi nomi yoki “1-setka 1-o‘yin 2:1” ham qabul qilinadi.`);
  const m=games[0];if(uMatchFinished(m))clarify('Bu UZEFLIFE o‘yini allaqachon tasdiqlangan. Tuzatish uchun admin paneldan foydalaning.');
  if(!scores.length){const h=state.participants.find(p=>p.id===m.home)?.name||'Uy tomoni',a=state.participants.find(p=>p.id===m.away)?.name||'Mehmon tomoni';throw Object.assign(Error(`CLARIFY:${h} — ${a} · ${m.round}-tur topildi. @${winner} g‘olib deb yozilgan, lekin aniq hisob yo‘q. Juftlik tartibida hisobni javob qilib yozing, masalan 1:2. “win”dan 3:0 taxmin qilinmaydi.`),{followup:{kind:'score',text:`${h} vs ${a} @${winner} win ${m.round}-tur`,choices:[{id:m.id,matchday:m.round,label:h+' — '+a}]}});}
@@ -129,7 +135,7 @@ export async function planUzeflifeTopicResult(text:string,sender:number,resoluti
  if(winner){const winId=state.participants.find(p=>p.name.replace(/^@/,'').toLowerCase()===winner)?.id;const left=pa??a,right=pb??b;const actual=left===right?null:(homeFirst?(left>right?m.home:m.away):(left>right?m.away:m.home));if(!winId||actual!==winId)clarify('Yozilgan g‘olib va hisob bir-biriga mos emas. Hisobni ikki username tartibida tekshirib yozing.');}
  const body={homeScore:homeFirst?a:b,awayScore:homeFirst?b:a,homePenaltyScore:homeFirst?pa:pb,awayPenaltyScore:homeFirst?pb:pa,status:'CONFIRMED',expectedFixture:{kind:'uzeflife',fingerprint:uzeflifeMatchFingerprint(state,m),submitter:user.id,telegramId:String(sender),...(requestedRound!==undefined?{requestedRound}: {})}};
  const player=(id:string)=>state.participants.find(p=>p.id===id)?.name||id;
- return {kind:'uzeflife' as const,confirmationQuestion:`Bu ${m.round}-tur o‘yinimi?${requestedRound===undefined?' Joriy tur bo‘yicha topildi.':' Siz ko‘rsatgan tur bo‘yicha topildi.'}`,expectedFixture:body.expectedFixture,fixture:{id:m.id,home:player(m.home!),away:player(m.away!),competition:'UZEFLIFE',roundName:`${isULeague(state)?'Umumiy liga':m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · ${uRoundLabel(m.round,state.format)} · ${uMatchNumber(m)}-o‘yin`,matchday:m.round},plan:{action:'result_edit',targetId:m.id,body} as AdminPlan};
+ return {kind:'uzeflife' as const,confirmationQuestion:`Bu ${m.round}-tur o‘yinimi?${inferredPastRound?' Juftlik bo‘yicha oldingi turdan topildi.':requestedRound===undefined?' Joriy tur bo‘yicha topildi.':' Siz ko‘rsatgan tur bo‘yicha topildi.'}`,expectedFixture:body.expectedFixture,fixture:{id:m.id,home:player(m.home!),away:player(m.away!),competition:'UZEFLIFE',roundName:`${isULeague(state)?'Umumiy liga':m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · ${uRoundLabel(m.round,state.format)} · ${uMatchNumber(m)}-o‘yin`,matchday:m.round},plan:{action:'result_edit',targetId:m.id,body} as AdminPlan};
 }
 
 export async function executeUzeflifeTopicResult(plan:AdminPlan,actorTelegramId:number,submitterTelegramId:number,source:{chat:number;thread:number;message:number}){
