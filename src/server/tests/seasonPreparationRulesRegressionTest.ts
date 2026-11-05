@@ -46,7 +46,7 @@ const full=previewPreparedLeagueSchedule('league-premier-league')!.fixtures.map(
 });
 assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}).canFinalize,true);
 assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}).standings[0].id,pl.at(-1));
-for(const comp of EFL_SECOND_SEASON.europeanCompetitions){assert.equal(comp.totalTeams,36);assert.equal(comp.totalFixtures,comp.code==='UECL'?108:144);assert.equal(comp.qualificationSlots,null);assert.equal(comp.participantClubIds.length,0);}
+for(const comp of EFL_SECOND_SEASON.europeanCompetitions){assert.equal(comp.totalTeams,36);assert.equal(comp.totalFixtures,144);assert.equal(comp.qualificationSlots,null);assert.equal(comp.participantClubIds.length,0);}
 assert.equal(EFL_SECOND_SEASON.domesticCups.length,9);
 for(const cup of EFL_SECOND_SEASON.domesticCups){
   assert.equal(cup.format,'EFL_CUSTOM');

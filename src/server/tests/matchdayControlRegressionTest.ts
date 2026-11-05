@@ -41,10 +41,13 @@ await assert.rejects(() => assertMatchdayPlayableFirestore(seasonId, id, 3), /MA
 await assertMatchdayPlayableFirestore(seasonId, id, 1);
 
 await act('SELECT', 2, 4);
-await assert.rejects(() => act('SELECT', 3), (e: any) => e.code === 'MATCHDAY_UNFINISHED' && e.blockers[0].id === 'control-2');
-assert.equal((await ref.get()).data()?.currentMatchday, 2);
+await act('SELECT', 3);
+assert.equal((await ref.get()).data()?.currentMatchday, 3);
+await assertMatchdayPlayableFirestore(seasonId,id,2);
+assert.equal((await db.collection(COLLECTIONS.FIXTURES).doc('control-2').get()).data()?.status,'SCHEDULED');
 await act('SELECT', 1);
-await assert.rejects(() => act('SELECT', 3), (e: any) => e.code === 'MATCHDAY_UNFINISHED');
+await act('SELECT', 3);
+assert.equal((await ref.get()).data()?.currentMatchday,3);
 
 // Extensions add to the existing deadline; restarting starts a fresh duration.
 await act('OPEN', 2, 4);
@@ -57,13 +60,13 @@ assert.ok(Math.abs(Date.parse((await lockRef.get()).data()!.expiresAt) - Date.no
 await act('LOCK', 2);
 await assert.rejects(() => act('EXTEND', 2), (e: any) => e.code === 'MATCHDAY_LOCKED');
 
-// Browser, synchronous state and actual submission guard agree on expiry/conflicting flags.
+// Reached unfinished fixtures remain playable after expiry; explicit administrative holds still win.
 assert.equal(resolveMatchdayGate({ overrideStatus: 'FORCE_OPEN', isLocked: true }), false);
 const expired = { ...(await lockRef.get()).data(), overrideStatus: 'FORCE_OPEN', isLocked: false, isOpen: true, expiresAt: new Date(Date.now() - 1000).toISOString() };
 await lockRef.set(expired);
 invalidateMatchdayLockCache(seasonId, id, 2);
-assert.equal(checkFixturePlayability(id, seasonId, 2, 'SCHEDULED', 'club-barcelona', 'club-real-madrid', null, expired as any).isPlayable, false);
-await assert.rejects(() => assertMatchdayPlayableFirestore(seasonId, id, 2), /MATCHDAY_LOCKED/);
+assert.equal(checkFixturePlayability(id, seasonId, 2, 'SCHEDULED', 'club-barcelona', 'club-real-madrid', null, expired as any).isPlayable, true);
+await assert.rejects(() => assertMatchdayPlayableFirestore(seasonId,id,2), /MATCHDAY_LOCKED/);
 assert.equal(isMatchdayPlayableKey(seasonId, id, 2), false);
 
 // Stale pages and persistence errors do not partially change active round/locks.
@@ -110,4 +113,4 @@ try {
   assert.equal((await request(id, 'POST', 'control-league', { action: 'LOCK', matchday: 2 })).status, 200);
   assert.equal((await request(id, 'POST', 'control-league', { action: 'OPEN', matchday: 2.5 })).status, 400);
 } finally { server.close(); }
-console.log('PASS matchday control: backwards/select, independent gates, unfinished/skipped-round blockers, expiry, extend/restart, durable refresh, atomic failure, unchanged results/proof and real scoped HTTP authorization.');
+console.log('PASS matchday control: backwards/select, independent gates, advance with unfinished games, expiry, extend/restart, durable refresh, atomic failure, unchanged results/proof and real scoped HTTP authorization.');

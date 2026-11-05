@@ -1,3 +1,4 @@
+import {correctCurrentPayload} from '../content/currentClubCorrections';
 import {operationTiming} from './middleware/operationTiming';
 import {createUzeflifeWorkerRouter} from './routes/uzeflifeWorker.routes';
 import {androidAuthRouter} from './routes/androidAuth.routes';
@@ -106,6 +107,11 @@ export async function ensureDbReady(): Promise<void> {
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  app.use('/api',(req,res,next)=>{
+    const json=res.json.bind(res);
+    res.json=((body:any)=>json(correctCurrentPayload(body,String(req.query.seasonId||req.body?.seasonId||'season-2026-27')))) as typeof res.json;
+    next();
+  });
   // Stop webhooks, cron, authentication writes and all application mutations
   // before initialization or background scheduling during database cutover.
   app.use((req, res, next) => {

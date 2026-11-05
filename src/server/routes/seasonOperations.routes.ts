@@ -336,7 +336,7 @@ adminSeasonOperationsRouter.post('/preparation/package',async(req:Request,res:Re
   catch(error:any){res.status(error.statusCode||503).json({error:error.message});}
 });
 const drawPreviewSchema=z.object({
-  code:z.enum(['UCL','UEL','UECL']),seed:z.string().min(1).max(120),
+  code:z.enum(['UCL','UEL']),seed:z.string().min(1).max(120),
   entries:z.array(z.object({id:z.string().min(1).max(80),name:z.string().min(1).max(120),association:z.string().regex(/^[A-Z]{3}$/),pot:z.number().int().min(1).max(6),qualification:z.object({route:z.enum(['DOMESTIC','TITLEHOLDER','EPS','QUALIFYING']),source:z.string().url().max(500)}).strict()}).strict()).length(36),
 }).strict();
 adminSeasonOperationsRouter.post('/preparation/european-draw-preview',(req:Request,res:Response)=>{

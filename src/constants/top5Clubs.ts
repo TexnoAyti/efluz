@@ -1,3 +1,4 @@
+import {correctCurrentClub} from '../content/currentClubCorrections';
 import { clubStadium } from './clubStadiums';
 export interface Top5League {
   id: string;
@@ -162,5 +163,7 @@ export const TOP5_CLUBS: Top5Club[] = [
   { id: 'club-toulouse', name: 'Toulouse FC', shortName: 'TFC', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/511.png' },
   { id: 'club-troyes', name: 'ESTAC Troyes', shortName: 'TRO', country: 'France', leagueId: 'league-ligue-1', logoUrl: 'https://crests.football-data.org/531.png' },
 ];
+
+for (let index=0;index<TOP5_CLUBS.length;index++) TOP5_CLUBS[index]=correctCurrentClub(TOP5_CLUBS[index]);
 
 for (const club of TOP5_CLUBS) club.stadium = clubStadium(club.id);

@@ -24,7 +24,7 @@ import { queryAll, queryGet, queryRun, dbTransaction, upsertFixtureToSqlite, ups
 import { refreshMaterializedStandingsForCompetition } from '../db/sqliteStandings';
 import { SEED_CLUBS, SEED_LEAGUES, SEED_COMPETITIONS, SEED_SEASONS, SEED_SEASON } from '../db/seed';
 import { checkClubClaimLimit } from '../services/premiumClubRule';
-import { admissionStatus, assertClubAdmissionOpen, ClubAdmissionConflictError } from '../services/clubAdmission';
+import { admissionStatus, assertClubAdmissionOpen, ClubAdmissionConflictError, prepareAutomaticAdmissionAdvance, publishAdmissionStatus, reconcileAutomaticClubAdmission } from '../services/clubAdmission';
 export { firestoreCircuitBreaker, type CircuitBreakerStatus } from './circuitBreaker';
 import { firestoreCircuitBreaker, CircuitBreakerStatus } from './circuitBreaker';
 import {
@@ -1036,7 +1036,9 @@ export async function claimClubAtomicFirestore(
         }
       }
 
+      let automaticAdmission:any=null;
       const claimResult = await db.runTransaction(async (transaction) => {
+        automaticAdmission=null;
         if(seasonId==='season-2027-28'){
           const targetSeason=await transaction.get(db.collection('seasons').doc(seasonId));
           if(!['registration','active'].includes(String(targetSeason.data()?.status).toLowerCase())||targetSeason.data()?.registrationOpen!==true)throw new ClubConflictError('2-mavsum hali ochilmagan.','SEASON_NOT_OPEN');
@@ -1146,9 +1148,11 @@ export async function claimClubAtomicFirestore(
           }
         }
 
+        automaticAdmission=await prepareAutomaticAdmissionAdvance(transaction,db,seasonId,admissionDoc.data(),clubId);
         // All reads finish before creating a previously offline authenticated user.
         if (newVerifiedActor) transaction.set(db.collection(COLLECTIONS.USERS).doc(userId), newVerifiedActor);
 
+        if(automaticAdmission)transaction.set(db.collection('club_admissions').doc(seasonId),automaticAdmission);
         // 4. Atomically commit the claim
         const membershipPayload: FirestoreClubMembershipDoc = {
           id: `cm-${seasonId}-${clubId}`,
@@ -1208,6 +1212,7 @@ export async function claimClubAtomicFirestore(
         };
       });
 
+      if(automaticAdmission)await publishAdmissionStatus(seasonId,automaticAdmission);
       // Verify occupancy persistence directly in Firestore
       trackFirestoreRead(COLLECTIONS.CLUB_OCCUPANCIES, 1, 'claimClubAtomicFirestore:verify');
       const verifyOcc = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${seasonId}_${clubId}`).get();
@@ -6022,6 +6027,7 @@ export async function adminAssignClubFirestore(
 
     });
 
+    try{await reconcileAutomaticClubAdmission(seasonId);}catch(error){console.warn('[CLUB_ADMISSION] Assignment committed; automatic stage reconciliation will retry');}
     invalidateFirestoreCache();
     const updatedClub = await getClubByIdFirestore(clubId, seasonId);
     return {

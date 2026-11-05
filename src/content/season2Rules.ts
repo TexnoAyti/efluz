@@ -57,7 +57,6 @@ export const PREPARED_DOMESTIC_CUPS = [
 export const PREPARED_UEFA_COMPETITIONS = [
   {id:'comp-champions-league-2027',code:'UCL',name:'UEFA Champions League',matchesPerTeam:8,pots:4,source:'https://www.uefa.com/uefachampionsleague/news/02a6-20d57cfcd03e-407c22a7f465-1000--2026-27-champions-league-teams-draws-format-final/'},
   {id:'comp-europa-league-2027',code:'UEL',name:'UEFA Europa League',matchesPerTeam:8,pots:4,source:'https://documents.uefa.com/r/Regulations-of-the-UEFA-Europa-League-2026/27/Article-17-Match-system-league-phase-Online'},
-  {id:'comp-conference-league-2027',code:'UECL',name:'UEFA Conference League',matchesPerTeam:6,pots:6,source:'https://documents.uefa.com/r/Regulations-of-the-UEFA-Conference-League-2026/27/Article-17-Match-system-league-phase-Online'},
 ].map(comp=>({...comp,totalTeams:36,homeMatches:comp.matchesPerTeam/2,awayMatches:comp.matchesPerTeam/2,totalFixtures:36*comp.matchesPerTeam/2,directQualifiers:8,playoffPlaces:[9,24],eliminatedPlaces:[25,36],qualificationMode:'UEFA_ACCESS_LIST',qualificationSlots:null,participantClubIds:[] as string[],requiresExternalAssociations:true,noSameAssociation:true,maxOpponentsPerOtherAssociation:2}));
 
 /** EFL four-club super cups; participants are resolved only from completed season-two results. */

@@ -79,14 +79,6 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
     if ((comp.currentMatchday || 1) !== current || comp.updatedAt !== competition.updatedAt || (params.expectedUpdatedAt !== undefined && (comp.updatedAt || null) !== params.expectedUpdatedAt)) {
       throw new MatchdayControlError('MATCHDAY_CHANGED', 'Tur holati boshqa admin tomonidan o‘zgargan. Yangilab qayta urinib ko‘ring.', 409);
     }
-    if (params.action === 'SELECT' && target > current) {
-      const round = fixtures.filter(f => Number(f.matchday) >= current && Number(f.matchday) < target);
-      if (!round.length) throw new MatchdayControlError('MATCHDAY_EMPTY', `Cannot advance: matchday ${current} has no fixtures.`, 409);
-      for (let skipped = current; skipped < target; skipped++) if (!round.some(f => Number(f.matchday) === skipped)) throw new MatchdayControlError('MATCHDAY_EMPTY', `Cannot advance: matchday ${skipped} has no fixtures.`, 409);
-      const fresh = await Promise.all(round.map(f => tx.get(db.collection(COLLECTIONS.FIXTURES).doc(f.id))));
-      const unfinished = fresh.filter(d => d.exists && !finalStatuses.has(String(d.data()?.status))).map(d => ({ id: d.id, status: String(d.data()?.status) }));
-      if (unfinished.length) throw new MatchdayControlError('MATCHDAY_UNFINISHED', `${current}-turda ${unfinished.length} ta tugamagan o‘yin bor. Natijalarni hal qiling yoki o‘yinni admin orqali keyinga qoldiring.`, 409, unfinished);
-    }
     const previousLock = selected.exists ? selected.data() as FirestoreMatchdayLockDoc : null;
     const isOpen = params.action !== 'LOCK';
     const priorDeadline = previousLock?.expiresAt || (target === current ? comp.nextMatchdayOpenAt : undefined);
@@ -102,10 +94,11 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
       ...(params.adminUserId ? { updatedByUserId: params.adminUserId } : {}),
     };
     const changes: Partial<FirestoreCompetitionDoc> & {resultEntryThroughMatchday?:number} = { updatedAt: now };
-    if (isOpen && Number.isInteger((comp as any).resultEntryThroughMatchday)) changes.resultEntryThroughMatchday=Math.max((comp as any).resultEntryThroughMatchday,current,target);
+    if (isOpen && (Number.isInteger((comp as any).resultEntryThroughMatchday) || comp.type === 'LEAGUE' && params.action === 'SELECT' && target > current)) changes.resultEntryThroughMatchday=Math.max(Number((comp as any).resultEntryThroughMatchday)||0,current,target);
     const locks = [lock];
     if (params.action === 'SELECT' && target !== current) {
-      locks.push({ id: key(current), seasonId, competitionId, matchday: current, overrideStatus: 'FORCE_LOCKED', isOpen: false, isLocked: true, durationHours: hours, lockedAt: now, updatedAt: now, ...(params.adminUserId ? { updatedByUserId: params.adminUserId } : {}) });
+      // Advancing a league leaves its unfinished games available. Explicit holds still apply.
+      if (comp.type !== 'LEAGUE' || target < current) locks.push({ id: key(current), seasonId, competitionId, matchday: current, overrideStatus: 'FORCE_LOCKED', isOpen: false, isLocked: true, durationHours: hours, lockedAt: now, updatedAt: now, ...(params.adminUserId ? { updatedByUserId: params.adminUserId } : {}) });
       changes.currentMatchday = target;
     }
     if (target === current || params.action === 'SELECT') {

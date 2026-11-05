@@ -11,6 +11,7 @@ export function isSeasonCompetitionEnabled(competitionId: string | undefined, se
   // EFL/Carabao Cup was removed from the official calendar in every season.
   // Apply at read time too: older durable/client snapshots can still contain it.
   if (/efl[-_ ]?cup|carabao/i.test(competitionId || '')) return false;
+  if (/conference|(?:^|[-_])uecl(?:[-_]|$)/i.test(competitionId || '')) return false;
   return seasonId !== CURRENT_SEASON_ID || !WITHDRAWN_COMPETITIONS.has(competitionId || '');
 }
 export function filterSeasonFixtures<T extends { competitionId?: string; seasonId?: string }>(fixtures: T[], seasonId = CURRENT_SEASON_ID): T[] {

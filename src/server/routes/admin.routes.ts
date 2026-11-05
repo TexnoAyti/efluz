@@ -1,3 +1,4 @@
+import {seasonLeagues} from '../services/seasonCatalog';
 import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
 import { previewBulkLeagueResults, applyBulkLeagueResults } from '../services/bulkLeagueResults';
 import { createHash } from 'node:crypto';
@@ -160,7 +161,7 @@ adminRouter.get('/clubs/admission', async (req: Request, res: Response) => {
 
 adminRouter.post('/clubs/admission/league', async (req: Request, res: Response) => {
   const { seasonId, leagueId, open, expectedRevision } = req.body || {};
-  if (typeof seasonId !== 'string' || !/^season-[a-z0-9-]+$/.test(seasonId) || !CLUB_ADMISSION_LEAGUES.some(league => league.id === leagueId) || typeof open !== 'boolean' || !(expectedRevision === null || typeof expectedRevision === 'string' && expectedRevision.length <= 100)) {
+  if (typeof seasonId !== 'string' || !/^season-[a-z0-9-]+$/.test(seasonId) || !seasonLeagues(seasonId).some(league => league.id === leagueId) || typeof open !== 'boolean' || !(expectedRevision === null || typeof expectedRevision === 'string' && expectedRevision.length <= 100)) {
     res.status(400).json({ code: 'INVALID_LEAGUE_SELECTION' }); return;
   }
   try {
@@ -175,7 +176,7 @@ adminRouter.post('/clubs/admission/league', async (req: Request, res: Response) 
 adminRouter.post('/clubs/admission/advance', async (req: Request, res: Response) => {
   const seasonId = String(req.body?.seasonId || 'season-2026-27');
   const expectedStage = req.body?.expectedStage;
-  if (!/^season-[a-z0-9-]+$/.test(seasonId) || !Number.isInteger(expectedStage) || expectedStage < -1 || expectedStage > CLUB_ADMISSION_LEAGUES.length) {
+  if (!/^season-[a-z0-9-]+$/.test(seasonId) || !Number.isInteger(expectedStage) || expectedStage < -1 || expectedStage > seasonLeagues(seasonId).length) {
     res.status(400).json({ code: 'INVALID_ADMISSION_STAGE' });
     return;
   }
