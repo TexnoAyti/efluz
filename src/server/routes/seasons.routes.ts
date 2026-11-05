@@ -1,3 +1,5 @@
+import { CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
+import { getSeasonPreparation } from '../../lib/seasonPreparation';
 import { Router, Request, Response } from 'express';
 import { getAllSeasonsFirestore, getActiveSeasonFirestore } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
@@ -26,6 +28,13 @@ seasonsRouter.get('/active', async (req: Request, res: Response) => {
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/seasons/active');
   }
+});
+
+// Static preparation catalog: no database reads or season transitions. Before /:id.
+seasonsRouter.get('/preparation', (req: Request, res: Response) => {
+  const sourceSeasonId = String(req.query.sourceSeasonId || CURRENT_SEASON_ID);
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.json({ preparation: getSeasonPreparation(sourceSeasonId) });
 });
 
 seasonsRouter.get('/:id', async (req: Request, res: Response) => {

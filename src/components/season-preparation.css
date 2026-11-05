@@ -1,0 +1,15 @@
+.season-preparation { padding: 16px; border: 1px solid var(--efl-border); border-radius: 16px; background: var(--efl-surface); color: var(--efl-text); min-width: 0; }
+.season-preparation-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.season-preparation-header h3 { margin: 0; font-size: 14px; font-weight: 850; }
+.season-preparation-header > span { color: var(--efl-primary); background: var(--efl-surface-2); padding: 4px 8px; border-radius: 8px; font-size: 10px; font-weight: 700; }
+.season-preparation-note, .season-preparation-pending { margin: 8px 0 0; color: var(--efl-text-2); font-size: 11px; line-height: 1.6; }
+.season-preparation-groups { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
+.season-preparation-group h4 { margin: 0 0 6px; color: var(--efl-text-2); font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .05em; }
+.season-preparation-group ul { margin: 0; padding: 0; list-style: none; }
+.season-preparation-group li { display: flex; align-items: baseline; gap: 7px; padding: 7px 0; font-size: 12px; border-bottom: 1px solid var(--efl-border); }
+.season-preparation-name { min-width: 0; overflow-wrap: anywhere; }
+.season-preparation-opening { margin-left: auto; flex-shrink: 0; color: var(--efl-primary); font-size: 9px; font-weight: 700; }
+.season-preparation-pending { grid-column: 1 / -1; margin-top: 0; }
+.season-preparation summary { margin-top: 10px; padding: 10px 0; color: var(--efl-primary); font-size: 12px; font-weight: 700; cursor: pointer; min-height: 44px; }
+.season-preparation summary:focus-visible { outline: 2px solid var(--efl-primary); outline-offset: 3px; }
+@media (max-width: 520px) { .season-preparation-groups { grid-template-columns: minmax(0, 1fr); } }
