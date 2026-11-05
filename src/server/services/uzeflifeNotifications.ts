@@ -65,7 +65,9 @@ export async function sweepUDeadlines(now=Date.now()){
     notices.push({userId,kind,matchId:m.id,version,...(reminderStage?{reminderStage}:{}),title:kind==='reminder'?'UZEFLIFE · O‘yin eslatmasi':'UZEFLIFE · O‘yin muddati tugadi',body});seen.add(key);
    }}
   }
-  tx.set(checkpoint,{nextAt:now+10*60000,seen:[...seen].slice(-2048)});
+  // Keep every stage for all 15 opened rounds (242 players), including
+  // postponed games. Evicting current-season keys would repeat old reminders.
+  tx.set(checkpoint,{nextAt:now+10*60000,seen:[...seen].slice(-32768)});
   if(notices.length)tx.set(db.collection('uzeflife_notifications').doc('reminder-'+hash(notices.map(n=>[n.userId,n.kind,n.matchId,n.version,n.reminderStage||null]))),{status:'pending',cursor:0,leaseUntil:0,createdAt:new Date().toISOString(),deliveryVersion:2,notices});
  });
 }
