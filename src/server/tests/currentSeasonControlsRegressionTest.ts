@@ -1,3 +1,4 @@
+import {resolveAiClubs} from '../services/telegramAiEntities';
 import assert from 'node:assert/strict';
 import {TOP5_CLUBS} from '../../constants/top5Clubs';
 import {CURRENT_CLUB_CORRECTIONS,correctCurrentPayload} from '../../content/currentClubCorrections';
@@ -16,6 +17,9 @@ for(const [legacyId,c] of Object.entries(CURRENT_CLUB_CORRECTIONS)){
   assert.equal(original.fixture.homeClub.name,'old','Cached source objects remain immutable');
   assert.equal(correctCurrentPayload({...original,seasonId:'season-2025-26'}).fixture.homeClub.name,'old');
 }
+assert.equal(resolveAiClubs('1. FC Köln',[{id:'club-heidenheim',name:'1. FC Heidenheim'}] as any).clubs[0]?.id,'club-heidenheim');
+assert.equal(resolveAiClubs('Heidenheim',[{id:'club-heidenheim',name:'1. FC Köln'}] as any).clubs[0]?.id,'club-heidenheim');
+assert.ok(resolveAiClubs('Arsenal',[{id:'club-arsenal',name:'Different club'}] as any).clarification,'Only approved correction IDs permit renamed legacy aliases');
 assert.equal(TOP5_CLUBS.length,96);assert.equal(new Set(TOP5_CLUBS.map(c=>c.id)).size,96);
 for(const id of ['comp-conference-league-2027','comp-uecl-2026']){
   assert.equal(isSeasonCompetitionEnabled(id,'season-2027-28'),false);

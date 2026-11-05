@@ -165,7 +165,7 @@ export function resolveAiClubs(query: string, clubs: Club[], selectedIds: string
     if (sharedOnly) return { clubs: [], clubChoices: clubNameChoices(query, matched, false), clarification: `Qaysi jamoani nazarda tutdingiz: ${matched.map(c => c.name).join(' yoki ')}?` };
   }
   // Explicitly named teams missing from the live roster must never resolve to an older team.
-  const missing = matchClubs(query, SEED_CLUBS as unknown as Club[]).filter(c => !clubs.some(live => live.id === c.id || normalizeAiEntity(strippedClubName(live.name)) === normalizeAiEntity(strippedClubName(c.name)) || (ALIASES[c.id] || []).some(alias => normalizeAiEntity(alias) === normalizeAiEntity(live.name))));
+  const missing = matchClubs(query, SEED_CLUBS as unknown as Club[]).filter(c => !clubs.some(live => (live.id === c.id && !!CURRENT_CLUB_CORRECTIONS[c.id]) || normalizeAiEntity(strippedClubName(live.name)) === normalizeAiEntity(strippedClubName(c.name)) || (ALIASES[c.id] || []).some(alias => normalizeAiEntity(alias) === normalizeAiEntity(live.name))));
   if (missing.length) return { clubs: [], clarification: `${missing.map(c => c.name).join(', ')}: joriy mavsum snapshotida klub ma’lumoti topilmadi. Oldingi jamoa ma’lumotini bunga qo‘llamayman.` };
   const suggestions = clubNameChoices(query, clubs.filter(c=>!matched.some(m=>m.id===c.id)), true);
   if(suggestions.length) return {clubs:[],clubChoices:suggestions,clarification:`Klub nomida yozuv xatosi bo‘lishi mumkin. «${suggestions[0].source}» bilan ${suggestions.map(c=>c.name).join(' yoki ')}ni nazarda tutdingizmi? ${suggestions.length === 1 ? '“Ha” yoki klub nomi bilan javob bering.' : 'Shu klublardan birining nomi yoki ro‘yxatdagi raqamini yozing.'}`};
