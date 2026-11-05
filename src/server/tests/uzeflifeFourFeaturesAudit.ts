@@ -45,6 +45,14 @@ export async function verifyUzeflifeFourFeatures(){
   await sweepUDeadlines(clock+15*60000);assert.equal((await countJobs()).length,initial.length);
   clock+=17.5*3600000;await sweepUDeadlines(clock);assert.equal((await countJobs()).filter(n=>n.reminderStage==='3h').length,10);
   clock+=2*3600000;await sweepUDeadlines(clock);assert.equal((await countJobs()).filter(n=>n.reminderStage==='1h').length,10);assert.equal((await countJobs()).length,30,'Each reminder stage retains its own durable job');
+  // Opening the next league round must retain reminders for postponed games.
+  const postponed=await readUState();postponed.round=2;await ref.set(postponed);
+  clock+=3600000;await sweepUDeadlines(clock);
+  const overdue=(await countJobs()).filter(n=>n.kind==='overdue');assert.equal(overdue.length,10);
+  const oldRoundSent:any[]=[];while(await processUNotices(50,async p=>{oldRoundSent.push(p);return true;})){}
+  assert.equal(oldRoundSent.filter(p=>p.title.includes('muddati tugadi')).length,10,'Past-round overdue reminders remain valid at delivery');
+  await sweepUDeadlines(clock+15*60000);assert.equal((await countJobs()).filter(n=>n.kind==='overdue').length,10,'Postponed overdue notices do not repeat');
+  postponed.round=1;await ref.set(postponed);
   await mutateUState(admin,'resolveDispute',{matchId:mismatch.id,resolution:'Ikkala hisob tekshirildi.'});
   for(const game of (await readUState()).matches.filter(x=>x.round===1&&!uMatchFinished(x)))await mutateUState(admin,'result',{matchId:game.id,home:1,away:0});
   state=await readUState();const jobs=(await db.collection('uzeflife_round_summaries').get()).docs;assert.equal(jobs.length,1);const job=jobs[0],data=job.data(),parts=JSON.parse(data.partsJson);

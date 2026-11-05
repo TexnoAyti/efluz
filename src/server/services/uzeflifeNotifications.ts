@@ -56,7 +56,7 @@ export async function sweepUDeadlines(now=Date.now()){
   const [snap,check]=await Promise.all([tx.get(ref),tx.get(checkpoint)]);const s=snap.data() as UState|undefined;
   if(!s||s.status!=='playing'||Number(check.data()?.nextAt||0)>now)return;
   const notices:UNotice[]=[];const seen=new Set<string>(check.data()?.seen||[]);
-  for(const m of s.matches){const deadline=Date.parse(m.deadlineAt||'');if(m.round!==s.round||uMatchFinished(m)||m.proposal||m.dispute?.status==='open'||!m.home||!m.away||!Number.isFinite(deadline)||deadline-now>86400000)continue;
+  for(const m of s.matches){const deadline=Date.parse(m.deadlineAt||'');if((isULeague(s)?m.round>s.round:m.round!==s.round)||uMatchFinished(m)||m.proposal||m.dispute?.status==='open'||!m.home||!m.away||!Number.isFinite(deadline)||deadline-now>86400000)continue;
    const kind=deadline>now?'reminder':'overdue';
    const reminderStage=kind==='reminder'?(deadline-now<=3600000?'1h':deadline-now<=10800000?'3h':'24h'):undefined;
    for(const userId of [m.home,m.away]){const version=uNoticeVersion(kind,m),key=hash([userId,kind,m.id,version,reminderStage||null]);if(!seen.has(key)&&!((reminderStage==='24h'||kind==='overdue')&&seen.has(hash([userId,kind,m.id,version])))){
@@ -76,7 +76,7 @@ export function validUNotice(n:UNotice,s:UState,ownerId?:string){
  if(n.kind==='reminder'&&(Date.parse(m.deadlineAt||'')<=Date.now()||m.proposal||m.dispute?.status==='open'))return false;
  if(n.kind==='reminder'&&n.reminderStage){const hours=(Date.parse(m.deadlineAt||'')-Date.now())/3600000;if((hours<=1?'1h':hours<=3?'3h':'24h')!==n.reminderStage)return false;}
  if(n.kind==='overdue'&&(Date.parse(m.deadlineAt||'')>Date.now()||m.proposal||m.dispute?.status==='open'))return false;
- if(['opponent','reminder','overdue'].includes(n.kind))return s.status==='playing'&&m.round===s.round&&!uMatchFinished(m);
+ if(['opponent','reminder','overdue'].includes(n.kind))return s.status==='playing'&&(isULeague(s)&&n.kind!=='opponent'?m.round<=s.round:m.round===s.round)&&!uMatchFinished(m);
  if(n.kind==='proposal')return !!m.proposal&&!uMatchFinished(m)&&m.dispute?.status!=='open';
  if(n.kind==='dispute')return m.dispute?.status==='open';
  return n.kind!=='champion'||s.status==='completed';

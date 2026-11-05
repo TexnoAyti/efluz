@@ -15,7 +15,7 @@ function roundData(state:UState,round:number) {
  if(state.format!=='LEAGUE'||!['playing','paused','completed'].includes(state.status)||!Number.isInteger(round)||round<1||round>state.round)throw uError('Faqat ochilgan liga turini yuborish mumkin.',409);
  const matches=state.matches.filter(m=>m.round===round);
  if(!matches.length)throw uError('Bu turda o‘yinlar yo‘q.',409);
- const snapshot:UState={...state,matches:matches.map(m=>({...m,proposal:null,dispute:null})),participants:state.participants.map(p=>({id:p.id,name:p.name,status:p.status})),assistants:{},channels:[],announcements:[]};
+ const snapshot:UState={name:state.name,description:'',format:state.format,status:state.status,round,revision:state.revision,matches:matches.map(m=>({...m,proposal:null,dispute:null})),participants:state.participants.map(p=>({id:p.id,name:p.name,status:p.status})),superAdmin:null,subscriptionsEnabled:false,customNavigationEnabled:false,assistants:{},channels:[],announcements:[]};
  return {snapshotJson:JSON.stringify(snapshot),totalPages:Math.ceil(matches.length/8),matchCount:matches.length,fingerprint:digest(matches.map(m=>[m.id,m.home,m.away]))};
 }
 const progress=(record:any,total:number)=>Math.min(total,Math.max(0,Number((record?.sentPages??(record?.state==='sent'?total:record?.telegramMessageIds?.length))||0)));
@@ -46,6 +46,16 @@ export async function requestRoundPost(state:UState,round:number,requestedBy:str
  if(process.env.MIGRATION_WRITE_FREEZE==='true')throw uError('Yuborish vaqtincha to‘xtatilgan.',503);
  if(!process.env.TELEGRAM_BOT_TOKEN)throw uError('Telegram bot tokeni sozlanmagan.',503);
  const data=roundData(state,round),db=getFirestoreDb(),ref=refFor(round);
+ const native=(db as any).requestRoundPhoto?.bind(db);
+ if(native){
+  const record=await native(round,state.revision,{...data,requestedBy});
+  if(record?.errorCode==='REVISION_CHANGED')throw uError('Turnir yangilangan. Holatni yangilab, qayta yuboring.',409);
+  if(record?.errorCode==='FINGERPRINT_CHANGED')throw uError('Bu tur tarkibi o‘zgargan. Oldingi e’lonni tekshiring.',409);
+  if(!record||record.errorCode)throw Error('INVALID_ROUND_POST_RECEIPT');
+  const view=roundPostView(record,round,data.totalPages,data.matchCount);
+  if(view.canReconcile)throw uError('Oldingi yuborish natijasi noma’lum. Avval kanalni tekshirib, yuborilgan rasmlar sonini tasdiqlang.',409);
+  return view;
+ }
  const record=await db.runTransaction(async tx=>{
   const old=(await tx.get(ref)).data();
   if(old?.fingerprint&&old.fingerprint!==data.fingerprint)throw uError('Bu tur tarkibi o‘zgargan. Oldingi e’lonni tekshiring.',409);

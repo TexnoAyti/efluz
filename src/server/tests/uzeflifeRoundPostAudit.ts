@@ -36,6 +36,14 @@ export async function verifyUzeflifeRoundPosts(){
   const queued=await call('publish-round',{round:1,expectedRevision:778});assert.equal(queued.status,202);assert.equal(queued.data.totalPages,16);assert.equal(attempts,0,'HTTP enqueue never waits for Telegram');
   const compactReceipt=(await refs[1].get()).data()!;
   assert.equal(typeof compactReceipt.snapshotJson,'string');assert.equal(compactReceipt.snapshot,undefined);
+  const renderInput=JSON.parse(compactReceipt.snapshotJson);assert.equal(renderInput.roster,undefined);assert.equal(renderInput.history,undefined);assert.equal(renderInput.matches.length,121);
+  // Unrelated notices change the namespace generation, not this tournament's
+  // revision. Native enqueue must not enter the generic CAS retry path.
+  if((db as any).requestRoundPhoto){
+   const transaction=db.runTransaction;db.runTransaction=(async()=>{throw Error('GENERIC_QUEUE_TRANSACTION_FORBIDDEN');}) as any;
+   try{const duplicate=await requestRoundPost(state,1,users[0].id);assert.equal(duplicate.state,'pending');assert.equal(duplicate.sentPages,0);}
+   finally{db.runTransaction=transaction;}
+  }
   // Existing nested-snapshot jobs remain readable and compact on the first claim.
   const {snapshotJson,...legacyV2}=compactReceipt;await refs[1].set({...legacyV2,snapshot:JSON.parse(snapshotJson)});
   const collection=db.collection;
