@@ -14,7 +14,7 @@ import { DEFAULT_AI_CONFIG, setTestConfigOverride } from '../services/telegramAi
 import { setTestGroundingOverride } from '../services/telegramAiGroundingService';
 import { clearTestRateLimitState } from '../services/telegramAiRateLimitService';
 import { clearTestAiState, handleTelegramAiMessage, type ConversationTurn } from '../services/telegramAiService';
-import { imageResultSchema, readTelegramResultPhoto } from '../services/telegramAiVision';
+import { imageResultSchema, readTelegramResultPhoto, extractTelegramResultPhoto, resultPhotoFailure, resultPhotoFailureReply } from '../services/telegramAiVision';
 import { buildAiDailyReport, deliverAiDailyReport, tashkentReportDate } from '../services/telegramAiDailyReport';
 import { getAiObservability, recordAiObservation } from '../services/telegramAiObservability';
 
@@ -82,7 +82,7 @@ setTestGroundingOverride({competitions:[],clubs:[],standings:{},fixtures:{}});
 const originalFetch=global.fetch;const sent:any[]=[];let provider=0;
 global.fetch=async(input:any,init?:any)=>{
  const url=String(input);
- if(url.includes('/getFile'))return Response.json({ok:true,result:{file_path:'photos/test.jpg',file_size:10}});
+ if(url.includes('/getFile')){assert.ok(!/\s/.test(url),'Vision token is trimmed like other Telegram calls');return Response.json({ok:true,result:{file_path:'photos/test.jpg',file_size:10}});}
  if(url.includes('/file/bot'))return new Response(new Uint8Array([255,216,255,1,2,3]));
  if(url.includes('generativelanguage.googleapis.com')){
   provider++;const body=JSON.parse(init.body);
@@ -95,7 +95,20 @@ global.fetch=async(input:any,init?:any)=>{
  throw Error('Unexpected external transport');
 };
 try{
+ process.env.TELEGRAM_BOT_TOKEN=' 777:isolated-ai \n';
  const vision=await readTelegramResultPhoto('file-test',signal);assert.match(vision,/penalti 3-1/);assert.match(vision,/Hali saqlanmadi/);
+ process.env.TELEGRAM_BOT_TOKEN='777:isolated-ai';
+ const successfulFetch=global.fetch;let quotaCalls=0;
+ global.fetch=async(input:any,init:any)=>String(input).includes('generativelanguage.googleapis.com')?(quotaCalls++,Response.json({error:{code:429,status:'RESOURCE_EXHAUSTED',message:'private-provider-debug-key'}},{status:429})):successfulFetch(input,init);
+ try{await extractTelegramResultPhoto('quota-image',signal);assert.fail('quota failure expected');}catch(error){assert.deepEqual(resultPhotoFailure(error),{stage:'provider',status:429,kind:'unavailable'});assert.match(resultPhotoFailureReply(error),/limiti tugagan/);assert.ok(!JSON.stringify(resultPhotoFailure(error)).includes('private-provider-debug-key'));}
+ assert.equal(quotaCalls,1,'A hard quota failure is not retried five times');
+ global.fetch=async()=>Response.json({ok:false,error_code:400,description:'sensitive-url'}, {status:400});
+ try{await extractTelegramResultPhoto('missing-image',signal);assert.fail('metadata failure expected');}catch(error){assert.equal(resultPhotoFailure(error).stage,'telegram_metadata');assert.match(resultPhotoFailureReply(error),/Telegram’dan/);}
+ let transientCalls=0;
+ global.fetch=async(input:any,init:any)=>String(input).includes('generativelanguage.googleapis.com')&&++transientCalls===1?Response.json({error:{code:503,status:'UNAVAILABLE',message:'temporary'}},{status:503}):successfulFetch(input,init);
+ assert.ok(await extractTelegramResultPhoto('transient-image',signal));assert.equal(transientCalls,2,'Only a transient provider error is retried once');
+ global.fetch=successfulFetch;
+
  clearTestAiState();clearTestRateLimitState();
  assert.equal((await handleTelegramAiMessage({updateId:91001,messageId:91001,chatId:5209126900,threadId:0,fromUser:{id:5209126900},text:long})).replySent,true);
  clearTestRateLimitState();

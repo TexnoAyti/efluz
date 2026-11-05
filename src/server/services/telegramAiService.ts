@@ -4,7 +4,7 @@ import { createAiTournamentReader } from './telegramAiDataService';
 import { needsAiMeaningRouter, routeAiMessageMeaning } from './telegramAiMeaningRouter';
 import { isAiWorkflowControl, getAiWorkflow } from './telegramAiWorkflow';
 import { recordAiObservation } from './telegramAiObservability';
-import { readTelegramResultPhoto } from './telegramAiVision';
+import { readTelegramResultPhoto, resultPhotoFailure, resultPhotoFailureReply } from './telegramAiVision';
 import { isNativePrivateAssistant, isPrivateMemoryReset, privateAssistantContextKey, PRIVATE_AI_MEMORY } from './telegramAiPrivateAssistant';
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
 import {generateMunfizPrivateAnswer,munfizPrivateChatEnabled,munfizPrivateChatScope} from './munfizPrivateChat';
@@ -607,7 +607,7 @@ async function handleTelegramAiMessageInternal(
       if (!nativePrivate) return { ok: true, handled: false, ignored: 'photo_owner_dm_only' };
       let text: string;
       try { const photoSignal = AbortSignal.any([rootController.signal, AbortSignal.timeout(Math.max(1, deadlineAt-Date.now()-2500))]); text = await withinAiDeadline(photoSignal,()=>readTelegramResultPhoto(payload.photoFileId!, photoSignal)); }
-      catch { await recordAiObservation(payload.updateId, 'provider'); text = 'Rasmni o‘qish hozir bajarilmadi. Jamoalar va hisobni matn bilan yuboring. Hech qanday natija saqlanmadi.'; }
+      catch (error) { console.warn('[RESULT_PHOTO_READ_UNAVAILABLE]', JSON.stringify(resultPhotoFailure(error))); await recordAiObservation(payload.updateId, 'provider'); text = resultPhotoFailureReply(error); }
       const result = await dispatchTelegramAiReply(payload, text, rootController.signal, { parse_mode: null, maxChars: 3000 });
       return { ok: result.ok, handled: true, replySent: result.replySent };
     }

@@ -1,6 +1,6 @@
 import {findResultScores,normalizeResultText,separateResultIdentities,hasResultInput,winnerUsername,onlyResultNoise} from './telegramResultText';
 import {parseAiMatchScore} from './telegramAiScore';
-import {extractTelegramResultPhoto} from './telegramAiVision';
+import {extractTelegramResultPhoto,resultPhotoFailure,resultPhotoFailureReply} from './telegramAiVision';
 import {uMatchFinished} from '../../lib/uzeflifeLeague';
 import {getFirestoreDb} from '../firebase/admin';
 import type {UState} from '../../types/uzeflife';
@@ -268,11 +268,14 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       return {handled:true,result:state};
     }
     const m = update.edited_message || update.message;
-    if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335,UZEFLIFE_RESULT_TOPIC].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.forward_origin || m.forward_from || m.forward_from_chat) return {handled:false};
+    if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335,UZEFLIFE_RESULT_TOPIC].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.is_automatic_forward) return {handled:false};
+    // A manual screenshot forward is evidence supplied by the current sender, never authorization from its original author.
+    const forwarded=Boolean(m.forward_origin||m.forward_from||m.forward_from_chat);
     let text = normalizeResultText(String(m.text || m.caption || '').trim());
     const documents=m.document&&['image/jpeg','image/png'].includes(m.document.mime_type)?[m.document]:[];
     const photos=[...(m.photo||[]),...documents].filter((p:any)=>typeof p.file_id==='string'&&p.file_id.length<=256&&(!p.file_size||p.file_size<=4*1024*1024));
     const photo=photos.at(-1);
+    if(forwarded&&!photo)return {handled:false};
     let photoRate:any=null,photoReadSummary='';
     if (!text && !photo && !update.edited_message) return {handled:false};
     const client = getAiRedisClient(signal);
@@ -286,8 +289,8 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if(!photoRate.allowed){if(photoRate.reason==='REDIS_UNAVAILABLE')throw Error('RESULT_STATE_UNAVAILABLE');return {handled:true,result:'rate_limited'};}
       const accounts=await getFirestoreDb().collection('users').where('telegramId','==',String(m.from.id)).limit(2).get();
       const canRead=accounts.docs.length===1&&!accounts.docs[0].data()?.isSuspended;
-      let image=null;if(canRead)try{const imageSignal=AbortSignal.any([signal,AbortSignal.timeout(14000)]);image=await withinAiDeadline(imageSignal,()=>(testDependencies.vision||extractTelegramResultPhoto)(photo.file_id,imageSignal));}catch{console.warn('[RESULT_PHOTO_READ_UNAVAILABLE]');image=null;}
-      if(!image&&!findResultScores(text).length){const sent=await sendTelegramMessage(m.chat.id,'Rasmdagi hisobni hozir ishonchli o‘qib bo‘lmadi. Tiniq skrinshot yoki ikki username va aniq hisobni yuboring. Natija saqlanmadi.',{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});if(!sent.ok)throw Error('RESULT_PHOTO_REPLY_NOT_SENT');return {handled:true,result:'photo_unreadable'};}
+      let image=null,photoFailure:unknown=null;if(canRead)try{const imageSignal=AbortSignal.any([signal,AbortSignal.timeout(14000)]);image=await withinAiDeadline(imageSignal,()=>(testDependencies.vision||extractTelegramResultPhoto)(photo.file_id,imageSignal));}catch(error){photoFailure=error;console.warn('[RESULT_PHOTO_READ_UNAVAILABLE]',JSON.stringify(resultPhotoFailure(error)));image=null;}
+      if(!image&&!findResultScores(text).length){const sent=await sendTelegramMessage(m.chat.id,photoFailure?resultPhotoFailureReply(photoFailure):'Rasmdagi hisobni hozir ishonchli o‘qib bo‘lmadi. Tiniq skrinshot yoki ikki username va aniq hisobni yuboring. Natija saqlanmadi.',{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});if(!sent.ok)throw Error('RESULT_PHOTO_REPLY_NOT_SENT');return {handled:true,result:'photo_unreadable'};}
       if(image){const found=findResultScores(text),h=uzeflifeTopic?(image.homeExtraTimeScore??image.homeScore):image.homeScore,a=uzeflifeTopic?(image.awayExtraTimeScore??image.awayScore):image.awayScore;
       const penalty=found.length>1&&/(?:penalti|penalty|penalties|пенальти)/i.test(text.slice(found[0].index!+found[0][0].length,found.at(-1)!.index));
       if(found.length&&(Number(found[0][1])!==h||Number(found[0][2])!==a||penalty&&image.homePenaltyScore!==null&&(Number(found.at(-1)![1])!==image.homePenaltyScore||Number(found.at(-1)![2])!==image.awayPenaltyScore))){const sent=await sendTelegramMessage(m.chat.id,`Rasm va matndagi hisoblar mos emas. Rasm: ${h}:${a}${image.homePenaltyScore!==null?' penalti '+image.homePenaltyScore+':'+image.awayPenaltyScore:''}. Matn: ${found.map(v=>v[1]+':'+v[2]).join(', ')}. Qaysi hisob to‘g‘ri? Username’lar tartibi bilan qayta yozing. Natija saqlanmadi.`,{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});if(!sent.ok)throw Error('RESULT_PHOTO_REPLY_NOT_SENT');return {handled:true,result:'photo_conflict'};}
