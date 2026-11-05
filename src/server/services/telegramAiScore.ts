@@ -1,8 +1,10 @@
+import {findResultScores,normalizeResultText} from './telegramResultText';
 /** Main/extra-time/shootout scores stay distinct. No unlabelled second score is guessed. */
 export function parseAiMatchScore(text: string) {
-  const hits = [...text.matchAll(/\b(\d{1,2})\s*[:–—−-]\s*(\d{1,2})\b/g)];
+  text=normalizeResultText(text);
+  const hits=findResultScores(text);
   const fail = (): never => { throw new Error('CLARIFY:Qaysi hisobni saqlay? Asosiy hisob va penaltilarni aniq ajrating. Masalan: Barcelona 1-1 Real Sociedad, penalti 3-1 natijasini kirit.'); };
-  if (!hits.length || hits.length > 3) return fail();
+  if (!hits.length || hits.length > 3 || hits.some(hit=>/[−-]\s*$|\d[.,]\s*$/.test(text.slice(0,hit.index))||/^[.,]\d/.test(text.slice(hit.index!+hit[0].length)))) return fail();
   const first = hits[0];
   const homeScore = Number(first[1]), awayScore = Number(first[2]);
   let homeExtraTimeScore: number | null = null, awayExtraTimeScore: number | null = null;
@@ -10,7 +12,7 @@ export function parseAiMatchScore(text: string) {
   let decidedBy = 'REGULAR_TIME';
   for (let i = 1; i < hits.length; i++) {
     const before = text.slice(hits[i-1].index! + hits[i-1][0].length, hits[i].index).toLowerCase();
-    if (/pen(?:alti\w*)?(?:\s+seriya\w*)?\s*[:=(]?\s*$/i.test(before)) {
+    if (/(?:pen(?:alti\w*)?|penalty|penalties|пенальти)(?:\s+seriya\w*)?\s*[:=(]?\s*$/i.test(before)) {
       if (homePenaltyScore !== null || (homeExtraTimeScore ?? homeScore) !== (awayExtraTimeScore ?? awayScore)) return fail();
       homePenaltyScore = Number(hits[i][1]); awayPenaltyScore = Number(hits[i][2]);
       if (homePenaltyScore === awayPenaltyScore) return fail();
@@ -21,7 +23,7 @@ export function parseAiMatchScore(text: string) {
       homeExtraTimeScore = h; awayExtraTimeScore = a; decidedBy = 'EXTRA_TIME';
     } else return fail();
   }
-  if (/\b(?:penalti\w*|pen\b)/i.test(text) && homePenaltyScore === null) return fail();
+  if (/\b(?:penalti\w*|penalty|penalties|пенальти|pen\b)/i.test(text) && homePenaltyScore === null) return fail();
   return { homeScore, awayScore, homeExtraTimeScore, awayExtraTimeScore, homePenaltyScore, awayPenaltyScore, decidedBy };
 }
 

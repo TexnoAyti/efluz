@@ -1,3 +1,6 @@
+import {findResultScores,normalizeResultText,separateResultIdentities,hasResultInput,winnerUsername,onlyResultNoise} from './telegramResultText';
+import {parseAiMatchScore} from './telegramAiScore';
+import {extractTelegramResultPhoto} from './telegramAiVision';
 import {uMatchFinished} from '../../lib/uzeflifeLeague';
 import {getFirestoreDb} from '../firebase/admin';
 import type {UState} from '../../types/uzeflife';
@@ -44,9 +47,9 @@ const roundLabel = (f: any) => f.roundName || (Number.isInteger(f.matchday) ? `$
 const fixtureLabel = (f: any) => `${f.home} — ${f.away} · ${f.competition} · ${roundLabel(f)}`;
 const contextKey = (chat: number, thread: number, user: number) => `${prefix}context:${chat}:${thread}:${user}`;
 type FollowupChoice = {id:string;matchday:number;label:string};
-type ResultContext = {token:string;state:string;text:string;kind:'fixture'|'clubs';choices:FollowupChoice[];sourceMessage:number;sourceUpdateId:number;updateId:number;expiresAt:number;deliveredMessage?:number};
-function askResult(message:string, kind:ResultContext['kind'], fixtures:any[]=[]):never {
-  throw Object.assign(Error('CLARIFY:'+message),{followup:{kind,choices:fixtures.slice(0,5).map(f=>({id:f.id,matchday:f.matchday,label:fixtureLabel(f)}))}});
+type ResultContext = {token:string;state:string;text:string;kind:'fixture'|'clubs'|'score';choices:FollowupChoice[];sourceMessage:number;sourceUpdateId:number;updateId:number;expiresAt:number;deliveredMessage?:number};
+function askResult(message:string, kind:ResultContext['kind'], fixtures:any[]=[],contextText?:string):never {
+  throw Object.assign(Error('CLARIFY:'+message),{followup:{kind,...(contextText?{text:contextText}:{}),choices:fixtures.slice(0,5).map(f=>({id:f.id,matchday:f.matchday,label:fixtureLabel(f)}))}});
 }
 export const TOPIC_RESULT_CONTEXT = `-- EFL_TOPIC_RESULT_CONTEXT_V1
 local raw = redis.call('GET', KEYS[1])
@@ -108,7 +111,7 @@ p.state = ARGV[5]
 redis.call('SET', KEYS[1], cjson.encode(p), 'EX', ARGV[6])
 return 1`;
 
-type Dependencies = { reader?: ReturnType<typeof createAiTournamentReader>; ownership?: () => Promise<{ data: OwnerNeutralClub[]; stale: boolean; available: boolean }>; authorize?: (id: number) => Promise<boolean>; execute?: typeof executeAiAdminRoute };
+type Dependencies = { reader?: ReturnType<typeof createAiTournamentReader>; ownership?: () => Promise<{ data: OwnerNeutralClub[]; stale: boolean; available: boolean }>; authorize?: (id: number) => Promise<boolean>; execute?: typeof executeAiAdminRoute;vision?:typeof extractTelegramResultPhoto };
 let testDependencies: Dependencies = {};
 export function setTestTopicResultDependencies(deps: Dependencies = {}) { if (process.env.NODE_ENV !== 'test') throw Error('TEST_ONLY'); testDependencies = deps; }
 
@@ -122,10 +125,12 @@ async function authorize(id: number) {
 /** Planning reads verified public data; member identity comes only from Telegram. */
 export async function planTopicResult(text: string, sender: number, thread: number, signal: AbortSignal, resolution?:{fixtureId:string}) {
   if(thread===UZEFLIFE_RESULT_TOPIC)return planUzeflifeTopicResult(text,sender,resolution);
-  const scores = [...text.matchAll(/\b(\d{1,2})\s*[:–—−-]\s*(\d{1,2})\b/g)];
-  if (scores.length !== 1 || isAiHypotheticalQuestion(text)) return null;
+  text=normalizeResultText(text);
+  let scores=findResultScores(text);
+  let declaredWinner=winnerUsername(text);
+  if (!hasResultInput(text) || isAiHypotheticalQuestion(text)) return null;
   const bare = /^\s*(?:(?:hisob|natija)\s*:?\s*)?\d{1,2}\s*[:–—−-]\s*\d{1,2}(?:\s+\d{1,3}\s*-?\s*tur)?[.! ]*$/i.test(text);
-  if (!bare && !isShorthandAiResultRequest(text) && detectNaturalAdminAction(text) !== 'result_edit') return null;
+
   assertSingleNaturalAdminRequest(text);
   const reader = testDependencies.reader || createAiTournamentReader(signal);
   const catalog: any = await reader.read({ dataset: 'competitions', limit: 30 });
@@ -138,6 +143,16 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   const ownership = testDependencies.ownership ? await testDependencies.ownership() : await createAiSnapshotReader(signal).read<OwnerNeutralClub>(ReadModelKeys.clubsWithOwners(season));
   if (!ownership.available || ownership.stale) throw Error('CLARIFY:Klub egaligi hozir tasdiqlanmadi. Natija rejasini taxmin qilib ochmayman.');
   const own = ownership.data.filter(c => c.ownerUserId === `user-${sender}`);
+  text=separateResultIdentities(text,ownership.data.map(c=>c.ownerUsername||''));
+  declaredWinner=winnerUsername(text);
+  const rawMentions=[...new Set([...text.matchAll(/@([A-Za-z0-9_]{5,32})/g)].map(m=>m[1].toLowerCase()))];
+  const eligibleClubs=ownership.data.filter(c=>competitions.some(comp=>!comp.leagueId||comp.leagueId===c.leagueId));
+  if(rawMentions.length){
+   if(rawMentions.length>2)askResult('Ikki o‘yinchi username’ini aniq yozing.','clubs');
+   for(const name of rawMentions){const matches=eligibleClubs.filter(c=>String(c.ownerUsername||'').replace(/^@/,'').toLowerCase()===name);if(matches.length!==1)throw Error('CLARIFY:@'+name+' uchun bu mavzuda bitta klub aniqlanmadi. Klub nomlari va turnirni yozing.');text=text.replace(new RegExp('@'+name+'(?![A-Za-z0-9_])','gi'),matches[0].name);}
+  }
+  scores=findResultScores(text);
+
   const selected = resolveAiClubs(text, ownership.data as any);
   if (selected.clarification) askResult(selected.clarification,'clubs');
   if (selected.clubs.length && selected.clubs.length !== 2) askResult(`${selected.clubs[0].name} tushunildi. Raqib nomini shu xabarga javob qilib yozing; hisobni qayta yozish shart emas.`,'clubs');
@@ -191,12 +206,17 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   if (!own.some(c => [f.homeClubId,f.awayClubId].includes(c.id)) && !isAiAdminActor(sender)) throw Error('CLARIFY:Natijani faqat shu o‘yindagi klub egasi yuborishi mumkin.');
   const firstClub = selected.clubs[0] || (own.filter(c => [f.homeClubId,f.awayClubId].includes(c.id)).length === 1 ? own.find(c => [f.homeClubId,f.awayClubId].includes(c.id)) : null);
   if (!firstClub) throw Error('CLARIFY:Hisob tartibi noaniq. Ikkala jamoa nomini hisob bilan yozing.');
-  const [a,b] = [Number(scores[0][1]),Number(scores[0][2])];
+  if(!scores.length)askResult(`${fixtureLabel(f)} topildi. @${declaredWinner} g‘olib deb yozilgan, lekin aniq hisob yo‘q. Juftlik tartibida hisobni javob qilib yozing, masalan 1:2.`, 'score',[f],`${f.home} vs ${f.away} @${declaredWinner} win ${f.matchday}-tur`);
+  const parsedScore=parseAiMatchScore(text);
+  const [a,b]=[parsedScore.homeScore,parsedScore.awayScore];
   const c = competitions.find(c => c.id === f.competitionId)!;
-  if (c.type !== 'LEAGUE' && a === b) throw Error('CLARIFY:Kubokdagi durangda g‘olib yoki penalti natijasini ham aniqlashtirish kerak. Bu hisobni avtomatik yakuniy deb tasdiqlamayman.');
+  if (c.type !== 'LEAGUE' && a === b && parsedScore.homePenaltyScore===null && (parsedScore.homeExtraTimeScore??a)===(parsedScore.awayExtraTimeScore??b)) throw Error('CLARIFY:Kubokdagi durangda g‘olib yoki penalti natijasini ham aniqlashtirish kerak. Bu hisobni avtomatik yakuniy deb tasdiqlamayman.');
   const homeScore = firstClub.id === f.homeClubId ? a : b, awayScore = firstClub.id === f.homeClubId ? b : a;
+  if(c.type==='LEAGUE'&&parsedScore.homePenaltyScore!==null)throw Error('CLARIFY:Liga o‘yinida penaltilar bo‘lmaydi.');
+  if(declaredWinner){const winner=eligibleClubs.find(c=>String(c.ownerUsername||'').replace(/^@/,'').toLowerCase()===declaredWinner);const left=parsedScore.homePenaltyScore??parsedScore.homeExtraTimeScore??a,right=parsedScore.awayPenaltyScore??parsedScore.awayExtraTimeScore??b;const actual=left===right?null:left>right?firstClub.id:(firstClub.id===f.homeClubId?f.awayClubId:f.homeClubId);if(!winner||winner.id!==actual)throw Error('CLARIFY:Yozilgan g‘olib va hisob mos emas. Hisobni username tartibida tekshiring.');}
+  const reverse=firstClub.id!==f.homeClubId;
   const expectedFixture = { competitionId: f.competitionId, homeClubId: f.homeClubId, awayClubId: f.awayClubId, status: f.status, updatedAt: f.updatedAt ?? null };
-  return { fixture: f, expectedFixture, plan: { action: 'result_edit', targetId: f.id, body: { homeScore, awayScore, status: 'CONFIRMED', expectedFixture } } as AdminPlan };
+  return { fixture: f, expectedFixture, plan: { action: 'result_edit', targetId: f.id, body: { homeScore, awayScore,homeExtraTimeScore:reverse?parsedScore.awayExtraTimeScore:parsedScore.homeExtraTimeScore,awayExtraTimeScore:reverse?parsedScore.homeExtraTimeScore:parsedScore.awayExtraTimeScore,homePenaltyScore:reverse?parsedScore.awayPenaltyScore:parsedScore.homePenaltyScore,awayPenaltyScore:reverse?parsedScore.homePenaltyScore:parsedScore.awayPenaltyScore, status: 'CONFIRMED', expectedFixture } } as AdminPlan };
 }
 
 /** Called only after the webhook secret and shared update lease are verified. */
@@ -249,14 +269,34 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     }
     const m = update.edited_message || update.message;
     if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335,UZEFLIFE_RESULT_TOPIC].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.forward_origin || m.forward_from || m.forward_from_chat) return {handled:false};
-    let text = String(m.text || m.caption || '').trim();
-    if (!text && !update.edited_message) return {handled:false};
-    if(uzeflifeTopic&&!update.edited_message&&!/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text))return {handled:false};
+    let text = normalizeResultText(String(m.text || m.caption || '').trim());
+    const documents=m.document&&['image/jpeg','image/png'].includes(m.document.mime_type)?[m.document]:[];
+    const photos=[...(m.photo||[]),...documents].filter((p:any)=>typeof p.file_id==='string'&&p.file_id.length<=256&&(!p.file_size||p.file_size<=4*1024*1024));
+    const photo=photos.at(-1);
+    let photoRate:any=null,photoReadSummary='';
+    if (!text && !photo && !update.edited_message) return {handled:false};
     const client = getAiRedisClient(signal);
     if (!client) throw Error('RESULT_STATE_UNAVAILABLE');
+    const latestKey = sourceKey(m.chat.id,m.message_thread_id,m.message_id);
+    if (update.edited_message) await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey('invalidated'),latestKey],['',update.update_id,'1',ttl,JSON.stringify({token:null,updateId:update.update_id})]);
+    const previous: any = await client.get(latestKey);
+    if ((photo||hasResultInput(text)||update.edited_message)&&(previous?.token || previous?.updateId > update.update_id)) return {handled:true,result:'duplicate_source'};
+    if(photo){
+      photoRate=await checkAndIncrementAiRateLimits({chatId:m.chat.id,threadId:m.message_thread_id,userId:m.from.id,userLimitPerMin:5,topicLimitPerMin:60,maxDailyRequests:500,countDaily:true,signal});
+      if(!photoRate.allowed){if(photoRate.reason==='REDIS_UNAVAILABLE')throw Error('RESULT_STATE_UNAVAILABLE');return {handled:true,result:'rate_limited'};}
+      const accounts=await getFirestoreDb().collection('users').where('telegramId','==',String(m.from.id)).limit(2).get();
+      const canRead=accounts.docs.length===1&&!accounts.docs[0].data()?.isSuspended;
+      let image=null;if(canRead)try{const imageSignal=AbortSignal.any([signal,AbortSignal.timeout(14000)]);image=await withinAiDeadline(imageSignal,()=>(testDependencies.vision||extractTelegramResultPhoto)(photo.file_id,imageSignal));}catch{console.warn('[RESULT_PHOTO_READ_UNAVAILABLE]');image=null;}
+      if(!image&&!findResultScores(text).length){const sent=await sendTelegramMessage(m.chat.id,'Rasmdagi hisobni hozir ishonchli o‘qib bo‘lmadi. Tiniq skrinshot yoki ikki username va aniq hisobni yuboring. Natija saqlanmadi.',{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});if(!sent.ok)throw Error('RESULT_PHOTO_REPLY_NOT_SENT');return {handled:true,result:'photo_unreadable'};}
+      if(image){const found=findResultScores(text),h=uzeflifeTopic?(image.homeExtraTimeScore??image.homeScore):image.homeScore,a=uzeflifeTopic?(image.awayExtraTimeScore??image.awayScore):image.awayScore;
+      const penalty=found.length>1&&/(?:penalti|penalty|penalties|пенальти)/i.test(text.slice(found[0].index!+found[0][0].length,found.at(-1)!.index));
+      if(found.length&&(Number(found[0][1])!==h||Number(found[0][2])!==a||penalty&&image.homePenaltyScore!==null&&(Number(found.at(-1)![1])!==image.homePenaltyScore||Number(found.at(-1)![2])!==image.awayPenaltyScore))){const sent=await sendTelegramMessage(m.chat.id,`Rasm va matndagi hisoblar mos emas. Rasm: ${h}:${a}${image.homePenaltyScore!==null?' penalti '+image.homePenaltyScore+':'+image.awayPenaltyScore:''}. Matn: ${found.map(v=>v[1]+':'+v[2]).join(', ')}. Qaysi hisob to‘g‘ri? Username’lar tartibi bilan qayta yozing. Natija saqlanmadi.`,{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});if(!sent.ok)throw Error('RESULT_PHOTO_REPLY_NOT_SENT');return {handled:true,result:'photo_conflict'};}
+      if(found.length===1&&image.homePenaltyScore!==null)text+=' penalti '+image.homePenaltyScore+':'+image.awayPenaltyScore;
+      if(!found.length){const score=`${h}:${a}${!uzeflifeTopic&&image.homeExtraTimeScore!=null?' qo‘shimcha vaqt '+image.homeExtraTimeScore+':'+image.awayExtraTimeScore:''}${image.homePenaltyScore!==null?' penalti '+image.homePenaltyScore+':'+image.awayPenaltyScore:''}`;photoReadSummary=`Rasmdan: ${image.home} ${score} ${image.away}`;const caption=separateResultIdentities(text,[image.home,image.away]);const norm=' '+normalizeAiEntity(caption)+' ';const both=text&&[image.home,image.away].every(name=>norm.includes(' '+normalizeAiEntity(name)+' '));if(text&&!both&&/@/.test(text)){const sent=await sendTelegramMessage(m.chat.id,photoReadSummary+'\n\nRasmdagi chap va o‘ng tomon nomlari yozilgan username’larga aniq mos kelmadi. Chap/o‘ng tartibida ikki username va hisobni yozing. Natija saqlanmadi.',{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});if(!sent.ok)throw Error('RESULT_PHOTO_REPLY_NOT_SENT');return {handled:true,result:'photo_identity_ambiguous'};}text=photoReadSummary+(both?' '+caption:'');}}
+    }
     const ctxKey = contextKey(m.chat.id,m.message_thread_id,m.from.id);
     let continuation:ResultContext|null=null, resolution:{fixtureId:string}|undefined;
-    if (!update.edited_message && !/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text)) {
+    if (!update.edited_message && !hasResultInput(text)) {
       const context=await client.get<ResultContext>(ctxKey);
       if (!context || context.state!=='awaiting' || context.expiresAt<=Date.now() || !context.deliveredMessage) return {handled:false};
       const replied=m.reply_to_message;
@@ -288,15 +328,16 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       }
       continuation=context;
     }
-    const latestKey = sourceKey(m.chat.id,m.message_thread_id,m.message_id);
-    if (update.edited_message) await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey('invalidated'),latestKey],['',update.update_id,'1',ttl,JSON.stringify({token:null,updateId:update.update_id})]);
-    if (!text || !/\d{1,2}\s*[:–—−-]\s*\d{1,2}/.test(text)) return {handled:false};
-    const previous: any = await client.get(latestKey);
-    if (previous?.token || previous?.updateId > update.update_id) return {handled:true,result:'duplicate_source'};
+    const answerScores=findResultScores(text),answerNoise=[...answerScores].reverse().reduce((value,m)=>value.slice(0,m.index)+' '+value.slice(m.index!+m[0].length),text);
+    if(!continuation&&!photo&&!update.edited_message&&answerScores.length>0&&onlyResultNoise(answerNoise)&&!/@/.test(text)){
+      const context=await client.get<ResultContext>(ctxKey);
+      if(context?.kind==='score'&&context.state==='awaiting'&&context.expiresAt>Date.now()&&context.deliveredMessage&&(!m.reply_to_message||[context.deliveredMessage,context.sourceMessage].includes(m.reply_to_message.message_id))){text=context.text+' '+(!requestedMatchday(context.text)&&context.choices.length===1?context.choices[0].matchday+'-tur ':'')+text;resolution=context.choices.length===1?{fixtureId:context.choices[0].id}:undefined;continuation=context;}
+    }
+    if (!text || !hasResultInput(text)) return {handled:false};
     // Overlap read-only fixture planning with quota admission. Publishing
     // remains gated by a successful quota result.
     const planning=uzeflifeTopic&&!continuation?planTopicResult(text,m.from.id,m.message_thread_id,signal,resolution).then(value=>({value}),error=>({error})):null;
-    const rate = await checkAndIncrementAiRateLimits({ chatId:m.chat.id,threadId:m.message_thread_id,userId:m.from.id,userLimitPerMin:5,topicLimitPerMin:60,maxDailyRequests:500,countDaily:false,signal });
+    const rate = photoRate || await checkAndIncrementAiRateLimits({ chatId:m.chat.id,threadId:m.message_thread_id,userId:m.from.id,userLimitPerMin:5,topicLimitPerMin:60,maxDailyRequests:500,countDaily:false,signal });
     if (!rate.allowed) {
       if(planning)await planning;
       if(rate.reason==='REDIS_UNAVAILABLE')throw Error('RESULT_STATE_UNAVAILABLE');
@@ -312,14 +353,14 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if (!String(error.message).startsWith('CLARIFY:')) throw error;
       let context:ResultContext|undefined;
       if (error.followup) {
-        context={token:randomBytes(12).toString('hex'),state:'awaiting',text,kind:error.followup.kind,choices:error.followup.choices,sourceMessage:continuation?.sourceMessage||m.message_id,sourceUpdateId:continuation?.sourceUpdateId||update.update_id,updateId:update.update_id,expiresAt:Date.now()+900000};
+        context={token:randomBytes(12).toString('hex'),state:'awaiting',text:error.followup.text||text,kind:error.followup.kind,choices:error.followup.choices,sourceMessage:continuation?.sourceMessage||m.message_id,sourceUpdateId:continuation?.sourceUpdateId||update.update_id,updateId:update.update_id,expiresAt:Date.now()+900000};
         const published=await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['publish',JSON.stringify(context)]);
         if (Number(published)!==1) return {handled:true,result:'duplicate_source'};
       } else if(!uzeflifeTopic) {
         const old=await client.get<ResultContext>(ctxKey);
         if(old && old.updateId<=update.update_id)await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['cancel',old.token]);
       }
-      const sent=await sendTelegramMessage(m.chat.id,error.message.slice(8),{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});
+      const sent=await sendTelegramMessage(m.chat.id,(photoReadSummary?photoReadSummary+'\n\n':'')+error.message.slice(8),{parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});
       if(context && sent.ok && Number.isSafeInteger(sent.result?.message_id))await client.eval(TOPIC_RESULT_CONTEXT,[ctxKey],['deliver',context.token,sent.result.message_id]);
       return {handled:true,result:'clarification'};
     }

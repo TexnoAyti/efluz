@@ -168,10 +168,10 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           ).catch(() => undefined);
         }
         response = { ok: true, handled: 'premium_successful_payment', result };
-      } else if (message?.photo?.length && message.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
+      } else if ((message?.photo?.length || message?.document&&['image/jpeg','image/png'].includes(message.document.mime_type)) && message.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
         message.chat.id === message.from.id && !message.sender_chat && !message.from.is_bot &&
         !message.forward_origin && !message.forward_from && !message.forward_from_chat) {
-        const photos = message.photo.filter((p: any) => typeof p.file_id === 'string' && p.file_id.length <= 256 && (!p.file_size || p.file_size <= 4 * 1024 * 1024));
+        const photos = [...(message.photo||[]),...(message.document&&['image/jpeg','image/png'].includes(message.document.mime_type)?[message.document]:[])].filter((p: any) => typeof p.file_id === 'string' && p.file_id.length <= 256 && (!p.file_size || p.file_size <= 4 * 1024 * 1024));
         const photo = photos.at(-1);
         if (photo) {
           const result = await handleTelegramAiMessage({ updateId: update.update_id, messageId: message.message_id,
