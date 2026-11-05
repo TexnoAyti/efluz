@@ -1,6 +1,6 @@
 import { CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
 import { getSeasonPreparation } from '../../lib/seasonPreparation';
-import { previewPreparedLeagueSchedule } from '../services/seasonPreparationService';
+import { previewPreparedLeagueSchedule, previewPreparedCupBracket } from '../services/seasonPreparationService';
 import { Router, Request, Response } from 'express';
 import { getAllSeasonsFirestore, getActiveSeasonFirestore } from '../firebase/firestoreStore';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
@@ -45,6 +45,13 @@ seasonsRouter.get('/preparation/:leagueId/fixtures', (req: Request, res: Respons
     return;
   }
   res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json(preview);
+});
+
+seasonsRouter.get('/preparation/cups/:cupId/bracket', (req: Request, res: Response) => {
+  const preview=previewPreparedCupBracket(req.params.cupId);
+  if(!preview){res.status(404).json({error:'PREPARED_CUP_NOT_FOUND'});return;}
+  res.setHeader('Cache-Control','public, max-age=300');
   res.json(preview);
 });
 

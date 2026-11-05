@@ -4,9 +4,9 @@ import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import './season-preparation.css';
 
 const copy = {
-  uz: { title: 'EFL · 2-mavsum', status: 'Tayyorgarlik', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub tanlash hali ochilmagan.', pending: 'Klub tarkiblari va ikki davrali liga formati tayyor. Kuboklar, teng ochko qoidalari, Yevropa saralashi va boshlanish sanasi hali tayyorlanmoqda.', details: 'Ligalar rejasini ko‘rish' },
-  ru: { title: 'EFL · Сезон 2', status: 'Подготовка', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Выбор клуба на сезон 2 ещё не открыт.', pending: 'Составы и двухкруговой формат готовы. Кубки, правила равенства очков, отбор в Европу и дата старта ещё готовятся.', details: 'Посмотреть план лиг' },
-  en: { title: 'EFL · Season 2', status: 'In preparation', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 is ongoing. Club selection for season 2 is not open yet.', pending: 'Club rosters and the home-and-away league format are ready. Cups, tiebreak rules, European qualification and start date are still being prepared.', details: 'View league plan' },
+  uz: { title: 'EFL · 2-mavsum', status: 'Tayyorgarlik', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub tanlash hali ochilmagan.', pending: 'Klub tarkiblari, liga qoidalari va EFL kubok rejasi tayyor. UEFA saralashi va mavsumni ishga tushirish hali tayyorlanmoqda.', details: 'Ligalar rejasini ko‘rish' },
+  ru: { title: 'EFL · Сезон 2', status: 'Подготовка', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Выбор клуба на сезон 2 ещё не открыт.', pending: 'Составы, правила лиг и план кубков EFL готовы. Отбор УЕФА и запуск сезона ещё готовятся.', details: 'Посмотреть план лиг' },
+  en: { title: 'EFL · Season 2', status: 'In preparation', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 is ongoing. Club selection for season 2 is not open yet.', pending: 'Club rosters, league rules and the EFL cup plan are ready. UEFA qualification and season activation are still being prepared.', details: 'View league plan' },
 };
 
 const internationalCopy = {
@@ -23,6 +23,11 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
     uz: { clubs: 'klub', rounds: 'tur', matches: 'o‘yin', season: 'Real mavsum', verified: 'Tekshirilgan', source: 'Rasmiy manba', format: 'Ikki davra · uy va safar', ranking:'Teng ochkoda', review:'Yakuniy tekshiruv kerak', cups:'Milliy kuboklar', europe:'UEFA turnirlari', missing:'Qatnashchilar tekshirilmoqda', entries:'qatnashchi', perClub:'Har klubga', slots:'Saralash yo‘llari rasmiy UEFA ro‘yxati bo‘yicha tayyorlanmoqda.' },
     ru: { clubs: 'клубов', rounds: 'туров', matches: 'матчей', season: 'Реальный сезон', verified: 'Проверено', source: 'Официальный источник', format: 'Два круга · дома и в гостях',ranking:'При равенстве очков',review:'Нужна финальная проверка',cups:'Национальные кубки',europe:'Турниры УЕФА',missing:'Участники проверяются',entries:'участников',perClub:'На клуб',slots:'Пути квалификации готовятся по официальному списку УЕФА.' },
     en: { clubs: 'clubs', rounds: 'rounds', matches: 'matches', season: 'Real season', verified: 'Verified', source: 'Official source', format: 'Two legs · home and away',ranking:'Level on points',review:'Final review required',cups:'Domestic cups',europe:'UEFA competitions',missing:'Entrants under review',entries:'entrants',perClub:'Per club',slots:'Qualification paths are being prepared from the official UEFA access list.' },
+  }[language];
+  const cupCopy = {
+    uz:{custom:'EFL formati',source:'EFL kubok qoidasi',single:'Har juftlikda 1 o‘yin',playIn:'Saralash',bye:'1/8 finalga bevosita',direct:'Barcha 16 klub 1/8 finaldan',pending:'Qur’a 2-mavsum liga jadvali asosida tuziladi.'},
+    ru:{custom:'Формат EFL',source:'Правило кубков EFL',single:'Один матч в паре',playIn:'Предварительный раунд',bye:'Напрямую в 1/8',direct:'Все 16 клубов начинают с 1/8',pending:'Посев по таблице лиги сезона 2.'},
+    en:{custom:'EFL format',source:'EFL cup rules',single:'One match per tie',playIn:'Play-in',bye:'Direct to last 16',direct:'All 16 clubs start in the last 16',pending:'Draw seeding uses the season 2 league standings.'},
   }[language];
   const metrics:Record<string,string> = {
     uz:{goalDifference:'gollar farqi',goalsFor:'urilgan gollar',won:'g‘alabalar',awayGoals:'safardagi gollar',awayWins:'safardagi g‘alabalar',h2hForfeits:'o‘zaro texnik mag‘lubiyatlar',h2hPoints:'o‘zaro ochkolar',h2hGoalDifference:'o‘zaro gollar farqi',h2hGoalsFor:'o‘zaro urilgan gollar',h2hAwayGoals:'o‘zaro safar gollari',discipline:'intizom',forfeits:'texnik mag‘lubiyatlar'},
@@ -65,7 +70,7 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
       <ul>{EFL_SECOND_SEASON.europeanCompetitions.map(comp=><li key={comp.id} className="season-preparation-rule-entry"><strong>{comp.name}</strong><span>{`${comp.totalTeams} ${labels.clubs} · ${labels.perClub} ${comp.matchesPerTeam} ${labels.matches}`}</span><span>{labels.missing}</span><a href={comp.source} target="_blank" rel="noopener noreferrer">{labels.source}</a></li>)}</ul>
     </details>
     <details className="season-preparation-regulations"><summary>{labels.cups}</summary>
-      <ul>{EFL_SECOND_SEASON.domesticCups.map(cup=><li key={cup.id} className="season-preparation-rule-entry"><strong>{cup.name}</strong><span>{cup.expectedEntrants?`${cup.expectedEntrants} ${labels.entries}`:labels.review}</span><span>{labels.missing}</span><a href={cup.source} target="_blank" rel="noopener noreferrer">{labels.source}</a></li>)}</ul>
+      <ul>{EFL_SECOND_SEASON.domesticCups.map(cup=><li key={cup.id} className="season-preparation-rule-entry"><strong>{cup.name}</strong><span>{`${cupCopy.custom} · ${cup.expectedEntrants} ${labels.entries} · ${cup.totalFixtures} ${labels.matches}`}</span><span>{cupCopy.single}</span><span>{cup.preliminaryMatches?`${cupCopy.bye}: 1–${cup.byeThroughPosition}; ${cupCopy.playIn}: ${cup.playInFromPosition}–${cup.expectedEntrants} (${cup.preliminaryMatches} ${labels.matches})`:cupCopy.direct}</span><span>{cupCopy.pending}</span><a href={cup.source} target="_blank" rel="noopener noreferrer">{cupCopy.source}</a></li>)}</ul>
     </details>
     <p className="season-preparation-pending">{c.pending}</p>
   </>;

@@ -69,7 +69,7 @@ export const EFL_SECOND_SEASON = {
       },
     },
   ],
-  pendingDecisions: ['CUP_PARTICIPANTS', 'UEFA_ACCESS_LIST', 'START_DATE', 'RUNTIME_TRANSITION', 'ACTIVATION'],
+  pendingDecisions: ['UEFA_ACCESS_LIST', 'START_DATE', 'RUNTIME_TRANSITION', 'ACTIVATION'],
 } as const;
 
 export function getSeasonPreparation(sourceSeasonId: string) {

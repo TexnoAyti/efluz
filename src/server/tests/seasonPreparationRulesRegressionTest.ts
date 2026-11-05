@@ -3,7 +3,7 @@ import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
 import { PREPARED_TIE_RULES } from '../../content/season2Rules';
 import { rankPreparedLeagueResults, type PreparedResult } from '../services/preparedStandingsService';
 import { readSeasonPreparationWorkflow,saveSeasonPreparationDraft,preparationReadiness } from '../services/seasonPreparationWorkflow';
-import { previewPreparedLeagueSchedule } from '../services/seasonPreparationService';
+import { previewPreparedLeagueSchedule, previewPreparedCupBracket } from '../services/seasonPreparationService';
 import { getFirestoreDb } from '../firebase/admin';
 import { adminSeasonOperationsRouter } from '../routes/seasonOperations.routes';
 const seasonId=EFL_SECOND_SEASON.id;
@@ -48,7 +48,39 @@ assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}
 assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}).standings[0].id,pl.at(-1));
 for(const comp of EFL_SECOND_SEASON.europeanCompetitions){assert.equal(comp.totalTeams,36);assert.equal(comp.totalFixtures,comp.code==='UECL'?108:144);assert.equal(comp.qualificationSlots,null);assert.equal(comp.participantClubIds.length,0);}
 assert.equal(EFL_SECOND_SEASON.domesticCups.length,9);
-assert.ok(EFL_SECOND_SEASON.domesticCups.every(cup=>cup.participantClubIds.length===0&&cup.participantStatus==='MISSING'));
+for(const cup of EFL_SECOND_SEASON.domesticCups){
+  assert.equal(cup.format,'EFL_CUSTOM');
+  assert.equal(cup.participantStatus,'READY');
+  assert.deepEqual(cup.participantClubIds,ids(cup.leagueId),'Only the verified clubs of this league participate');
+  assert.equal(cup.expectedEntrants,cup.participantClubIds.length);
+  assert.equal(cup.preliminaryMatches,cup.expectedEntrants-16);
+  assert.equal(cup.playInTeams+cup.byeTeams,cup.expectedEntrants);
+  assert.equal(cup.legsPerTie,1);
+  const preview=previewPreparedCupBracket(cup.id)!;
+  assert.equal(preview.persisted,false);
+  assert.equal(preview.drawPending,true);
+  assert.equal(preview.totalFixtures,cup.expectedEntrants-1);
+  assert.equal(new Set(preview.fixtures.map(f=>f.round)).size,cup.totalRounds);
+  const ranks:number[]=[],consumed:string[]=[];
+  const winners=new Map<string,number>();
+  for(const fixture of preview.fixtures){
+    const entrants=[fixture.home,fixture.away].map(slot=>{
+      if(slot.leaguePosition!==null){ranks.push(slot.leaguePosition);return slot.leaguePosition;}
+      assert.ok(slot.winnerOfFixtureId&&winners.has(slot.winnerOfFixtureId),'Sources must be earlier fixtures');
+      consumed.push(slot.winnerOfFixtureId!);
+      return winners.get(slot.winnerOfFixtureId!)!;
+    });
+    assert.notEqual(entrants[0],entrants[1]);
+    winners.set(fixture.id,Math.min(...entrants));
+  }
+  assert.deepEqual(ranks.sort((a,b)=>a-b),Array.from({length:cup.expectedEntrants},(_,i)=>i+1),'Every club enters exactly once');
+  assert.equal(new Set(consumed).size,consumed.length,'A winner advances only once');
+  assert.equal(consumed.length,preview.fixtures.length-1,'Every non-final winner advances');
+  assert.equal(winners.get(preview.fixtures.at(-1)!.id),1,'A complete valid path reaches the final');
+}
+assert.equal(previewPreparedCupBracket('comp-fa-cup-2026'),null,'Season-one cups cannot enter the preparation path');
+assert.ok(!preparationReadiness().blockers.some(b=>b.code.startsWith('CUP_')),'No invented lower-division requirements');
+assert.ok(preparationReadiness().blockers.some(b=>b.code==='SUPER_CUP_PLANS_REQUIRED'),'Other incomplete work stays visible');
 assert.equal(preparationReadiness().counts.verifiedRankingRules,9);
 const uz=ids('league-uzbekistan-superliga');
 const uzFixtures=[result(uz,0,1,3,0),result(uz,1,0,4,0),result(uz,0,2,4,0),result(uz,1,2,2,0)].map(f=>({...f,technicalLossClubId:null as string|null}));

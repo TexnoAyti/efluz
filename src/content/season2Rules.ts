@@ -1,3 +1,5 @@
+import { SEASON_TWO_ROSTERS } from './season2Rosters';
+
 /** Real-world rule references for the isolated second-season preparation workbench. */
 export type TieMetric = 'points'|'goalDifference'|'goalsFor'|'won'|'awayGoals'|'awayWins'|'h2hPoints'|'h2hGoalDifference'|'h2hGoalsFor'|'h2hAwayGoals'|'h2hForfeits'|'discipline'|'forfeits'|'previousPosition';
 export interface PreparedTieRule {
@@ -22,17 +24,35 @@ export const PREPARED_TIE_RULES: Record<string,PreparedTieRule> = {
   'league-turkey-super-lig': { criteria:['points','h2hPoints','h2hGoalDifference','goalDifference','goalsFor','forfeits'],multiTeamCriteria:['points','h2hPoints','h2hGoalDifference','h2hGoalsFor','goalDifference','goalsFor','forfeits'],resolution:'PLAYOFF',verification:'VERIFIED',source:'https://www.tff.org/Resources/TFF/Documents/TALIMATLAR/Futbol-Musabaka-Talimati.pdf',notes:'FMT 9-modda: mini-jadval qaytadan hisoblanmaydi, o‘zaro safar goli ustunligi yo‘q; o‘zaro uchrashuvlar tugaguncha umumiy mezonlar.' },
 };
 
+/** EFL custom cups: league clubs only, seeded play-in followed by a single-leg last 16. */
 export const PREPARED_DOMESTIC_CUPS = [
-  { id:'comp-fa-cup-2027',leagueId:'league-premier-league',name:'FA Cup',format:'STAGED_KNOCKOUT',expectedEntrants:743,verification:'VERIFIED',source:'https://www.thefa.com/news/2026/jun/26/clubs-accepted-exemptions-mens-fa-cup-fa-youth-fa-trophy-fa-vase-2026-27',notes:'Saralash va bosqichma-bosqich kirish; Premier League klublari uchinchi asosiy turdan.' },
-  { id:'comp-copa-del-rey-2027',leagueId:'league-la-liga',name:'Copa del Rey',format:'STAGED_KNOCKOUT',expectedEntrants:null,verification:'REVIEW_REQUIRED',source:'https://rfef.es/es/noticias/conocida-la-distribucion-de-los-grupos-para-el-sorteo-de-la-primera-eliminatoria',notes:'Asosiy bosqichda 116 klub, birinchi turda 112; oldingi saralashni qo‘shgan umumiy ro‘yxat alohida tekshiriladi. Superkubok vakillari keyin kiradi.' },
-  { id:'comp-coppa-italia-2027',leagueId:'league-serie-a',name:'Coppa Italia',format:'STAGED_KNOCKOUT',expectedEntrants:44,verification:'VERIFIED',source:'https://www.legaseriea.it/coppa-italia/news/la-coppa-italia-frecciarossa-entra-nel-vivo-con-i-trentaduesimi',notes:'20 Serie A, 20 Serie B, 4 Serie C; bosqichma-bosqich kirish.' },
-  { id:'comp-dfb-pokal-2027',leagueId:'league-bundesliga',name:'DFB-Pokal',format:'KNOCKOUT',expectedEntrants:64,verification:'VERIFIED',source:'https://www.dfb.de/maenner/wettbewerbe/dfb-pokal/modus',notes:'Yuqori ikki liga, 3-liga va hududiy kubok vakillari; quyi liga klublari ham zarur.' },
-  { id:'comp-coupe-de-france-2027',leagueId:'league-ligue-1',name:'Coupe de France',format:'STAGED_KNOCKOUT',expectedEntrants:null,verification:'REVIEW_REQUIRED',source:'https://www.fff.fr/11-les-reglements/390-les-reglements-des-competitions-nationales.html',notes:'Hududiy saralash va turli bosqichdan qo‘shilish; umumiy qatnashchilar va so‘nggi bosqich reglamenti tekshiriladi.' },
-  { id:'comp-uzbekistan-cup-2027',leagueId:'league-uzbekistan-superliga',name:'O‘zbekiston kubogi',format:'GROUPS_KNOCKOUT',expectedEntrants:null,verification:'REVIEW_REQUIRED',source:'https://pfl.uz/data/documents',notes:'2026 guruh bosqichi 32 klub; saralash, quyi liga tarkiblari va yakuniy reglament tekshiriladi.' },
-  { id:'comp-king-cup-2027',leagueId:'league-saudi-pro-league',name:'King Cup',format:'KNOCKOUT',expectedEntrants:null,verification:'REVIEW_REQUIRED',source:'https://saff.com.sa/en/files.php',notes:'2026/27 King Cup reglamenti topildi; PDF va barcha quyi liga vakillari tasdiqlanishi kerak.' },
-  { id:'comp-emperors-cup-2027',leagueId:'league-j1',name:'Emperor’s Cup',format:'STAGED_KNOCKOUT',expectedEntrants:88,verification:'VERIFIED',source:'https://www.jfa.jp/match/emperorscup_2026/about.html',notes:'20 J1, 20 J2, 47 hudud vakili va 1 havaskor seed. J1/J2 ikkinchi turdan.' },
-  { id:'comp-turkey-cup-2027',leagueId:'league-turkey-super-lig',name:'Türkiye Kupası',format:'STAGED_KNOCKOUT',expectedEntrants:null,verification:'REVIEW_REQUIRED',source:'https://www.tff.org/default.aspx?ftxtID=51078&pageID=687',notes:'2026/27 statuti va turlarga kirish ro‘yxatini to‘liq tekshirish kerak.' },
-].map(cup=>({...cup,participantClubIds:[] as string[],participantStatus:'MISSING' as const}));
+  {id:'comp-fa-cup-2027',leagueId:'league-premier-league',name:'FA Cup'},
+  {id:'comp-copa-del-rey-2027',leagueId:'league-la-liga',name:'Copa del Rey'},
+  {id:'comp-coppa-italia-2027',leagueId:'league-serie-a',name:'Coppa Italia'},
+  {id:'comp-dfb-pokal-2027',leagueId:'league-bundesliga',name:'DFB-Pokal'},
+  {id:'comp-coupe-de-france-2027',leagueId:'league-ligue-1',name:'Coupe de France'},
+  {id:'comp-uzbekistan-cup-2027',leagueId:'league-uzbekistan-superliga',name:'O‘zbekiston kubogi'},
+  {id:'comp-king-cup-2027',leagueId:'league-saudi-pro-league',name:'King Cup'},
+  {id:'comp-emperors-cup-2027',leagueId:'league-j1',name:'Emperor’s Cup'},
+  {id:'comp-turkey-cup-2027',leagueId:'league-turkey-super-lig',name:'Türkiye Kupası'},
+].map(cup=>{
+  const clubs=SEASON_TWO_ROSTERS[cup.leagueId].clubs;
+  const total=clubs.length;
+  if(![16,18,20].includes(total))throw new Error('UNSUPPORTED_EFL_CUP_SIZE');
+  const preliminaryMatches=total-16;
+  return {
+    ...cup,format:'EFL_CUSTOM' as const,expectedEntrants:total,
+    verification:'VERIFIED' as const,participantStatus:'READY' as const,
+    participantClubIds:clubs.map(club=>club.id),
+    source:'https://github.com/TexnoAyti/efluz/blob/main/src/server/routes/adminCupDraw.routes.ts',
+    seeding:'LEAGUE_STANDINGS' as const,seedingStatus:'AWAITING_SEASON_TWO_STANDINGS' as const,
+    preliminaryMatches,playInTeams:preliminaryMatches*2,byeTeams:32-total,
+    totalRounds:preliminaryMatches?5:4,totalFixtures:total-1,
+    legsPerTie:1,roundOf16Teams:16,
+    // Positions 1–12 (20 teams) or 1–14 (18 teams) skip the play-in.
+    byeThroughPosition:32-total,playInFromPosition:preliminaryMatches?33-total:null,
+  };
+});
 
 export const PREPARED_UEFA_COMPETITIONS = [
   {id:'comp-champions-league-2027',code:'UCL',name:'UEFA Champions League',matchesPerTeam:8,pots:4,source:'https://www.uefa.com/uefachampionsleague/news/02a6-20d57cfcd03e-407c22a7f465-1000--2026-27-champions-league-teams-draws-format-final/'},
