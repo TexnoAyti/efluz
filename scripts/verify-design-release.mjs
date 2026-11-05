@@ -127,6 +127,7 @@ for (const admin of [false, true]) {
   assert.match(preparation,/Elche CF/);
   assert.doesNotMatch(preparation,/Girona FC|VfL Wolfsburg|Hellas Verona|Montpellier HSC/);
   assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,21);
+  assert.ok(preparation.includes('Superkuboklar'),'Super cup plans are visible');
   assert.ok(preparation.includes('EFL formati'),'Cups show the custom EFL policy');
   assert.ok(preparation.includes('Barcha 16 klub 1/8 finaldan'),'16-team leagues skip play-ins');
   assert.ok(preparation.includes('13–20')&&preparation.includes('15–18'),'Seeded play-in positions remain visible');

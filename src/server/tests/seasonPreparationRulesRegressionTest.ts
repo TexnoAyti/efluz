@@ -80,7 +80,7 @@ for(const cup of EFL_SECOND_SEASON.domesticCups){
 }
 assert.equal(previewPreparedCupBracket('comp-fa-cup-2026'),null,'Season-one cups cannot enter the preparation path');
 assert.ok(!preparationReadiness().blockers.some(b=>b.code.startsWith('CUP_')),'No invented lower-division requirements');
-assert.ok(preparationReadiness().blockers.some(b=>b.code==='SUPER_CUP_PLANS_REQUIRED'),'Other incomplete work stays visible');
+assert.ok(!preparationReadiness().blockers.some(b=>b.code==='SUPER_CUP_PLANS_REQUIRED'),'All nine super cup plans exist');
 assert.equal(preparationReadiness().counts.verifiedRankingRules,9);
 const uz=ids('league-uzbekistan-superliga');
 const uzFixtures=[result(uz,0,1,3,0),result(uz,1,0,4,0),result(uz,0,2,4,0),result(uz,1,2,2,0)].map(f=>({...f,technicalLossClubId:null as string|null}));

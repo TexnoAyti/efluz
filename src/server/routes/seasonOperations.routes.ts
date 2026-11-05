@@ -1,3 +1,4 @@
+import {buildPreparedTournamentPackage,previewPreparedEuropeanCompetition,previewPreparedSuperCup} from '../services/preparedTournamentPackage';
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -28,7 +29,7 @@ import {
 } from '../services/premiumService';
 import { createAuditLog } from '../services/adminService';
 import { canUseDangerZone } from '../../lib/adminPermissions';
-import { readSeasonPreparationWorkflow, saveSeasonPreparationDraft } from '../services/seasonPreparationWorkflow';
+import { readSeasonPreparationWorkflow, saveSeasonPreparationDraft, stageSeasonPreparationPackage } from '../services/seasonPreparationWorkflow';
 import { rankPreparedLeagueResults } from '../services/preparedStandingsService';
 import { archiveCompletedSeason, getSeasonArchive, listSeasonArchives } from '../services/seasonArchiveService';
 
@@ -323,6 +324,29 @@ adminSeasonOperationsRouter.post('/preparation/draft',async(req:Request,res:Resp
   catch(error:any){res.status(error.statusCode||503).json({error:error.message});}
 });
 
+adminSeasonOperationsRouter.get('/preparation/package',(req:Request,res:Response)=>{
+  if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_ADMIN_REQUIRED'});return;}
+  res.setHeader('Cache-Control','private, no-store');res.json(buildPreparedTournamentPackage());
+});
+const packageSchema=z.object({expectedRevision:z.number().int().min(0),expectedDraftRevision:z.number().int().min(1)}).strict();
+adminSeasonOperationsRouter.post('/preparation/package',async(req:Request,res:Response)=>{
+  const parsed=packageSchema.safeParse(req.body);
+  if(!parsed.success){res.status(400).json({error:'INVALID_PREPARATION_PACKAGE'});return;}
+  try{res.json(await stageSeasonPreparationPackage(req.user!,parsed.data));}
+  catch(error:any){res.status(error.statusCode||503).json({error:error.message});}
+});
+const drawPreviewSchema=z.object({
+  code:z.enum(['UCL','UEL','UECL']),seed:z.string().min(1).max(120),
+  entries:z.array(z.object({id:z.string().min(1).max(80),name:z.string().min(1).max(120),association:z.string().regex(/^[A-Z]{3}$/),pot:z.number().int().min(1).max(6),qualification:z.object({route:z.enum(['DOMESTIC','TITLEHOLDER','EPS','QUALIFYING']),source:z.string().url().max(500)}).strict()}).strict()).length(36),
+}).strict();
+adminSeasonOperationsRouter.post('/preparation/european-draw-preview',(req:Request,res:Response)=>{
+  if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_ADMIN_REQUIRED'});return;}
+  const parsed=drawPreviewSchema.safeParse(req.body);
+  if(!parsed.success){res.status(400).json({error:'INVALID_EUROPEAN_DRAW'});return;}
+  try{res.json(previewPreparedEuropeanCompetition(parsed.data.code,parsed.data.entries,parsed.data.seed));}
+  catch(error:any){res.status(400).json({error:error.message});}
+});
+
 const resultPreviewSchema=z.object({
   leagueId:z.string().max(80),
   fixtures:z.array(z.object({id:z.string().min(1).max(120),seasonId:z.literal('season-2027-28'),homeClubId:z.string().max(80),awayClubId:z.string().max(80),homeScore:z.number().int().min(0).max(99),awayScore:z.number().int().min(0).max(99),status:z.literal('CONFIRMED'),matchday:z.number().int().min(1).max(38).optional(),technicalLossClubId:z.string().max(80).nullable().optional()})).max(400),
@@ -334,6 +358,18 @@ adminSeasonOperationsRouter.post('/preparation/standings-preview',(req:Request,r
   const parsed=resultPreviewSchema.safeParse(req.body);
   if(!parsed.success){res.status(400).json({error:'INVALID_PREPARED_RESULTS'});return;}
   try {res.json(rankPreparedLeagueResults(parsed.data.leagueId,parsed.data.fixtures,{final:parsed.data.final,europeanFinalistClubIds:parsed.data.europeanFinalistClubIds}));}
+  catch(error:any){res.status(400).json({error:error.message});}
+});
+
+const superCupPreviewSchema=z.object({
+  leagueId:z.string().max(80),fixtures:resultPreviewSchema.shape.fixtures,europeanFinalistClubIds:resultPreviewSchema.shape.europeanFinalistClubIds,
+  cupFinal:z.object({seasonId:z.literal('season-2027-28'),competitionId:z.string().max(100),status:z.literal('CONFIRMED'),homeClubId:z.string().max(80),awayClubId:z.string().max(80),winnerClubId:z.string().max(80)}).strict(),
+}).strict();
+adminSeasonOperationsRouter.post('/preparation/super-cup-preview',(req:Request,res:Response)=>{
+  if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_ADMIN_REQUIRED'});return;}
+  const parsed=superCupPreviewSchema.safeParse(req.body);
+  if(!parsed.success){res.status(400).json({error:'INVALID_SUPER_CUP_PREVIEW'});return;}
+  try{const preview=previewPreparedSuperCup(parsed.data.leagueId,parsed.data);if(!preview){res.status(404).json({error:'PREPARED_LEAGUE_NOT_FOUND'});return;}res.json(preview);}
   catch(error:any){res.status(400).json({error:error.message});}
 });
 

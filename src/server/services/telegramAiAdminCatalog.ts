@@ -113,6 +113,10 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   broadcast_detail: action('GET', '/telegram-notifications/broadcasts/:id'),
   ai_settings: action('GET', '/telegram-ai/config'),
   season_control: action('GET', '/season-ops/control', 'seasonId?'),
+  season_preparation_package: action('GET','/season-ops/preparation/package'),
+  season_preparation_stage: action('POST','/season-ops/preparation/package','expectedRevision, expectedDraftRevision from season_preparation; isolated staging only'),
+  season_preparation_european_draw: action('POST','/season-ops/preparation/european-draw-preview','code:UCL|UEL|UECL, seed, entries:36 verified clubs with association, pot and qualification provenance; simulation only, never invent entries'),
+  season_preparation_super_cup: action('POST','/season-ops/preparation/super-cup-preview','leagueId, fixtures:complete verified season-two results, cupFinal:verified confirmed final, europeanFinalistClubIds?; read-only'),
   season_preparation: action('GET','/season-ops/preparation'),
   season_preparation_save: action('POST','/season-ops/preparation/draft','startDate:YYYY-MM-DD or null, expectedRevision:from season_preparation only; saves a draft, never activates a season'),
   season_preparation_standings_preview: action('POST','/season-ops/preparation/standings-preview','leagueId, fixtures:exact confirmed season-two records only, final?, europeanFinalistClubIds?:verified clubs in this league; read-only calculation, no result writes'),
@@ -132,7 +136,7 @@ export const adminPlanSchema = z.object({
   const spec = AI_ADMIN_ACTIONS[p.action];
   if (spec?.path.includes(':id') && !p.targetId) ctx.addIssue({ code: 'custom', message: 'Exact targetId required', path: ['targetId'] });
   if (spec?.path.includes(':secondaryId') && !p.secondaryId) ctx.addIssue({ code: 'custom', message: 'Exact secondaryId required', path: ['secondaryId'] });
-  if (JSON.stringify(p.body).length > (p.action === 'fixture_schedule' ? 900000 : p.action === 'team_save' ? 16000 : p.action === 'season_preparation_standings_preview' ? 200000 : 4000)) ctx.addIssue({ code: 'custom', message: 'Body too large', path: ['body'] });
+  if (JSON.stringify(p.body).length > (p.action === 'fixture_schedule' ? 900000 : p.action === 'team_save' ? 16000 : ['season_preparation_standings_preview','season_preparation_super_cup','season_preparation_european_draw'].includes(p.action) ? 200000 : 4000)) ctx.addIssue({ code: 'custom', message: 'Body too large', path: ['body'] });
 });
 export type AdminPlan = z.infer<typeof adminPlanSchema>;
 export function adminPlanPath(plan: AdminPlan): string {
