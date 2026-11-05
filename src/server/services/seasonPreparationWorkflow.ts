@@ -16,7 +16,8 @@ export function preparationReadiness(input: { startDate?: string|null; sourceArc
   for(const league of EFL_SECOND_SEASON.leagues)if(league.rankingRule.verification!=='VERIFIED')add('RULE_VERIFICATION_REQUIRED',league.id);
   for(const cup of EFL_SECOND_SEASON.domesticCups){
     if(cup.verification!=='VERIFIED')add('CUP_RULE_VERIFICATION_REQUIRED',cup.id);
-    if(!cup.expectedEntrants||cup.participantClubIds.length!==cup.expectedEntrants)add('CUP_PARTICIPANTS_MISSING',cup.id);
+    const roster=EFL_SECOND_SEASON.leagues.find(league=>league.id===cup.leagueId)?.roster.clubs.map(club=>club.id)||[];
+    if(cup.participantClubIds.length!==cup.expectedEntrants||new Set(cup.participantClubIds).size!==cup.expectedEntrants||roster.length!==cup.expectedEntrants||cup.participantClubIds.some(id=>!roster.includes(id)))add('CUP_PARTICIPANTS_MISSING',cup.id);
   }
   add('SUPER_CUP_PLANS_REQUIRED',EFL_SECOND_SEASON.id);
   for(const comp of EFL_SECOND_SEASON.europeanCompetitions){

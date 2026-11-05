@@ -127,6 +127,11 @@ for (const admin of [false, true]) {
   assert.match(preparation,/Elche CF/);
   assert.doesNotMatch(preparation,/Girona FC|VfL Wolfsburg|Hellas Verona|Montpellier HSC/);
   assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,21);
+  assert.ok(preparation.includes('EFL formati'),'Cups show the custom EFL policy');
+  assert.ok(preparation.includes('Barcha 16 klub 1/8 finaldan'),'16-team leagues skip play-ins');
+  assert.ok(preparation.includes('13–20')&&preparation.includes('15–18'),'Seeded play-in positions remain visible');
+  assert.doesNotMatch(preparation,/743|quyi liga klublari/,'Real-world lower divisions are not required by EFL cups');
+
 
   const next = await render({admin,completed:false,seasonId:'season-2027-28'});
   const nextIcons = next.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
