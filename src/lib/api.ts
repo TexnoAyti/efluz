@@ -1,5 +1,6 @@
 import { isSeasonCompetitionEnabled } from './seasonParticipationPolicy';
 import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
+import type {AdminTaskPage,AdminTaskPriority,AdminTaskGroup} from '../types/adminTasks';
 import type { CupTieBreakScores } from './cupResult';
 import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayState';
 import type { AdminPermissions } from '../types';
@@ -180,6 +181,7 @@ interface RequestOptions extends RequestInit {
   retries?: number;
   timeoutMs?: number;
   skipAuthentication?: boolean;
+  allowStaleOnError?: boolean;
   dedupeKey?: string;
 }
 
@@ -283,7 +285,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         // Stale cache preservation: If we have existing cached data for this GET request,
         // preserve and return it on network timeout or quota exhaustion rather than crashing the view
         const transient = !err.httpStatus || err.httpStatus >= 500 || err.httpStatus === 429 || err.name === 'AbortError';
-        if (isGet && transient) {
+        if (isGet && transient && options.allowStaleOnError !== false) {
           const staleCached = memoryCache.get(cacheKey);
           if (staleCached && staleCached.data && Date.now() - staleCached.timestamp < 5 * 60 * 1000) {
             console.warn(`[API CACHE PRESERVED] Returning cached data for ${endpoint} due to error:`, err.message);
@@ -1363,8 +1365,13 @@ export const api = {
     });
   },
 
+  async getTelegramAiTasks(filters:{priority?:AdminTaskPriority;group?:AdminTaskGroup;offset?:number}={}):Promise<AdminTaskPage>{
+    const query=new URLSearchParams();for(const [key,value] of Object.entries(filters))if(value!==undefined)query.set(key,String(value));
+    return request('/api/admin/telegram-ai/tasks?'+query,{skipCache:true,timeoutMs:25000,retries:0,allowStaleOnError:false});
+  },
+
   async getTelegramAiDailyReport(): Promise<{success:boolean;text:string;complete:boolean;stale:boolean}> {
-    return request('/api/admin/telegram-ai/daily-report', {skipCache:true,timeoutMs:15000});
+    return request('/api/admin/telegram-ai/daily-report', {skipCache:true,timeoutMs:25000,retries:0,allowStaleOnError:false});
   },
 
   async getTelegramAiDiagnostics(): Promise<{

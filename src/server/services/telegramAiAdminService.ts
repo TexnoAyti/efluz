@@ -320,6 +320,7 @@ async function handleAiAdminCommandInternal(payload: TelegramAiMessagePayload, s
   try {
     if (command === 'actions' && !isPrimaryOwner(payload.fromUser.id)) return 'Liga va kubok bo‘yicha mavjud admin ruxsatlaringiz doirasida oddiy yozing: natijani kiritish/tasdiqlash, klub biriktirish, turni boshqarish, kubok qur’asini ko‘rish. Har bir o‘zgarish avval reja va sizning tasdig‘ingizni talab qiladi. Xavfli va umumiy tizim amallari faqat asosiy admin uchun.';
     if (command === 'actions') return `Oddiy yozishingiz mumkin:
+• Bugungi vazifalarimni ko‘rsat
 • Guruhda yo‘q klub egalarini ko‘rsat
 • La Liga jadvalini tashla
 • Angliya Kubogi yarim final o‘yinlarini ko‘rsat
@@ -565,7 +566,7 @@ function formatNaturalAdminRead(action: string, data: any): string {
     const rounds = data.rounds.filter((r:any) => r.isOpen || r.matchday === data.currentMatchday);
     return [`Tur boshqaruvi: joriy ${data.currentMatchday}-tur`, ...rounds.map((r:any) => `${r.matchday}-tur: ${r.isOpen ? 'ochiq' : 'yopiq'} • ${r.fixtureCount} ta o‘yin • ${r.unfinished?.length || 0} ta yakunlanmagan${r.deadlineAt ? ` • Muddat: ${new Intl.DateTimeFormat('uz-UZ',{timeZone:'Asia/Tashkent',dateStyle:'short',timeStyle:'short'}).format(new Date(r.deadlineAt))}` : ''}`)].join('\n').slice(0,3500);
   }
-  const labels: Record<string,string> = {enabled:'Faol',allowedChatId:'Guruh ID',allowedThreadId:'Mavzu ID',rateLimitUserPerMin:'Foydalanuvchi limiti / daqiqa',rateLimitTopicPerMin:'Mavzu limiti / daqiqa',maxDailyRequests:'Kunlik AI limiti',total:'Jami',totalUsers:'Foydalanuvchilar soni',username:'Username',id:'ID',firstName:'Ism',isAdmin:'Admin',isSuspended:'Bloklangan',title:'Sarlavha',body:'Matn',status:'Holat',seasonId:'Mavsum',stage:'Bosqich',active:'Faol',revoked:'Bekor qilingan',generatedAt:'Yangilangan',redisAvailable:'Redis mavjud',stale:'Eskirgan nusxa'};
+  const labels: Record<string,string> = {enabled:'Faol',allowedChatId:'Guruh ID',allowedThreadId:'Mavzu ID',rateLimitUserPerMin:'Foydalanuvchi limiti / daqiqa',rateLimitTopicPerMin:'Mavzu limiti / daqiqa',maxDailyRequests:'Kunlik AI limiti',items:'Vazifalar',priority:'Muhimlik',reason:'Sabab',nextStep:'Nima qilish kerak',where:'Qayerda',dueAt:'Muddat',allTotal:'Jami vazifa',total:'Jami',totalUsers:'Foydalanuvchilar soni',username:'Username',id:'ID',firstName:'Ism',isAdmin:'Admin',isSuspended:'Bloklangan',title:'Sarlavha',body:'Matn',status:'Holat',seasonId:'Mavsum',stage:'Bosqich',active:'Faol',revoked:'Bekor qilingan',generatedAt:'Yangilangan',redisAvailable:'Redis mavjud',stale:'Eskirgan nusxa'};
   const lines=[titles[action] || 'So‘ralgan ma’lumot'];
   const add=(value:any,depth=0)=>{
     if(depth>2 || lines.length>=18)return;

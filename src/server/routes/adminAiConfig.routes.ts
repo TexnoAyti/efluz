@@ -9,6 +9,7 @@ import { getAiObservability } from '../services/telegramAiObservability';
  * Never leaks API keys or secrets in logs or responses.
  */
 
+import {z} from 'zod';
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../middleware/authMiddleware';
 import {
@@ -164,7 +165,7 @@ adminAiConfigRouter.post('/test-query', requireAdmin, requirePrimaryOwner, async
 });
 
 adminAiConfigRouter.get('/daily-report', requireAdmin, requirePrimaryOwner, async (_req, res) => {
-  try {res.json({success:true,...await buildAiDailyReport()});}
+  try {const report=await buildAiDailyReport();res.json({success:true,...report,tasks:report.tasks.slice(0,30),taskTotal:report.tasks.length});}
   catch {res.status(503).json({error:'REPORT_UNAVAILABLE'});}
 });
 
@@ -185,4 +186,12 @@ adminAiConfigRouter.get('/club-member-tags/missing-owners', requireAdmin, requir
 adminAiConfigRouter.post('/club-selection-ban/:id',requireAdmin,requirePrimaryOwner,async(req,res)=>{
  try{res.setHeader('Cache-Control','private, no-store');res.json(await setClubSelectionBan(req.user!.id,req.params.id,{...req.body,requestId:req.headers['x-idempotency-key']||req.body.requestId}));}
  catch(e:any){res.status(e.statusCode||503).json({success:false,error:'CLUB_SELECTION_BAN_FAILED',message:e.statusCode?e.message:'Ban saqlanmadi. Qayta tekshiring.'});}
+});
+
+const taskQuery=z.object({priority:z.enum(['URGENT','HIGH','NORMAL']).optional(),group:z.enum(['EFL','UZEFLIFE','TEAMS','TELEGRAM','SYSTEM']).optional(),offset:z.coerce.number().int().min(0).max(20000).default(0)}).strict();
+adminAiConfigRouter.get('/tasks',requireAdmin,requirePrimaryOwner,async(req,res)=>{
+ const parsed=taskQuery.safeParse(req.query);if(!parsed.success){res.status(400).json({error:'INVALID_TASK_FILTER'});return;}
+ try{const report=await buildAiDailyReport(),{priority,group,offset}=parsed.data;const items=report.tasks.filter(t=>(!priority||t.priority===priority)&&(!group||t.group===group));
+  res.json({success:true,items:items.slice(offset,offset+30),total:items.length,allTotal:report.tasks.length,offset,nextOffset:offset+30<items.length?offset+30:null,generatedAt:report.generatedAt,complete:report.complete,stale:report.stale,unavailable:report.unavailable,summary:report.taskSummary,catalog:report.taskCatalog});
+ }catch{res.status(503).json({error:'TASKS_UNAVAILABLE'});}
 });

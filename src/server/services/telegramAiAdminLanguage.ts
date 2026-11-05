@@ -51,6 +51,7 @@ export function assertSingleNaturalAdminRequest(text: string): void {
 export function detectNaturalAdminAction(text: string): string|null {
   const command = text.replace(/^\/ai_(?:admin|read)(?:@[A-Za-z0-9_]+)?\s*/i, '').replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(command.replace(/@\s*[A-Za-z0-9_]+/g, ' '));
+  if(/^(?:(?:bugun(?:gi)?|mening)\s+){0,2}(?:(?:vazifa|topshiriq)(?:lar)?(?:im)?(?:ni)?|tasks)(?:\s+(?:korsat\w*|royxat\w*|nimalar|bor|ber))*[ ?.!]*$/.test(q))return 'ai_tasks';
   if(/\b(?:team\w*|jamoa\w*)\b/.test(q)&&/\b(?:ticket\w*|chipta\w*)\b/.test(q)){
     if(/qaytar\w*|bekor qil\w*|olib tashla\w*|kamaytir\w*|revoke/.test(q))return 'team_ticket_revoke';
     if(/\b(?:ber\w*|ajrat\w*|qosh\w*|grant)\b/.test(q))return 'team_ticket_grant';

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import {AdminTaskPanel} from './AdminTaskPanel';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { Bot, Shield, AlertTriangle, CheckCircle2, RefreshCw, Send, Sliders, Database, Info, Lock } from 'lucide-react';
@@ -325,6 +326,7 @@ export const AdminTelegramAiTab: React.FC = () => {
         <button type="button" disabled={reportLoading} className="px-3 py-2 rounded-lg bg-slate-800 text-xs text-white disabled:opacity-50" onClick={async()=>{setReportLoading(true);try{const data=await api.getTelegramAiDailyReport();setReport(data.text);}catch{setReport('Hisobotni hozir o‘qib bo‘lmadi.');}finally{setReportLoading(false);}}}>{reportLoading?'Tayyorlanmoqda…':'Hisobotni ko‘rish'}</button>
         {report&&<pre className="text-xs text-slate-300 whitespace-pre-wrap break-words">{report}</pre>}
       </section>
+      <AdminTaskPanel/>
       {/* Model & Billing Notice */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
         <div className="flex items-start gap-3">

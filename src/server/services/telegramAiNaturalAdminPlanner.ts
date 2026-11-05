@@ -82,7 +82,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
     const extended = await planExtendedAdminControl(text, deps.read);
     if (extended) return extended;
   }
-  if (['club_member_tags','users','ai_settings','premium_overview','broadcasts','notification_messages','health','season_control'].includes(action)) {
+  if (['ai_tasks','club_member_tags','users','ai_settings','premium_overview','broadcasts','notification_messages','health','season_control'].includes(action)) {
     const search = /@\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
     return make(action, undefined, action === 'users' ? { limit: 10, ...(search ? { search } : {}) } : {});
   }

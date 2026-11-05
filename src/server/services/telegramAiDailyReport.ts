@@ -3,6 +3,7 @@ import { createAiTournamentReader } from './telegramAiDataService';
 import { getTelegramAiConfig, PRIMARY_OWNER_TELEGRAM_ID } from './telegramAiConfigService';
 import { getAiRedisClient } from './telegramAiDeadline';
 import { aiOperationsKey } from './telegramAiObservability';
+import {buildAdminTasks,ADMIN_TASK_CATALOG} from './telegramAiAdminTasks';
 import {uMatchFinished} from '../../lib/uzeflifeLeague';
 import {loadDailyReportOperations,type DailyReportOperations} from './telegramAiDailyReportSources';
 import {withinAiDeadline} from './telegramAiDeadline';
@@ -56,15 +57,9 @@ export async function buildAiDailyReport(read?:Reader,options:{now?:Date;loadOpe
  const parts=[`EFLUZ · ${tashkentReportDate(now)} · kunlik admin hisoboti`,`24 soat: ${time(new Date(start))} — ${time(now)} (Toshkent)`];
  if(!complete||stale)parts.push(`Diqqat: EFL ma’lumotlari ${!complete?'to‘liq emas':''}${!complete&&stale?', ':''}${stale?'eski nusxadan':''}. Sonlar mavjud nusxa bo‘yicha.`);
  if(ops.unavailable.length)parts.push(`O‘qilmadi: ${ops.unavailable.join(', ')}. Bu bo‘limlarda nol deb hisoblanmadi.`);
- const priorities:string[]=[];
- if(disputed.length+unresolved.length)priorities.push(`${disputed.length} bahsli o‘yin va ${unresolved.length} g‘olibsiz kubokni tekshiring.`);
- if(pending.length)priorities.push(`${pending.length} hisob tasdiq kutmoqda.`);
- if(overdue.length)priorities.push(`${overdue.length} o‘yinning muddati o‘tgan.`);
- if(backlog.length)priorities.push(`Oldin ochilgan turlarda ${backlog.length} yakunlanmagan o‘yin bor.`);
  const s=ops.uzeflife;
- let uPending=0,uDisputed=0,uOverdue=0;
- if(s){const eligible=s.matches.filter(m=>m.round<=s.round&&m.home&&m.away),unfinished=eligible.filter(m=>!uMatchFinished(m));uPending=unfinished.filter(m=>m.proposal).length;uDisputed=unfinished.filter(m=>m.dispute?.status==='open').length;uOverdue=unfinished.filter(m=>timestamp(m.deadlineAt)<end).length;
-  if(uDisputed||uPending||uOverdue)priorities.push(`UZEFLIFE: ${uPending} tasdiq, ${uDisputed} e’tiroz, ${uOverdue} muddati o‘tgan o‘yin.`);
+ let uPending=0,uDisputed=0;
+ if(s){const eligible=s.matches.filter(m=>m.round<=s.round&&m.home&&m.away),unfinished=eligible.filter(m=>!uMatchFinished(m));uPending=unfinished.filter(m=>m.proposal&&m.dispute?.status!=='open').length;uDisputed=unfinished.filter(m=>m.dispute?.status==='open').length;
  }
  const delivery={sent:0,pending:0,failed:0,unknown:0,skipped:0,unknownOutstanding:0};
  if(ops.broadcasts)for(const b of ops.broadcasts)for(const r of b.recipients||[]){
@@ -74,11 +69,11 @@ export async function buildAiDailyReport(read?:Reader,options:{now?:Date;loadOpe
   if(recent(b.createdAt)&&r.status==='FAILED'){if(String(r.error||'').includes('DELIVERY_UNKNOWN'))delivery.unknown++;else delivery.failed++;}
   if(recent(b.createdAt)&&r.status==='SKIPPED_NO_TELEGRAM')delivery.skipped++;
  }
- if(delivery.failed||delivery.unknownOutstanding)priorities.push(`Telegram: ${delivery.failed} yangi rad etilgan, ${delivery.unknownOutstanding} yetkazilishi noma’lum xabarni tekshiring.`);
  const channelState=(p:any)=>p.state==='sending'&&(!p.leaseUntil||p.leaseUntil<end)?'unverified':p.state;
- const channelIssues=ops.channelPosts?.filter(p=>['failed','unverified'].includes(channelState(p)))||[];
- if(channelIssues.length)priorities.push(`Kanal: ${channelIssues.length} turning yuborilishini tekshiring.`);
- parts.push(`BIRINCHI NAVBATDA\n${priorities.length?priorities.map((v,i)=>`${i+1}. ${v}`).join('\n'):!complete||stale||ops.unavailable.length?'Mavjud ma’lumotlar bilan to‘liq xulosa qilib bo‘lmaydi. O‘qilmagan manbalarni tekshiring.':'Shoshilinch muammo aniqlanmadi.'}`);
+ const tasks=buildAdminTasks({competitions,fixtures:unique,operations:ops,now,complete,stale});
+ const taskSummary={URGENT:tasks.filter(t=>t.priority==='URGENT').length,HIGH:tasks.filter(t=>t.priority==='HIGH').length,NORMAL:tasks.filter(t=>t.priority==='NORMAL').length};
+ parts.push(`VAZIFALAR · ${tasks.length}\nShoshilinch: ${taskSummary.URGENT} · Muhim: ${taskSummary.HIGH} · Rejali: ${taskSummary.NORMAL}\n${tasks.slice(0,5).map((t,i)=>`${i+1}. ${t.title}\n${Array.from(t.nextStep).slice(0,100).join('')}`).join('\n')}${tasks.length>5?'\nTo‘liq ro‘yxat: Admin → Telegram AI → Vazifalar.':tasks.length?'':'Faol vazifa aniqlanmadi.'}`);
+
  parts.push(`EFL · so‘nggi 24 soat\nTasdiqlangan: ${played.length} ta o‘yin · Gollar: ${goals}\nHozir: ${active.length} joriy tur o‘yini qolgan · ${pending.length} tasdiq · ${disputed.length} bahsli · ${unresolved.length} g‘olibsiz kubok.\nOldingi turlar: ${backlog.length} o‘yin.${ops.locks?` Ma’lum muddatlar bo‘yicha o‘tgan: ${overdue.length}; 24 soatda tugaydi: ${due.length}.`:''}`);
  const leagueLines=enabled.filter(c=>c.type==='LEAGUE').slice(0,10).map(c=>{const games=unique.filter(f=>f.competitionId===c.id&&Number(f.matchday)===Number(c.currentMatchday));return `${clean(c.name,34)} · ${c.currentMatchday||'?'}-tur: ${games.filter(f=>f.status==='CONFIRMED').length}/${games.length} yakunlangan`;});
  if(leagueLines.length)parts.push(`LIGALAR\n${leagueLines.join('\n')}`);
@@ -100,7 +95,7 @@ export async function buildAiDailyReport(read?:Reader,options:{now?:Date;loadOpe
  const kept:string[]=[];let omitted=0;
  for(const part of parts){if([...kept,part,footer].join('\n\n').length<=3650)kept.push(part);else omitted++;}
  if(omitted)kept.push(`${omitted} qo‘shimcha bo‘lim matn chegarasi sabab qisqartirildi. Batafsil: admin panel.`);
- return {text:[...kept,footer].join('\n\n'),complete,stale,counts,generatedAt:now.toISOString(),window:{from:new Date(start).toISOString(),to:now.toISOString()},unavailable:ops.unavailable};
+ return {text:[...kept,footer].join('\n\n'),complete,stale,counts,generatedAt:now.toISOString(),window:{from:new Date(start).toISOString(),to:now.toISOString()},unavailable:ops.unavailable,tasks,taskSummary,taskCatalog:ADMIN_TASK_CATALOG};
 }
 /** At most one send attempt per local day, even after an uncertain Telegram timeout. */
 export async function deliverAiDailyReport(now = new Date(), prepare = () => buildAiDailyReport(undefined,{now})) {

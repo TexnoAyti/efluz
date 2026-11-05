@@ -9,7 +9,7 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   group_missing_owners: action('GET','/telegram-ai/club-member-tags/missing-owners','page?, limit?'),
   club_member_tags: action('GET','/telegram-ai/club-member-tags'),
   club_member_tags_sync: action('POST','/telegram-ai/club-member-tags/sync'),
-  ai_test_query: action('POST','/telegram-ai/test-query','query'), ai_daily_report: action('GET','/telegram-ai/daily-report'),
+  ai_test_query: action('POST','/telegram-ai/test-query','query'), ai_daily_report: action('GET','/telegram-ai/daily-report'), ai_tasks:action('GET','/telegram-ai/tasks','priority?:URGENT|HIGH|NORMAL, group?:EFL|UZEFLIFE|TEAMS|TELEGRAM|SYSTEM, offset?:number'),
   season_matchday_advance: action('POST','/season-ops/competitions/:id/advance','seasonId?, durationHours?'),
   season_matchday_open: action('POST','/season-ops/competitions/:id/open-now','seasonId?, durationHours?, matchday?'),
   season_no_show_resolve: action('POST','/season-ops/no-show/:id/resolve','action, notes?, deadlineAt?'),

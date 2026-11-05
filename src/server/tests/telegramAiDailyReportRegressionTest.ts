@@ -26,7 +26,7 @@ assert.equal(report.window.from,'2026-11-04T03:00:00.000Z');assert.equal(report.
 const boundaries=await buildAiDailyReport(async q=>({data:q.dataset==='competitions'?competitions:[fixture('at-start',3,'CONFIRMED',{resultConfirmedAt:report.window.from}),fixture('at-end',3,'CONFIRMED',{resultConfirmedAt:now.toISOString()}),fixture('after',3,'CONFIRMED',{resultConfirmedAt:'2027-01-01T00:00:00Z'})],nextOffset:null,complete:true,stale:false}),{now});
 assert.equal(boundaries.counts.confirmed24h,1,'The (from,to] window counts a boundary result only once across daily reports');
 const oldUnknown=await buildAiDailyReport(read,{now,loadOperations:async()=>({...structuredClone(operations),channelPosts:[{round:2,state:'sending',leaseUntil:1,sentPages:3,totalPages:16}],broadcasts:[{createdAt:old,recipients:[{status:'FAILED',error:'DELIVERY_UNKNOWN'}]}]})});
-assert.match(oldUnknown.text,/ochiq noma’lum: 1/);assert.match(oldUnknown.text,/kanalni tekshirish kerak/);assert.match(oldUnknown.text,/Kanal: 1 turning yuborilishini tekshiring/);
+assert.match(oldUnknown.text,/ochiq noma’lum: 1/);assert.match(oldUnknown.text,/kanalni tekshirish kerak/);assert.ok(oldUnknown.tasks.some(t=>t.kind==='channel_check'));assert.match(oldUnknown.text,/VAZIFALAR/);
 assert.equal(tashkentReportDate(new Date('2026-11-04T20:00:00Z')),'2026-11-05');
 const degraded=await buildAiDailyReport(async()=>{throw Error('offline');},{now,loadOperations:async()=>({unavailable:['UZEFLIFE','Telegram yetkazilishi']})});
 assert.equal(degraded.complete,false);assert.match(degraded.text,/to‘liq emas/);assert.match(degraded.text,/O‘qilmadi: UZEFLIFE, Telegram/);assert.doesNotMatch(degraded.text,/Shoshilinch muammo aniqlanmadi|TELEGRAM\n24 soatda yetkazilgan: 0/);
