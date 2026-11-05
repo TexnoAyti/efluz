@@ -1,3 +1,4 @@
+import { previewPreparedLeagueSchedule } from '../services/seasonPreparationService';
 import { SEED_COMPETITIONS } from '../db/seed';
 import assert from 'node:assert/strict';
 import { EFL_SECOND_SEASON, getSeasonPreparation } from '../../lib/seasonPreparation';
@@ -60,4 +61,69 @@ assert.deepEqual((await db.collection('clubs').doc(owner.id).get()).data(), owne
 assert.equal((await db.collection('fixtures').doc('season-one-result').get()).data()?.homeScore, 2);
 assert.equal((await db.collection('seasons').doc(EFL_SECOND_SEASON.id).get()).exists, false, 'Viewing preparation must not create or activate a season');
 assert.equal((await db.collection('competitions').doc(acl.id).get()).exists, false, 'Preparing ACL cannot activate a competition');
-console.log('SEASON_PREPARATION_REGRESSION_PASS');
+const expectedSizes: Record<string,number> = {
+  'league-premier-league':20, 'league-la-liga':20, 'league-serie-a':20,
+  'league-bundesliga':18, 'league-ligue-1':18, 'league-uzbekistan-superliga':16,
+  'league-saudi-pro-league':18, 'league-j1':20, 'league-turkey-super-lig':18,
+};
+const allClubIds = new Set<string>();
+let fixtureTotal = 0;
+for (const league of EFL_SECOND_SEASON.leagues) {
+  const n = expectedSizes[league.id];
+  assert.equal(league.roster.clubs.length,n, `${league.name} uses its actual current size`);
+  assert.equal(league.roster.realSeason, league.id === 'league-uzbekistan-superliga' ? '2026' : '2026/27');
+  assert.equal(league.roster.verifiedAt,'2026-11-05');
+  assert.ok(league.roster.sources[0].url.startsWith('https://'));
+  const ids = new Set(league.roster.clubs.map(club => club.id));
+  assert.equal(ids.size,n);
+  for (const id of ids) { assert.ok(!allClubIds.has(id)); allClubIds.add(id); }
+  const preview = previewPreparedLeagueSchedule(league.id)!;
+  assert.equal(preview.seasonId, EFL_SECOND_SEASON.id);
+  assert.equal(preview.persisted,false);
+  assert.equal(preview.fixtures.length,n*(n-1));
+  assert.equal(preview.totalMatchdays,2*(n-1));
+  assert.equal(league.format.totalFixtures,preview.fixtures.length);
+  const homePairs = new Set<string>();
+  const roundClubs = new Set<string>();
+  const homes = new Map<string,number>();
+  const aways = new Map<string,number>();
+  for (const fixture of preview.fixtures) {
+    assert.ok(ids.has(fixture.homeClubId) && ids.has(fixture.awayClubId));
+    assert.notEqual(fixture.homeClubId,fixture.awayClubId);
+    const pair = `${fixture.homeClubId}|${fixture.awayClubId}`;
+    assert.ok(!homePairs.has(pair),'Each ordered pair plays exactly once'); homePairs.add(pair);
+    for (const id of [fixture.homeClubId,fixture.awayClubId]) {
+      const key = `${fixture.matchday}|${id}`;
+      assert.ok(!roundClubs.has(key),'A club cannot play twice in one round'); roundClubs.add(key);
+    }
+    homes.set(fixture.homeClubId,(homes.get(fixture.homeClubId)||0)+1);
+    aways.set(fixture.awayClubId,(aways.get(fixture.awayClubId)||0)+1);
+  }
+  for (const club of ids) { assert.equal(homes.get(club),n-1); assert.equal(aways.get(club),n-1); }
+  fixtureTotal += preview.fixtures.length;
+  assert.equal((await db.collection('competitions').doc(league.competitionId).get()).exists,false);
+}
+assert.equal(allClubIds.size,168);
+assert.equal(fixtureTotal,2984);
+assert.equal(previewPreparedLeagueSchedule('unknown'),null);
+const clubsIn = (leagueId:string) => EFL_SECOND_SEASON.leagues.find(league => league.id === leagueId)!.roster.clubs.map(club => club.id);
+for (const id of ['club-elche','club-espanyol','club-levante']) assert.ok(clubsIn('league-la-liga').includes(id));
+for (const id of ['club-girona','club-las-palmas','club-mallorca']) assert.ok(!clubsIn('league-la-liga').includes(id));
+for (const id of ['club-como','club-sassuolo']) assert.ok(clubsIn('league-serie-a').includes(id));
+for (const id of ['club-empoli','club-verona']) assert.ok(!clubsIn('league-serie-a').includes(id));
+for (const id of ['club-elversberg','club-koln','club-paderborn','club-schalke','club-hamburger-sv']) assert.ok(clubsIn('league-bundesliga').includes(id));
+for (const id of ['club-bochum','club-heidenheim','club-holstein-kiel','club-st-pauli','club-wolfsburg']) assert.ok(!clubsIn('league-bundesliga').includes(id));
+for (const id of ['club-angers','club-le-havre','club-lorient']) assert.ok(clubsIn('league-ligue-1').includes(id));
+for (const id of ['club-montpellier','club-nantes','club-reims']) assert.ok(!clubsIn('league-ligue-1').includes(id));
+const scheduleRoute = (seasonsRouter as any).stack.find((layer:any) => layer.route?.path === '/preparation/:leagueId/fixtures');
+let scheduleStatus = 200, scheduleBody:any;
+const response = { setHeader() {}, status(code:number) { scheduleStatus=code; return this; }, json(value:any) { scheduleBody=value; } };
+scheduleRoute.route.stack[0].handle({params:{leagueId:'league-uzbekistan-superliga'}},response);
+assert.equal(scheduleBody.fixtures.length,240);
+scheduleRoute.route.stack[0].handle({params:{leagueId:'bad-id'}},response);
+assert.equal(scheduleStatus,404);
+assert.equal(scheduleBody.error,'PREPARED_LEAGUE_NOT_FOUND');
+assert.deepEqual((await db.collection('seasons').doc(current.id).get()).data(),current);
+assert.deepEqual((await db.collection('clubs').doc(owner.id).get()).data(),owner);
+assert.equal((await db.collection('fixtures').doc('season-one-result').get()).data()?.homeScore,2);
+console.log('SEASON_PREPARATION_REGRESSION_PASS: nine verified rosters, 168 clubs, 2984 balanced draft fixtures, current season preserved');

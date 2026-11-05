@@ -118,7 +118,16 @@ for (const admin of [false, true]) {
   for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(aclSources.includes(name));
   assert.doesNotMatch(aclSources,/Premier League|La Liga|Serie A|Bundesliga|Ligue 1/);
   assert.match(preparation,/<details><summary>/,'Long league list is expandable on onboarding');
-  assert.doesNotMatch(preparation,/<button|<a /,'The preparation list cannot claim a club or switch seasons');
+  assert.doesNotMatch(preparation,/<button|href="\/|data-munfiz-control="claim/,'The preparation list cannot claim a club or switch seasons');
+  assert.equal((preparation.match(/class="season-preparation-roster"/g)||[]).length,9);
+  assert.match(preparation,/168|16 klub/);
+  assert.match(preparation,/30 tur · 240 o‘yin/);
+  assert.match(preparation,/38 tur · 380 o‘yin/);
+  assert.match(preparation,/2026-11-05/);
+  assert.match(preparation,/Elche CF/);
+  assert.doesNotMatch(preparation,/Girona FC|VfL Wolfsburg|Hellas Verona|Montpellier HSC/);
+  assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,9);
+
   const next = await render({admin,completed:false,seasonId:'season-2027-28'});
   const nextIcons = next.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
   assert.equal((nextIcons.match(/<li/g) || []).length,5,'Next season restores all five league icons');

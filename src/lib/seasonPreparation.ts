@@ -1,3 +1,4 @@
+import { SEASON_TWO_ROSTERS } from '../content/season2Rosters';
 import { CURRENT_SEASON_ID } from './seasonParticipationPolicy';
 
 /** Planning data only. Never seed active leagues, owners, fixtures or standings from this catalog. */
@@ -19,7 +20,23 @@ export const EFL_SECOND_SEASON = {
     { id: 'league-j1', name: 'J1 League', country: 'Japan', flag: '🇯🇵', group: 'ASIA', change: 'OPENING' },
     // EFL competition grouping follows the organizer's season plan.
     { id: 'league-turkey-super-lig', name: 'Süper Lig', country: 'Turkey', flag: '🇹🇷', group: 'ASIA', change: 'OPENING' },
-  ],
+  ].map(league => {
+    const roster = SEASON_TWO_ROSTERS[league.id];
+    if (!roster || roster.clubs.length !== roster.expectedClubCount) throw new Error(`Invalid season-two roster: ${league.id}`);
+    return {
+      ...league,
+      competitionId: league.id.replace(/^league-/, 'comp-') + '-2027',
+      roster,
+      format: {
+        type: 'ROUND_ROBIN' as const,
+        homeAndAway: true,
+        totalTeams: roster.clubs.length,
+        totalMatchdays: (roster.clubs.length - 1) * 2,
+        totalFixtures: roster.clubs.length * (roster.clubs.length - 1),
+        points: { win: 3, draw: 1, loss: 0 },
+      },
+    };
+  }),
   internationalCompetitions: [
     {
       id: 'comp-asian-champions-league-2027',
@@ -48,7 +65,7 @@ export const EFL_SECOND_SEASON = {
       },
     },
   ],
-  pendingDecisions: ['CLUB_ROSTERS', 'TEAM_COUNTS', 'FORMAT', 'QUALIFICATION', 'START_DATE'],
+  pendingDecisions: ['DOMESTIC_CUPS', 'TIEBREAK_RULES', 'EUROPEAN_QUALIFICATION', 'START_DATE', 'ACTIVATION'],
 } as const;
 
 export function getSeasonPreparation(sourceSeasonId: string) {

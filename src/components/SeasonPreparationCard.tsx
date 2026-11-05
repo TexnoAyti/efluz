@@ -4,9 +4,9 @@ import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import './season-preparation.css';
 
 const copy = {
-  uz: { title: 'EFL · 2-mavsum', status: 'Tayyorgarlik', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub tanlash hali ochilmagan.', pending: 'Ichki ligalarning klub tarkiblari, jamoalar soni, formati va boshlanish sanasi keyin e’lon qilinadi.', details: 'Ligalar rejasini ko‘rish' },
-  ru: { title: 'EFL · Сезон 2', status: 'Подготовка', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Выбор клуба на сезон 2 ещё не открыт.', pending: 'Составы, число команд, форматы внутренних лиг и дата старта будут объявлены позже.', details: 'Посмотреть план лиг' },
-  en: { title: 'EFL · Season 2', status: 'In preparation', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 is ongoing. Club selection for season 2 is not open yet.', pending: 'Domestic league rosters, team counts, formats and start date will be announced later.', details: 'View league plan' },
+  uz: { title: 'EFL · 2-mavsum', status: 'Tayyorgarlik', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub tanlash hali ochilmagan.', pending: 'Klub tarkiblari va ikki davrali liga formati tayyor. Kuboklar, teng ochko qoidalari, Yevropa saralashi va boshlanish sanasi hali tayyorlanmoqda.', details: 'Ligalar rejasini ko‘rish' },
+  ru: { title: 'EFL · Сезон 2', status: 'Подготовка', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Выбор клуба на сезон 2 ещё не открыт.', pending: 'Составы и двухкруговой формат готовы. Кубки, правила равенства очков, отбор в Европу и дата старта ещё готовятся.', details: 'Посмотреть план лиг' },
+  en: { title: 'EFL · Season 2', status: 'In preparation', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 is ongoing. Club selection for season 2 is not open yet.', pending: 'Club rosters and the home-and-away league format are ready. Cups, tiebreak rules, European qualification and start date are still being prepared.', details: 'View league plan' },
 };
 
 const internationalCopy = {
@@ -19,6 +19,11 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
   const { language } = useI18n();
   const c = copy[language];
   const intl = internationalCopy[language];
+  const labels = {
+    uz: { clubs: 'klub', rounds: 'tur', matches: 'o‘yin', season: 'Real mavsum', verified: 'Tekshirilgan', source: 'Rasmiy manba', format: 'Ikki davra · uy va safar' },
+    ru: { clubs: 'клубов', rounds: 'туров', matches: 'матчей', season: 'Реальный сезон', verified: 'Проверено', source: 'Официальный источник', format: 'Два круга · дома и в гостях' },
+    en: { clubs: 'clubs', rounds: 'rounds', matches: 'matches', season: 'Real season', verified: 'Verified', source: 'Official source', format: 'Two legs · home and away' },
+  }[language];
   const asianChampionsLeague = EFL_SECOND_SEASON.internationalCompetitions[0];
   const sourceLeagues = EFL_SECOND_SEASON.leagues.filter(league =>
     asianChampionsLeague.qualification.sourceLeagueIds.some(id => id === league.id));
@@ -26,8 +31,16 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
     {(['EUROPE', 'ASIA'] as const).map(group => <div key={group} className="season-preparation-group">
       <h4>{group === 'EUROPE' ? c.europe : c.asia}</h4>
       <ul>{EFL_SECOND_SEASON.leagues.filter(league => league.group === group).map(league => <li key={league.id}>
-        <span aria-hidden="true">{league.flag}</span><span className="season-preparation-name">{league.name}</span>
-        {league.change === 'OPENING' && <span className="season-preparation-opening">{c.opening}</span>}
+        <details className="season-preparation-roster">
+          <summary>
+            <span aria-hidden="true">{league.flag}</span><span className="season-preparation-name">{league.name}</span>
+            <span className="season-preparation-count">{`${league.roster.clubs.length} ${labels.clubs}`}</span>
+          </summary>
+          <p className="season-preparation-note">{`${labels.season}: ${league.roster.realSeason} · ${labels.verified}: ${league.roster.verifiedAt}`}</p>
+          <p className="season-preparation-note">{`${labels.format} · ${league.format.totalMatchdays} ${labels.rounds} · ${league.format.totalFixtures} ${labels.matches}`}</p>
+          <ul className="season-preparation-clubs">{league.roster.clubs.map(club => <li key={club.id}>{club.name}</li>)}</ul>
+          <a className="season-preparation-source" href={league.roster.sources[0].url} target="_blank" rel="noopener noreferrer">{labels.source}</a>
+        </details>
       </li>)}</ul>
     </div>)}
     <div className="season-preparation-international">
