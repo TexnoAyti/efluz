@@ -325,14 +325,15 @@ adminSeasonOperationsRouter.post('/preparation/draft',async(req:Request,res:Resp
 
 const resultPreviewSchema=z.object({
   leagueId:z.string().max(80),
-  fixtures:z.array(z.object({id:z.string().min(1).max(120),seasonId:z.literal('season-2027-28'),homeClubId:z.string().max(80),awayClubId:z.string().max(80),homeScore:z.number().int().min(0).max(99),awayScore:z.number().int().min(0).max(99),status:z.literal('CONFIRMED')})).max(400),
+  fixtures:z.array(z.object({id:z.string().min(1).max(120),seasonId:z.literal('season-2027-28'),homeClubId:z.string().max(80),awayClubId:z.string().max(80),homeScore:z.number().int().min(0).max(99),awayScore:z.number().int().min(0).max(99),status:z.literal('CONFIRMED'),matchday:z.number().int().min(1).max(38).optional(),technicalLossClubId:z.string().max(80).nullable().optional()})).max(400),
   final:z.boolean().optional(),
+  europeanFinalistClubIds:z.array(z.string().max(80)).max(20).optional(),
 }).strict();
 adminSeasonOperationsRouter.post('/preparation/standings-preview',(req:Request,res:Response)=>{
   if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_ADMIN_REQUIRED'});return;}
   const parsed=resultPreviewSchema.safeParse(req.body);
   if(!parsed.success){res.status(400).json({error:'INVALID_PREPARED_RESULTS'});return;}
-  try {res.json(rankPreparedLeagueResults(parsed.data.leagueId,parsed.data.fixtures,{final:parsed.data.final}));}
+  try {res.json(rankPreparedLeagueResults(parsed.data.leagueId,parsed.data.fixtures,{final:parsed.data.final,europeanFinalistClubIds:parsed.data.europeanFinalistClubIds}));}
   catch(error:any){res.status(400).json({error:error.message});}
 });
 

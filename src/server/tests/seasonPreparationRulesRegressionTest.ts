@@ -49,6 +49,23 @@ assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}
 for(const comp of EFL_SECOND_SEASON.europeanCompetitions){assert.equal(comp.totalTeams,36);assert.equal(comp.totalFixtures,comp.code==='UECL'?108:144);assert.equal(comp.qualificationSlots,null);assert.equal(comp.participantClubIds.length,0);}
 assert.equal(EFL_SECOND_SEASON.domesticCups.length,9);
 assert.ok(EFL_SECOND_SEASON.domesticCups.every(cup=>cup.participantClubIds.length===0&&cup.participantStatus==='MISSING'));
+assert.equal(preparationReadiness().counts.verifiedRankingRules,9);
+const uz=ids('league-uzbekistan-superliga');
+const uzFixtures=[result(uz,0,1,3,0),result(uz,1,0,4,0),result(uz,0,2,4,0),result(uz,1,2,2,0)].map(f=>({...f,technicalLossClubId:null as string|null}));
+assert.ok(rankPreparedLeagueResults('league-uzbekistan-superliga',uzFixtures.map(({technicalLossClubId,...f})=>f)).blockers.includes('MISSING_H2HFORFEITS'));
+uzFixtures[0].technicalLossClubId=uz[1];
+assert.deepEqual(rankPreparedLeagueResults('league-uzbekistan-superliga',uzFixtures).standings.slice(0,2).map(row=>row.id),uz.slice(0,2),'Uzbek technical-loss exception takes precedence over head-to-head goal difference');
+const it=ids('league-serie-a');
+const fullItaly=previewPreparedLeagueSchedule('league-serie-a')!.fixtures.map((f,index)=>{
+  const h=it.indexOf(f.homeClubId),a=it.indexOf(f.awayClubId),titlePair=h>=18&&a>=18;
+  return {...f,id:'italy-full-'+index,seasonId,status:'CONFIRMED' as const,homeScore:titlePair?2:h>a?h-a:0,awayScore:titlePair?0:a>h?a-h:0};
+});
+assert.ok(rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true}).blockers.includes('SERIE_A_FINALIST_STATUS_REQUIRED'));
+const italianPlayoff=rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true,europeanFinalistClubIds:[]});
+assert.ok(italianPlayoff.blockers.includes('SERIE_A_TITLE_PLAYOFF_REQUIRED'));
+assert.equal(italianPlayoff.specialCases[0].legs,1);
+assert.equal(italianPlayoff.specialCases[0].extraTime,false);
+assert.equal(rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true,europeanFinalistClubIds:[it[19]]}).canFinalize,true,'Verified FIGC 244/A exception applies if a playoff participant is a UEFA finalist');
 const actor={id:'user-5209126900',telegramId:'5209126900',isAdmin:true,isSuspended:false} as any;
 const db=getFirestoreDb();
 const source={id:EFL_SECOND_SEASON.sourceSeasonId,status:'active'};
