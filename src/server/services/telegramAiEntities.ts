@@ -75,7 +75,7 @@ function aliases(club: Club): string[] {
   const correction=CURRENT_CLUB_CORRECTIONS[club.id];
   const seed = SEED_CLUBS.find(c => normalizeAiEntity(c.name) === normalizeAiEntity(club.name) || normalizeAiEntity(strippedClubName(c.name)) === normalizeAiEntity(stripped));
   const family = Object.entries(ALIASES).find(([,names]) => names.some(name => normalizeAiEntity(name) === normalizeAiEntity(club.name) || !seed && !/^(?:paris|real|manchester|borussia)$/.test(normalizeAiEntity(stripped)) && normalizeAiEntity(name) === normalizeAiEntity(stripped)))?.[1];
-  return [...new Set([club.name, stripped, ...(correction?[correction.name,strippedClubName(correction.name)]:[]), ...[club.name,stripped].filter(name=>name.includes(' ')).map(name=>normalizeAiEntity(name).replace(/ /g,'')), ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || family || [])])];
+  return [...new Set([club.name, stripped, ...(correction?[correction.name,strippedClubName(correction.name),club.id.replace(/^club-/,'').replace(/-/g,' ')]:[]), ...[club.name,stripped].filter(name=>name.includes(' ')).map(name=>normalizeAiEntity(name).replace(/ /g,'')), ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || family || [])])];
 }
 function matchClubs(query: string, clubs: Club[]): Club[] {
   // Preserve explicit team separators so “Inter — Milan” cannot collapse into “Inter Milan”.

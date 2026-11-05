@@ -9,7 +9,10 @@ import {seasonClubs} from '../services/seasonCatalog';
 import {getFirestoreDb} from '../firebase/admin';
 for(const [legacyId,c] of Object.entries(CURRENT_CLUB_CORRECTIONS)){
   const club=TOP5_CLUBS.find(row=>row.id===legacyId)!;
-  assert.ok(club);assert.equal(club.name,c.name);assert.equal(club.id,legacyId);
+  assert.ok(club);
+  assert.equal(resolveAiClubs(legacyId.replace(/^club-/,'').replace(/-/g,' '),[club] as any).clubs[0]?.id,legacyId);
+  assert.equal(resolveAiClubs(c.name,[club] as any).clubs[0]?.id,legacyId);
+  assert.equal(club.name,c.name);assert.equal(club.id,legacyId);
   const original={seasonId:'season-2026-27',fixture:{id:'fixture-preserve',homeClubId:legacyId,homeScore:4,awayScore:2,homeClub:{id:legacyId,name:'old',ownerUserId:'preserve-user'}},standings:[{clubId:legacyId,clubName:'old',points:39}]};
   const changed=correctCurrentPayload(original);
   assert.equal(changed.fixture.homeClub.name,c.name);assert.equal(changed.fixture.homeClubId,legacyId);
