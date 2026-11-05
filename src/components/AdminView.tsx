@@ -81,10 +81,11 @@ import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
 import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
 import { AdminTicketManagementModal } from './customTournaments/AdminTicketManagementModal';
 
+const SeasonAwardsPanel=React.lazy(()=>import('./SeasonAwardsPanel').then(m=>({default:m.SeasonAwardsPanel})));
 const TeamsAdminView=React.lazy(()=>import('./teamLeaguePreview/TeamLeaguePreviewView').then(m=>({default:m.TeamLeaguePreviewView})));
 const UzeflifeAdminView = React.lazy(() => import('./uzeflife/UzeflifeView').then(m => ({default:m.UzeflifeView})));
 
-type AdminTab = 'teams' | 'uzeflife' | 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
+type AdminTab = 'awards' | 'teams' | 'uzeflife' | 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
 
 interface PendingFixtureItem extends Fixture {
   submissions?: {
@@ -243,6 +244,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
 
   const loadTabData = async (tab: AdminTab, skipCache = false) => {
+    if(tab==='awards'){setIsLoading(false);return;}
     if (!user?.isAdmin) {
       setIsLoading(false);
       return;
@@ -937,6 +939,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
         </button>)}
 
         {canSeeTeamPreview(user?.telegramId)&&<button id="tab-admin-teams" onClick={()=>setActiveAdminTab('teams')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab==='teams'?'bg-emerald-500 text-slate-950':'glass-card text-slate-300 hover:text-white'}`}><Shield className="w-4 h-4"/><span>TEAMS · Jamoalar</span></button>}
+        {!isScoped&&<button id="tab-admin-awards" onClick={()=>setActiveAdminTab('awards')} aria-pressed={activeAdminTab==='awards'} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[44px] ${activeAdminTab==='awards'?'bg-emerald-500 text-slate-950':'glass-card text-slate-300 hover:text-white'}`}>Mukofotlar</button>}
         <button id="tab-admin-uzeflife" onClick={() => setActiveAdminTab('uzeflife')} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap min-h-[40px] ${activeAdminTab === 'uzeflife' ? 'bg-emerald-500 text-slate-950' : 'glass-card text-slate-300 hover:text-white'}`}>
           <Trophy className="w-4 h-4" /><span>UZEFLIFE</span>
         </button>
@@ -1105,6 +1108,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       {/* 1. OVERVIEW SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab==='teams'&&canSeeTeamPreview(user?.telegramId)&&<React.Suspense fallback={<p role="status">TEAMS yuklanmoqda…</p>}><TeamsAdminView management /></React.Suspense>}
+      {activeAdminTab==='awards'&&<React.Suspense fallback={<p role="status">Mukofotlar yuklanmoqda…</p>}><SeasonAwardsPanel management/></React.Suspense>}
       {activeAdminTab === 'uzeflife' && <React.Suspense fallback={<p role="status">UZEFLIFE yuklanmoqda…</p>}><UzeflifeAdminView management /></React.Suspense>}
       {activeAdminTab === 'overview' && (
         <div className="space-y-6">
