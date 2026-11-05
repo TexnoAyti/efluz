@@ -321,7 +321,7 @@ export const AdminTelegramAiTab: React.FC = () => {
       <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3">
         <h3 className="text-sm font-bold text-white">Kunlik admin hisoboti</h3>
         <label className="flex gap-2 text-xs text-slate-300"><input type="checkbox" checked={dailyReportEnabled} onChange={e=>setDailyReportEnabled(e.target.checked)} />Har kuni 08:00 (Toshkent) da shaxsiy Telegram chatimga yuborish</label>
-        <p className="text-xs text-slate-400">Yoqish yoki o‘chirishdan keyin «Sozlamalarni saqlash» tugmasini bosing. Hisobot joriy turlar, kutilayotgan natijalar, bahsli o‘yinlar va g‘olibsiz kuboklarni ko‘rsatadi.</p>
+        <p className="text-xs text-slate-400">Yoqish yoki o‘chirishdan keyin «Sozlamalarni saqlash» tugmasini bosing. Hisobotda ustuvor ishlar, so‘nggi 24 soat natijalari, liga turlari, eski o‘yinlar va muddatlar, UZEFLIFE, TEAMS, Telegram yetkazilishi, yangi foydalanuvchilar va Premium Stars to‘lovlari ko‘rsatiladi. O‘qilmagan manbalar alohida belgilanadi.</p>
         <button type="button" disabled={reportLoading} className="px-3 py-2 rounded-lg bg-slate-800 text-xs text-white disabled:opacity-50" onClick={async()=>{setReportLoading(true);try{const data=await api.getTelegramAiDailyReport();setReport(data.text);}catch{setReport('Hisobotni hozir o‘qib bo‘lmadi.');}finally{setReportLoading(false);}}}>{reportLoading?'Tayyorlanmoqda…':'Hisobotni ko‘rish'}</button>
         {report&&<pre className="text-xs text-slate-300 whitespace-pre-wrap break-words">{report}</pre>}
       </section>
