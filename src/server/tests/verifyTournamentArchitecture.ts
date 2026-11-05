@@ -471,6 +471,7 @@ export async function runTournamentArchitectureTests() {
   catch(error:any){closedClaimRejected=error.code==='SEASON_NOT_OPEN';}
   assert('Section 8: Upcoming Season Admission Guard','Upcoming claims rejected','Rejected until registration opens',closedClaimRejected);
   await getFirestoreDb().collection(COLLECTIONS.SEASONS).doc('season-2027-28').set({status:'registration',registrationOpen:true},{merge:true});
+  await getFirestoreDb().collection('club_admissions').doc('season-2027-28').set({seasonId:'season-2027-28',enabled:false,stage:-1});
 
   // In Season 2027/28, User 2 claims Arsenal
   await claimClubAtomic('user-100002', 'club-arsenal', 'season-2027-28');
