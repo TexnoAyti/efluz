@@ -66,3 +66,5 @@ Admin panelining egaga ochiq bo‘limi: **EFL · 2-mavsumni tayyorlash**. Sana i
 Yangi regressiya: `node scripts/run-isolated-test.mjs src/server/tests/seasonPreparationRulesRegressionTest.ts`. Ligue 1/J1/La Liga farqlari, Saudiyaning mini-jadvali, haqiqiy o‘yinlar soni, soxta tenglik yechimi yo‘qligi, mavsum izolyatsiyasi, asosiy admin nazorati, sana tekshiruvi, idempotent va parallel draft saqlash, noma’lum aktivatsiya maydonining rad etilishi tekshiriladi.
 
 Qo‘shimcha manbalar: Italiya — https://files.figc.it/version/c%3AZmUzYzk0MzUtMzU0Zi00%3AYTk3YzZiZGEtYmExYi00/244%20-%20Deroga%20art.%2051%20NOIF%20-%20Determinazione%20classifica%20Campionato%20Serie%20A%20ss%202026%20-%202027.pdf ; O‘zbekiston — https://cdn.pfl.uz/match/c5574713-d7df-49c5-9df1-2f9af1f72d6c-d2d68ce4-4914-4bdf-937f-312761843a85.pdf .
+
+AI gateway katalogida `season_preparation`, `season_preparation_save`, `season_preparation_standings_preview` haqiqiy yo‘llarga bog‘langan. Uchalasiga ham faqat asosiy admin kira oladi; delegatsiyadagi liga adminiga ruxsat kengaytirilmagan. Hisoblash previewsi uchun kattaroq, lekin chegaralangan body limiti bor; endpoint 400 natijadan ko‘pini qabul qilmaydi.

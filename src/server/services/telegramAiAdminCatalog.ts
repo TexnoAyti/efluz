@@ -113,6 +113,9 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   broadcast_detail: action('GET', '/telegram-notifications/broadcasts/:id'),
   ai_settings: action('GET', '/telegram-ai/config'),
   season_control: action('GET', '/season-ops/control', 'seasonId?'),
+  season_preparation: action('GET','/season-ops/preparation'),
+  season_preparation_save: action('POST','/season-ops/preparation/draft','startDate:YYYY-MM-DD or null, expectedRevision:from season_preparation only; saves a draft, never activates a season'),
+  season_preparation_standings_preview: action('POST','/season-ops/preparation/standings-preview','leagueId, fixtures:exact confirmed season-two records only, final?, europeanFinalistClubIds?:verified clubs in this league; read-only calculation, no result writes'),
   season_history: action('GET', '@season/history'),
   season_archive_detail: action('GET', '@season/history/:id'),
   season_overview: action('GET', '@season/overview', 'seasonId?'),
@@ -129,7 +132,7 @@ export const adminPlanSchema = z.object({
   const spec = AI_ADMIN_ACTIONS[p.action];
   if (spec?.path.includes(':id') && !p.targetId) ctx.addIssue({ code: 'custom', message: 'Exact targetId required', path: ['targetId'] });
   if (spec?.path.includes(':secondaryId') && !p.secondaryId) ctx.addIssue({ code: 'custom', message: 'Exact secondaryId required', path: ['secondaryId'] });
-  if (JSON.stringify(p.body).length > (p.action === 'fixture_schedule' ? 900000 : p.action === 'team_save' ? 16000 : 4000)) ctx.addIssue({ code: 'custom', message: 'Body too large', path: ['body'] });
+  if (JSON.stringify(p.body).length > (p.action === 'fixture_schedule' ? 900000 : p.action === 'team_save' ? 16000 : p.action === 'season_preparation_standings_preview' ? 200000 : 4000)) ctx.addIssue({ code: 'custom', message: 'Body too large', path: ['body'] });
 });
 export type AdminPlan = z.infer<typeof adminPlanSchema>;
 export function adminPlanPath(plan: AdminPlan): string {

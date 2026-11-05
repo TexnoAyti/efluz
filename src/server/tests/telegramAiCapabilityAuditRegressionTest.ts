@@ -24,5 +24,5 @@ for(const [name,spec] of Object.entries(AI_ADMIN_ACTIONS)) {
 const core=routes.filter(r=>r.path.startsWith('/api/admin/')&&!r.path.includes('/custom-tournaments/tickets/'));
 const uncovered=core.filter(r=>!Object.values(AI_ADMIN_ACTIONS).some(spec=>spec.method===r.method&&matches(r.path,aiAdminRequestUrl(spec.path))));
 assert.deepEqual(uncovered,[],'An EFL core admin route is missing from capabilities');
-for(const action of ['discipline_issue','discipline_revoke','ticket_grant','custom_start','uzeflife_generate','team_save'])assert.throws(()=>assertAiAdminActionAllowed(7573478198,{action,body:{}}),/faqat asosiy admin/);
+for(const action of ['discipline_issue','discipline_revoke','ticket_grant','custom_start','uzeflife_generate','team_save','season_preparation','season_preparation_save','season_preparation_standings_preview'])assert.throws(()=>assertAiAdminActionAllowed(7573478198,{action,body:{}}),/faqat asosiy admin/);
 console.log(`PASS ${Object.keys(AI_ADMIN_ACTIONS).length} catalog actions matched actual mounted routes, complete core EFL admin route coverage, fixed path prefixes and unchanged delegated permissions; no routes executed`);
