@@ -29,7 +29,7 @@ export interface ClubAdmissionStatus {
 
 export class ClubAdmissionConflict extends Error {
   constructor(public readonly code: 'ADMISSION_STAGE_CHANGED' | 'ADMISSION_FINISHED' | 'ADMISSION_STATE_CHANGED' | 'ADMISSION_LEAGUE_NOT_FULL') {
-    super(code === 'ADMISSION_LEAGUE_NOT_FULL' ? 'Joriy liga hali to‘lmagan. Keyingi liga to‘lgach avtomatik ochiladi.' : code === 'ADMISSION_FINISHED' ? 'Klub qabuli yakunlangan.' : 'Qabul holati o‘zgargan. Sahifani yangilang.');
+    super(code === 'ADMISSION_LEAGUE_NOT_FULL' ? 'Joriy liga hali to‘lmagan. Joriy liga to‘lgach keyingisi avtomatik ochiladi.' : code === 'ADMISSION_FINISHED' ? 'Klub qabuli yakunlangan.' : 'Qabul holati o‘zgargan. Sahifani yangilang.');
   }
 }
 
