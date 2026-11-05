@@ -89,3 +89,7 @@ https://documents.uefa.com/r/Regulations-of-the-UEFA-Conference-League-2026/27/A
 https://documents.uefa.com/r/Regulations-of-the-UEFA-Champions-League-2026/27/Article-3-Entries-for-the-competition-Online
 
 Muhim: package saqlash jonli katalogni almashtirmaydi. RUNTIME_TRANSITION_REQUIRED bloki saqlangan.
+
+### Mavsumga mos klub katalogi
+
+Server katalogi 2-mavsum so‘ralganda 9 liga va 168 klubdan foydalanadi; joriy mavsumning 96 klubli seedini o‘zgartirmaydi. Read-model qatnashchi soni endi mavsumga mos, Superliga 16 va yangi Osiyo ligalari alohida hisoblanadi. Kelgusi mavsum uchun eskirgan klub/egalik ro‘yxati ko‘chirilmaydi. 2-mavsum qabuli hujjat bo‘lmaganda yopiq; uni ochish uchun mavsumning registration/active holati va registrationOpen:true talab qilinadi. Bu o‘zgarish faol mavsumni avtomatik almashtirmaydi.

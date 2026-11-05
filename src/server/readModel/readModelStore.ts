@@ -1,3 +1,4 @@
+import {seasonClubs,seasonLeagues,preparedLeagueReadConfig} from '../services/seasonCatalog';
 import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { clubStadium } from '../../constants/clubStadiums';
 import {filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
@@ -106,6 +107,7 @@ export const DOMESTIC_LEAGUE_CONFIG: Record<
   string,
   { leagueId: string; expectedCount: number; name: string }
 > = {
+  ...preparedLeagueReadConfig,
   'comp-premier-league-2026': { leagueId: 'league-premier-league', expectedCount: 20, name: 'Premier League' },
   'comp-la-liga-2026': { leagueId: 'league-la-liga', expectedCount: 20, name: 'La Liga' },
   'comp-serie-a-2026': { leagueId: 'league-serie-a', expectedCount: 20, name: 'Serie A' },
@@ -956,7 +958,7 @@ export async function buildClubsSnapshot(seasonId = 'season-2026-27'): Promise<R
 async function getClubsSnapshotForRead(seasonId: string): Promise<ReadModelSnapshot<OwnerNeutralClub[]>> {
   const key = ReadModelKeys.clubsWithOwners(seasonId);
   const fresh = await redisGetFresh<OwnerNeutralClub[]>(key);
-  if (Array.isArray(fresh?.data) && fresh.data.length === 96 && !(await redisIsDirty(key))) {
+  if (Array.isArray(fresh?.data) && fresh.data.length === seasonClubs(seasonId).length && !(await redisIsDirty(key))) {
     firestoreCircuitBreaker.cancelProbe();
     return fresh;
   }
@@ -1060,7 +1062,7 @@ async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadMo
   }
 
   // Build owner-neutral clubs for all 96 canonical clubs (strictly omitting private telegram IDs)
-  const neutralClubs: OwnerNeutralClub[] = SEED_CLUBS.map((seed) => {
+  const neutralClubs: OwnerNeutralClub[] = seasonClubs(seasonId).map((seed) => {
     const occ = occMap.get(seed.id);
     const ownerUserId = occ ? occ.userId : null;
     const userDetail = ownerUserId ? userMap.get(ownerUserId) : null;
@@ -1104,7 +1106,7 @@ async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadMo
     schemaVersion: SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     sourceVersion: `occupancies-${occMap.size}`,
-    expectedCount: 96,
+    expectedCount: seasonClubs(seasonId).length,
     actualCount: neutralClubs.length,
     data: neutralClubs,
   };
@@ -1113,9 +1115,9 @@ async function buildClubsSnapshotAuthoritative(seasonId: string): Promise<ReadMo
   await persistReadSnapshot(key, snapshot, 86400);
 
   // Also write per-league snapshots
-  for (const league of SEED_LEAGUES) {
+  for (const league of seasonLeagues(seasonId)) {
     const leagueClubs = neutralClubs.filter((c) => c.leagueId === league.id);
-    const expectedLeagueCount = league.id.includes('bundesliga') || league.id.includes('ligue-1') ? 18 : 20;
+    const expectedLeagueCount = seasonClubs(seasonId).filter(club=>club.leagueId===league.id).length;
     const leagueSnapshot: ReadModelSnapshot<OwnerNeutralClub[]> = {
       schemaVersion: SCHEMA_VERSION,
       generatedAt: new Date().toISOString(),
@@ -1322,9 +1324,9 @@ export function generateZeroValueStandings(
   seasonId = 'season-2026-27'
 ): StandingsRow[] {
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
-  let clubs = config ? SEED_CLUBS.filter((c) => c.leagueId === config.leagueId) : [];
+  let clubs = config ? seasonClubs(seasonId).filter((c) => c.leagueId === config.leagueId) : [];
   if (clubs.length === 0) {
-    clubs = SEED_CLUBS.slice(0, 20);
+    clubs = seasonClubs(seasonId).slice(0, 20);
   }
 
   return clubs.map((club, idx) => ({
@@ -1511,7 +1513,7 @@ export async function getAdminClubsFromReadModel(
   const result = await readThroughReadModel<OwnerNeutralClub[]>({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
-    expectedCount: 96,
+    expectedCount: seasonClubs(seasonId).length,
     firestoreFetcher: async () => {
       const snap = await getClubsSnapshotForRead(seasonId);
       return snap.data;
@@ -1566,7 +1568,7 @@ export async function getLeagueClubsFromReadModel(
   currentUserId?: string
 ): Promise<{ clubs: Club[]; source: string; stale: boolean; degraded: boolean; snapshotAt: string }> {
   const result = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId), seasonId, expectedCount: 96,
+    key: ReadModelKeys.clubsWithOwners(seasonId), seasonId, expectedCount: seasonClubs(seasonId).length,
     firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
     validateData: data => Array.isArray(data) && data.length > 0,
   });
@@ -1587,7 +1589,7 @@ export async function getAvailableClubsFromReadModel(
   const result = await readThroughReadModel<OwnerNeutralClub[]>({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
-    expectedCount: 96,
+    expectedCount: seasonClubs(seasonId).length,
     firestoreFetcher: async () => {
       const snap = await getClubsSnapshotForRead(seasonId);
       return snap.data;
@@ -1620,7 +1622,7 @@ export async function getClubByIdFromReadModel(
   const result = await readThroughReadModel<OwnerNeutralClub[]>({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
-    expectedCount: 96,
+    expectedCount: seasonClubs(seasonId).length,
     firestoreFetcher: async () => {
       const snap = await getClubsSnapshotForRead(seasonId);
       return snap.data;
@@ -1651,7 +1653,7 @@ export async function getUserActiveClubFromReadModel(
   const result = await readThroughReadModel<OwnerNeutralClub[]>({
     key: ReadModelKeys.clubsWithOwners(seasonId),
     seasonId,
-    expectedCount: 96,
+    expectedCount: seasonClubs(seasonId).length,
     firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
     validateData: data => Array.isArray(data) && data.length > 0,
   });
@@ -1716,7 +1718,7 @@ export async function getCompetitionStandingsFromReadModel(
     clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
       key: ReadModelKeys.clubsWithOwners(seasonId),
       seasonId,
-      expectedCount: 96,
+      expectedCount: seasonClubs(seasonId).length,
       firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
       validateData: (data) => Array.isArray(data) && data.length > 0,
     });
@@ -1973,7 +1975,7 @@ export async function getCompetitionFixturesFromReadModel(
     clubsResult = await readThroughReadModel<OwnerNeutralClub[]>({
       key: ReadModelKeys.clubsWithOwners(seasonId),
       seasonId,
-      expectedCount: 96,
+      expectedCount: seasonClubs(seasonId).length,
       firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
       validateData: (data) => Array.isArray(data) && data.length > 0,
     });
@@ -2527,7 +2529,7 @@ export async function getReadModelHealthStatus(seasonId = 'season-2026-27'): Pro
     expectedCount: number;
   }> = [
     { name: 'competitions', rawKey: ReadModelKeys.competitions(seasonId), expectedCount: 17 },
-    { name: 'clubs-with-owners', rawKey: ReadModelKeys.clubsWithOwners(seasonId), expectedCount: 96 },
+    { name: 'clubs-with-owners', rawKey: ReadModelKeys.clubsWithOwners(seasonId), expectedCount: seasonClubs(seasonId).length },
     { name: 'admin-fixtures', rawKey: ReadModelKeys.adminFixtures(seasonId), expectedCount: 0 },
     ...SEED_LEAGUES.map((l) => ({
       name: `league-${l.id}-clubs`,

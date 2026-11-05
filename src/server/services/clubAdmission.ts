@@ -1,3 +1,5 @@
+import {seasonLeagues} from './seasonCatalog';
+import {EFL_SECOND_SEASON} from '../../lib/seasonPreparation';
 import { randomUUID } from 'node:crypto';
 import { isLeagueSelectionOpen } from '../../lib/clubAdmission';
 import { trackFirestoreRead } from '../firebase/firestoreStore';
@@ -30,8 +32,9 @@ export class ClubAdmissionConflict extends Error {
 }
 
 export function admissionStatus(seasonId: string, data?: Record<string, unknown>): ClubAdmissionStatus {
-  const enabled = data?.enabled === true;
-  const rawStage = Number(data?.stage);
+  const CLUB_ADMISSION_LEAGUES=seasonLeagues(seasonId).map(({id,name})=>({id,name}));
+  const enabled = data?.enabled === true || seasonId===EFL_SECOND_SEASON.id && !data;
+  const rawStage = seasonId===EFL_SECOND_SEASON.id && !data ? CLUB_ADMISSION_LEAGUES.length : Number(data?.stage);
   if (enabled && (!Number.isInteger(rawStage) || rawStage < 0 || rawStage > CLUB_ADMISSION_LEAGUES.length)) {
     throw new Error('INVALID_CLUB_ADMISSION_STATE');
   }
@@ -108,9 +111,13 @@ export async function advanceClubAdmission(seasonId: string, expectedStage: numb
   const db = getFirestoreDb();
   const ref = db.collection(COLLECTION).doc(seasonId);
   const status = await db.runTransaction(async (transaction) => {
+    if(seasonId===EFL_SECOND_SEASON.id){
+      const season=await transaction.get(db.collection('seasons').doc(seasonId));
+      if(!['registration','active'].includes(String(season.data()?.status).toLowerCase())||season.data()?.registrationOpen!==true)throw new Error('SEASON_NOT_OPEN');
+    }
     const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
     if (current.stage !== expectedStage) throw new ClubAdmissionConflict('ADMISSION_STAGE_CHANGED');
-    if (current.stage >= CLUB_ADMISSION_LEAGUES.length) throw new ClubAdmissionConflict('ADMISSION_FINISHED');
+    if (current.stage >= current.leagues.length) throw new ClubAdmissionConflict('ADMISSION_FINISHED');
     const stage = current.stage + 1;
     const updatedAt = new Date().toISOString();
     const revision = randomUUID();
@@ -127,10 +134,14 @@ export async function advanceClubAdmission(seasonId: string, expectedStage: numb
 }
 
 export async function setLeagueClubSelection(seasonId: string, leagueId: string, open: boolean, expectedRevision: string | null, actorId: string): Promise<ClubAdmissionStatus> {
-  if (!CLUB_ADMISSION_LEAGUES.some(league => league.id === leagueId) || typeof open !== 'boolean') throw new Error('INVALID_LEAGUE_SELECTION');
+  if (!seasonLeagues(seasonId).some(league => league.id === leagueId) || typeof open !== 'boolean') throw new Error('INVALID_LEAGUE_SELECTION');
   const db = getFirestoreDb();
   const ref = db.collection(COLLECTION).doc(seasonId);
   const status = await db.runTransaction(async transaction => {
+    if(seasonId===EFL_SECOND_SEASON.id){
+      const season=await transaction.get(db.collection('seasons').doc(seasonId));
+      if(!['registration','active'].includes(String(season.data()?.status).toLowerCase())||season.data()?.registrationOpen!==true)throw new Error('SEASON_NOT_OPEN');
+    }
     const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
     if (current.revision !== expectedRevision) throw new ClubAdmissionConflict('ADMISSION_STATE_CHANGED');
     const data = { seasonId, enabled: current.enabled, stage: current.stage, leagueOverrides: { ...current.leagueOverrides, [leagueId]: open }, updatedAt: new Date().toISOString(), revision: randomUUID(), updatedBy: actorId };

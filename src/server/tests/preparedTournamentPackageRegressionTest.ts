@@ -1,3 +1,8 @@
+import {seasonClubs,seasonLeagues} from '../services/seasonCatalog';
+import {buildClubsSnapshot,getLeagueClubsFromReadModel,generateZeroValueStandings} from '../readModel/readModelStore';
+import {admissionStatus,setLeagueClubSelection} from '../services/clubAdmission';
+import {isLeagueSelectionOpen} from '../../lib/clubAdmission';
+import {SEED_CLUBS} from '../db/seed';
 import assert from 'node:assert/strict';
 import {generatePreparedEuropeanDraw,validatePreparedEuropeanDraw,type EuropeanCode} from '../tournament/preparedEuropeanDraw';
 import {buildPreparedTournamentPackage,previewPreparedSuperCup,previewPreparedEuropeanCompetition} from '../services/preparedTournamentPackage';
@@ -68,4 +73,22 @@ assert.equal((await db.collection('seasons').doc(EFL_SECOND_SEASON.id).get()).ex
 assert.equal((await db.collection('fixtures').doc('live-sentinel').get()).data()?.homeScore,4);
 assert.equal((await db.collection('seasons').doc(EFL_SECOND_SEASON.sourceSeasonId).get()).data()?.sentinel,'preserved');
 assert.equal((await readSeasonPreparationWorkflow(actor)).readiness.canActivate,false);
+assert.equal(seasonClubs(EFL_SECOND_SEASON.sourceSeasonId),SEED_CLUBS,'Current-season metadata remains the same canonical seed');
+assert.equal(seasonClubs(EFL_SECOND_SEASON.id).length,168);
+assert.equal(seasonLeagues(EFL_SECOND_SEASON.id).length,9);
+const pendingAdmission=admissionStatus(EFL_SECOND_SEASON.id);
+assert.equal(pendingAdmission.leagues.length,9);
+assert.ok(pendingAdmission.leagues.every(l=>!isLeagueSelectionOpen(pendingAdmission,l.id)),'Future admission is closed by default');
+await assert.rejects(setLeagueClubSelection(EFL_SECOND_SEASON.id,'league-j1',true,null,actor.id),/SEASON_NOT_OPEN/);
+await db.collection('club_occupancies').doc('source-only-occupancy').set({seasonId:EFL_SECOND_SEASON.sourceSeasonId,clubId:ids[0],userId:actor.id,status:'active'});
+const clubs=await buildClubsSnapshot(EFL_SECOND_SEASON.id);
+assert.equal(clubs.expectedCount,168);assert.equal(clubs.actualCount,168);
+assert.ok(clubs.data.every(c=>!c.ownerUserId),'Future owners are never copied from season one');
+for(const l of EFL_SECOND_SEASON.leagues){
+  const data=await getLeagueClubsFromReadModel(l.id,EFL_SECOND_SEASON.id);
+  assert.equal(data.clubs.length,l.roster.clubs.length);
+  const zero=generateZeroValueStandings(l.competitionId,EFL_SECOND_SEASON.id);
+  assert.equal(zero.length,l.roster.clubs.length);
+  assert.ok(zero.every(row=>row.points===0&&row.played===0));
+}
 console.log('PREPARED_TOURNAMENT_PACKAGE_PASS: 36-team UEFA draw constraints, 9 super cups, reproducible staging, owner isolation, source preservation');
