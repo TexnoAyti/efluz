@@ -606,7 +606,7 @@ async function handleTelegramAiMessageInternal(
     if (payload.photoFileId) {
       if (!nativePrivate) return { ok: true, handled: false, ignored: 'photo_owner_dm_only' };
       let text: string;
-      try { const photoSignal = AbortSignal.any([rootController.signal, AbortSignal.timeout(Math.max(1, deadlineAt-Date.now()-2500))]); text = await readTelegramResultPhoto(payload.photoFileId, photoSignal); }
+      try { const photoSignal = AbortSignal.any([rootController.signal, AbortSignal.timeout(Math.max(1, deadlineAt-Date.now()-2500))]); text = await withinAiDeadline(photoSignal,()=>readTelegramResultPhoto(payload.photoFileId!, photoSignal)); }
       catch { await recordAiObservation(payload.updateId, 'provider'); text = 'Rasmni o‘qish hozir bajarilmadi. Jamoalar va hisobni matn bilan yuboring. Hech qanday natija saqlanmadi.'; }
       const result = await dispatchTelegramAiReply(payload, text, rootController.signal, { parse_mode: null, maxChars: 3000 });
       return { ok: result.ok, handled: true, replySent: result.replySent };
