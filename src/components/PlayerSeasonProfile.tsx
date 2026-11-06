@@ -2,11 +2,9 @@ import { useAuth } from '../context/AuthContext';
 import React, { useEffect, useState } from 'react';
 import {
   Activity,
-  Award,
   CalendarClock,
   CircleDot,
   Goal,
-  Medal,
   ShieldCheck,
   Sparkles,
   Target,
@@ -16,22 +14,6 @@ interface PlayerSeasonProfileProps {
   userId: string;
   seasonId?: string;
 }
-
-type AwardLeader = {
-  clubId: string;
-  clubName: string;
-  userId?: string;
-  username?: string;
-  value: number;
-};
-
-type SeasonAward = {
-  id: string;
-  label: string;
-  description: string;
-  unit: string;
-  leaders: AwardLeader[];
-};
 
 type InsightData = {
   seasonId: string;
@@ -67,12 +49,6 @@ type InsightData = {
   };
 };
 
-type SeasonData = {
-  seasonId: string;
-  awards: SeasonAward[];
-  source: string;
-};
-
 function StatCard({ label, value, sub, icon }: { label: string; value: React.ReactNode; sub: string; icon: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-slate-950/55 p-3.5 shadow-inner">
@@ -95,7 +71,6 @@ const outcomeClass: Record<'W' | 'D' | 'L', string> = {
 export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId, seasonId = 'season-2026-27' }) => {
   const { user } = useAuth();
   const [data, setData] = useState<InsightData | null>(null);
-  const [seasonData, setSeasonData] = useState<SeasonData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,14 +87,10 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
       return payload as T;
     };
 
-    Promise.all([
-      loadJson<InsightData>(`/api/insights/player/${encodeURIComponent(userId)}?seasonId=${encodeURIComponent(seasonId)}`),
-      loadJson<SeasonData>(`/api/insights/season?seasonId=${encodeURIComponent(seasonId)}`).catch(() => null),
-    ])
-      .then(([player, season]) => {
+    loadJson<InsightData>(`/api/insights/player/${encodeURIComponent(userId)}?seasonId=${encodeURIComponent(seasonId)}`)
+      .then((player) => {
         if (cancelled) return;
         setData(player);
-        setSeasonData(season);
       })
       .catch((err) => {
         if (!cancelled && err?.name !== 'AbortError') setError(err?.message || 'Season profile unavailable');
@@ -155,8 +126,6 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
   }
 
   const summary = data.summary;
-  const awards = seasonData?.awards || [];
-
   return (
     <section className="season-profile-card relative overflow-hidden rounded-[28px] border border-emerald-400/15 bg-[radial-gradient(circle_at_10%_0%,rgba(16,185,129,0.14),transparent_30%),radial-gradient(circle_at_90%_8%,rgba(59,130,246,0.10),transparent_28%),linear-gradient(150deg,rgba(15,23,42,0.96),rgba(2,6,23,0.94))] shadow-2xl">
       <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full border border-emerald-400/[0.06]" />
@@ -222,31 +191,6 @@ export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId
             ) : (
               <div className="mt-2 text-[11px] text-slate-500">No upcoming fixture is currently assigned.</div>
             )}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-violet-400/15 bg-violet-400/[0.045] p-4">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-xs font-black text-white"><Award className="h-4 w-4 text-violet-300" /> Season Awards</div>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-violet-300/70">Objective domestic-league leaders • ties preserved</span>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-            {awards.length === 0 ? (
-              <div className="sm:col-span-2 xl:col-span-5 rounded-xl border border-dashed border-violet-300/10 py-5 text-center text-[10px] text-slate-500">Awards will appear when confirmed league results exist.</div>
-            ) : awards.map((award) => (
-              <div key={award.id} className="rounded-xl border border-violet-300/10 bg-black/20 p-3">
-                <div className="flex items-center gap-2 text-violet-300"><Medal className="h-3.5 w-3.5" /><span className="text-[9px] font-black uppercase tracking-wider">{award.label}</span></div>
-                <div className="mt-2 space-y-1.5">
-                  {award.leaders.slice(0, 3).map((leader) => (
-                    <div key={`${award.id}-${leader.clubId}`} className="flex items-center justify-between gap-2">
-                      <div className="min-w-0"><div className="truncate text-[10px] font-black text-white">{leader.clubName}</div>{leader.username && <div className="truncate text-[8px] text-slate-500">@{String(leader.username).replace(/^@+/, '')}</div>}</div>
-                      <div className="shrink-0 text-[10px] font-black text-violet-200">{leader.value} {award.unit}</div>
-                    </div>
-                  ))}
-                  {award.leaders.length > 3 && <div className="text-[8px] text-slate-600">+{award.leaders.length - 3} tied leader(s)</div>}
-                </div>
-              </div>
-            ))}
           </div>
         </div>
 
