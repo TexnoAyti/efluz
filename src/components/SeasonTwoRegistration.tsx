@@ -109,15 +109,15 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
   return (
     <section aria-label="EFL 2-mavsum klublar qabuli" className="relative isolate min-w-0 overflow-hidden rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] shadow-sm transition-colors duration-200">
       <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full opacity-[.09] blur-3xl" style={{ background: 'var(--efl-primary)' }} />
-      <div className="relative space-y-4 p-4 sm:p-5">
+      <div className="relative min-w-0 space-y-5 p-4 sm:p-6">
         <header className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] shadow-xs">
               <Trophy size={23} strokeWidth={2} className="text-[var(--efl-primary)]" />
             </span>
-            <div>
+            <div className="min-w-0">
               <div className="mb-1 text-[10px] font-extrabold uppercase tracking-[.16em] text-[var(--efl-text-2)]">EFLUZ <span className="px-1 opacity-40">/</span> 2027–28</div>
-              <h3 className="text-xl font-black tracking-tight text-[var(--efl-text)]">2-mavsum · Klub qabuli</h3>
+              <h3 className="text-lg sm:text-xl font-black leading-snug tracking-tight text-[var(--efl-text)]">2-mavsum · Klub qabuli</h3>
             </div>
           </div>
           <span className="inline-flex min-h-[29px] items-center gap-1.5 rounded-full border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-1 text-[10px] font-black tracking-wide text-[var(--efl-primary)]">
@@ -126,13 +126,13 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
           </span>
         </header>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3">
+        <div className="grid grid-cols-1 gap-3 min-[440px]:grid-cols-2">
+          <div className="min-w-0 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-4">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--efl-text-2)]"><ShieldCheck size={14} /> Klub egalari</div>
             <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:30 <span className="text-[11px] text-[var(--efl-text-2)]">– 20:45</span></div>
             <p className="mt-1 text-[10px] text-[var(--efl-text-2)]">Klubni saqlash huquqi</p>
           </div>
-          <div className="rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3">
+          <div className="min-w-0 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-4">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--efl-text-2)]"><CalendarDays size={14} /> Barcha o‘yinchilar</div>
             <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:45 <span className="text-[11px] text-[var(--efl-text-2)]">dan</span></div>
             <p className="mt-1 text-[10px] text-[var(--efl-text-2)]">Bo‘sh klublarni tanlash</p>
@@ -140,7 +140,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
         </div>
 
         {(phase === 'NOT_STARTED' || priority) && (
-          <div className="flex items-center justify-between rounded-xl border border-[var(--efl-border)] bg-[var(--efl-primary-soft)] px-3 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-primary-soft)] px-4 py-3">
             <span className="flex items-center gap-2 text-xs font-bold text-[var(--efl-text)]"><Clock3 size={16} className="text-[var(--efl-primary)]" /> {priority ? 'Ustuvor muddat tugashiga' : 'Qabul ochilishigacha'}</span>
             <span className="font-mono text-xl font-black tabular-nums tracking-tight text-[var(--efl-primary)]">{display}</span>
           </div>
@@ -160,18 +160,18 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
           <div className="space-y-2">
             <h4 className="text-[11px] font-black uppercase tracking-widest text-[var(--efl-text-2)]">Sizning klublaringiz</h4>
             {eligibleClubs.map(club => <div key={club.clubId} className="rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface)]"><ShieldCheck size={17} className="text-[var(--efl-primary)]" /></span>
-                  <strong className="truncate text-sm font-black text-[var(--efl-text)]">{clubNames.get(club.clubId) || club.clubId}</strong>
+                  <strong className="min-w-0 break-words text-sm font-black text-[var(--efl-text)]">{clubNames.get(club.clubId) || club.clubId}</strong>
                 </div>
                 {club.choice && <span className="flex items-center gap-1 text-[10px] font-black text-[var(--efl-primary)]">{club.choice === 'KEEP' ? <CheckCircle2 size={15} /> : <X size={15} />}{club.choice === 'KEEP' ? 'SAQLANDI' : 'RAD ETILDI'}</span>}
               </div>
-              {!club.choice && <div className="mt-3 grid grid-cols-2 gap-2">
+              {!club.choice && <div className="mt-3 grid grid-cols-1 gap-2 min-[390px]:grid-cols-2">
                 <button type="button" disabled={!!busy} onClick={() => setConfirm({ id: club.clubId, choice: 'KEEP' })}
-                  className="flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-[var(--efl-primary)] px-2 text-xs font-black text-white shadow-sm disabled:opacity-50"><Check size={16} /> Ha, qolaman</button>
+                  className="flex min-h-[46px] min-w-0 items-center justify-center gap-1.5 rounded-xl bg-[var(--efl-primary)] px-2 text-xs font-black text-white shadow-sm disabled:opacity-50"><Check size={16} /> Ha, qolaman</button>
                 <button type="button" disabled={!!busy} onClick={() => setConfirm({ id: club.clubId, choice: 'RELEASE' })}
-                  className="flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface)] px-2 text-xs font-black text-[var(--efl-text)] disabled:opacity-50"><X size={16} /> Yo‘q, ketaman</button>
+                  className="flex min-h-[46px] min-w-0 items-center justify-center gap-1.5 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface)] px-2 text-xs font-black text-[var(--efl-text)] disabled:opacity-50"><X size={16} /> Yo‘q, ketaman</button>
               </div>}
             </div>)}
           </div>
@@ -194,7 +194,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
         {notice && <p role="status" className="flex items-center gap-2 text-xs font-bold text-[var(--efl-primary)]"><CheckCircle2 size={16} />{notice}</p>}
         {error && <p role="alert" className="rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3 text-xs text-[var(--efl-text)]">{error}</p>}
 
-        <footer className="flex items-center justify-between gap-3 border-t border-[var(--efl-border)] pt-3">
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--efl-border)] pt-3">
           <p className="text-[11px] leading-relaxed text-[var(--efl-text-2)]">1-mavsumdagi klub va o‘yinlar o‘zgarmaydi.</p>
           <button type="button" onClick={() => void load()} className="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-bold text-[var(--efl-text-2)] hover:text-[var(--efl-primary)]"><RefreshCw size={14} /> Yangilash</button>
         </footer>
