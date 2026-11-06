@@ -1,4 +1,4 @@
-import {seasonLeagues} from '../services/seasonCatalog';
+import {seasonClubs, seasonLeagues} from '../services/seasonCatalog';
 import { S2_PUBLIC_AT } from '../../lib/seasonTwoAdmissionWindow';
 import {isClubSelectionBanned} from '../services/clubSelectionBan';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
@@ -1012,7 +1012,7 @@ export async function claimClubAtomicFirestore(
   options?: { authoritativeOnly?: boolean; circuitProbeReserved?: boolean; requiresActiveUser?: boolean; verifiedProfile?: { id:string; telegramId:string; username?:string; firstName?:string; lastName?:string } }
 ): Promise<{ success: boolean; club: Club; authoritative?: boolean; isFallback?: boolean }> {
   assertNoSyntheticIdsInProduction('claimClubAtomicFirestore', [userId, clubId, seasonId]);
-  assertSeasonLeagueEnabled(SEED_CLUBS.find(c=>c.id===clubId)?.leagueId,seasonId);
+  assertSeasonLeagueEnabled(seasonClubs(seasonId).find(c=>c.id===clubId)?.leagueId,seasonId);
   const now = new Date().toISOString();
 
   if (options?.circuitProbeReserved && firestoreCircuitBreaker.getStatus().state === 'HALF_OPEN' || firestoreCircuitBreaker.canExecute()) {
@@ -1067,10 +1067,18 @@ export async function claimClubAtomicFirestore(
         // 1. Read club existence
         trackFirestoreRead(COLLECTIONS.CLUBS, 1, 'claimClubAtomicFirestore:club');
         const clubDoc = await transaction.get(clubRef);
-        if (!clubDoc.exists) {
+        const seasonTwoClub = seasonId === 'season-2027-28' ? seasonClubs(seasonId).find(c => c.id === clubId) : undefined;
+        if (!clubDoc.exists && !seasonTwoClub) {
           throw new ClubNotFoundError(`Club with ID '${clubId}' does not exist.`);
         }
-        const clubData = clubDoc.data() as FirestoreClubDoc;
+        // During season-two registration the prepared roster is canonical;
+        // global club documents still belong to ongoing season one.
+        const clubData = seasonTwoClub ? {
+          ...clubDoc.data(),
+          id: seasonTwoClub.id, name: seasonTwoClub.name, shortName: seasonTwoClub.shortName,
+          leagueId: seasonTwoClub.leagueId, country: seasonTwoClub.country,
+          logo: seasonTwoClub.logoUrl, isActive: true, createdAt: now,
+        } as FirestoreClubDoc : clubDoc.data() as FirestoreClubDoc;
         assertSeasonLeagueEnabled(clubData.leagueId,seasonId);
 
         // 2. Read user's existing membership for this season
@@ -1111,7 +1119,7 @@ export async function claimClubAtomicFirestore(
         const admissionDoc = await transaction.get(db.collection('club_admissions').doc(seasonId));
         assertClubAdmissionOpen(admissionStatus(seasonId, admissionDoc.data()), clubData.leagueId);
         if (primaryId) {
-          const primaryLeagueId = SEED_CLUB_MAP.get(primaryId)?.leagueId;
+          const primaryLeagueId = seasonClubs(seasonId).find(c => c.id === primaryId)?.leagueId;
           if (!primaryLeagueId) throw new ClubConflictError('Primary club league needs admin review.', 'OWNERSHIP_INCONSISTENT');
           // Entitlement is read in the same transaction as the user membership, so
           // simultaneous claims cannot both become a second club.
@@ -1185,10 +1193,12 @@ export async function claimClubAtomicFirestore(
 
         transaction.set(membershipRef, membershipPayload);
 
-        transaction.update(clubRef, {
-          isTaken: true,
-          claimedByUserId: userId,
-        });
+        if (seasonId !== 'season-2027-28') {
+          transaction.update(clubRef, {
+            isTaken: true,
+            claimedByUserId: userId,
+          });
+        }
 
         trackFirestoreWrite(COLLECTIONS.CLUB_OCCUPANCIES, 4, 'claimClubAtomicFirestore');
 
