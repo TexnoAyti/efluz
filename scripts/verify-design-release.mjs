@@ -26,9 +26,9 @@ const result = await build({
       if (views.includes(name)) return { path: name, namespace: 'release-test' };
     });
     build.onLoad({ filter: /.*/, namespace: 'release-test' }, (args) => {
-      if (args.path === 'auth') return { contents: 'export const AuthProvider=({children})=>children; export const useAuth=()=>globalThis.releaseAuth; export const useOptionalAuth=()=>globalThis.releaseAuth; export const usePremiumClubIds=()=>[]; export const APP_BUILD_ID="release-test";' };
+      if (args.path === 'auth') return { contents: 'export const AuthProvider=({children})=>children; export const useAuth=()=>globalThis.releaseAuth; export const usePremiumClubIds=()=>[]; export const APP_BUILD_ID="release-test";' };
       if (args.path === 'profiles') return { contents: 'export const UserProfileProvider=({children})=>children;' };
-      if (args.path === 'api') return { contents: 'export const api={}; export const getSessionToken=()=>null; export const getTelegramInitData=()=>null; export const getDevUserId=()=>null;' };
+      if (args.path === 'api') return { contents: 'export const api={}; export const getSessionToken=()=>null; export const getTelegramInitData=()=>""; export const getDevUserId=()=>null;' };
       if (args.path === 'i18n') return { contents: 'export const I18nProvider=({children})=>children; export const useI18n=()=>({language:globalThis.releaseLanguage||"uz",setLanguage:()=>{},t:{navHome:"Bosh sahifa",navLeagues:"Turnirlar",navAdmin:"Admin"}});' };
       return { resolveDir: root, contents: `import React from 'react'; export const ${args.path}=()=>React.createElement('div',{'data-test-view':'${args.path}'});` };
     });
@@ -101,9 +101,9 @@ for (const admin of [false, true]) {
   assert.equal((icons.match(/<li/g) || []).length,4,'Current season has four active league icons');
   assert.doesNotMatch(icons,/ligue-1/);
   assert.match(current,/EFL · 2-mavsum/);
-  assert.match(current,/Qabul va reja/);
+  assert.match(current,/Tayyorgarlik/);
   assert.match(current,/1-mavsum davom etmoqda/);
-  assert.match(current,/Qabul hozircha faollashmagan/);
+  assert.match(current,/klub tanlash hali ochilmagan/);
   const preparation = current.match(/<section class="season-preparation"([\s\S]*?)<\/section>/)?.[1] || '';
   assert.equal((preparation.match(/season-preparation-name/g) || []).length,9,'The preparation catalog includes five European and four Asian leagues');
   for (const name of ['Ligue 1','O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(preparation.includes(name),name);

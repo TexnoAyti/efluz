@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getPlayerSeasonInsights, getSeasonInsights } from '../services/seasonInsightsService';
 import { getUserActiveClubFromReadModel } from '../readModel/readModelStore';
 import { getPlayerTrophyCabinet, getClubTrophyCabinet } from '../services/playerTrophyService';
+import { readSeasonAwards } from '../services/seasonAwardsService';
 
 export const seasonInsightsRouter = Router();
 
@@ -12,7 +13,13 @@ seasonInsightsRouter.get('/player/:userId/trophies', async (req: Request, res: R
     res.status(400).json({ error: 'INVALID_TROPHY_REQUEST' }); return;
   }
   try {
-    const cabinet = await getPlayerTrophyCabinet(userId, seasonId);
+    const [cabinet, seasonAwards] = await Promise.all([getPlayerTrophyCabinet(userId, seasonId), readSeasonAwards(seasonId)]);
+    if (seasonAwards.election.status === 'published' && seasonAwards.winners.includes(userId)) {
+      const nominee = seasonAwards.election.nominees.find(player => player.id === userId);
+      if (nominee && !cabinet.awards.some(award => award.id === `${seasonId}__GOLDEN_BALL__${userId}`)) {
+        cabinet.awards.unshift({ id: `${seasonId}__GOLDEN_BALL__${userId}`, label: 'GOLDEN_BALL', description: 'Klub egalari ovozi bilan berilgan Oltin to‘p.', unit: 'winner', value: 1, seasonId, clubId: 'profile', clubName: nominee.clubs.join(' · ') || 'EFL' });
+      }
+    }
     res.setHeader('Cache-Control', 'no-store');
     res.json(cabinet);
   } catch (error: unknown) {
