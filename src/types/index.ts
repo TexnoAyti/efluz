@@ -313,10 +313,12 @@ export interface Notification {
     | 'NEXT_ROUND_MATCH'
     | 'QUALIFICATION_CONFIRMED'
     | 'COMPETITION_UPDATE'
+    | 'MATCH_CHAT'
     | 'SYSTEM';
   entityType?: string;
   entityId?: string;
   fixtureId?: string;
+  data?: Record<string, unknown> | null;
   isRead: boolean;
   createdAt: string;
 }
