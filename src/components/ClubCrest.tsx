@@ -1,5 +1,5 @@
 import React from 'react';
-import { usePremiumClubIds } from '../context/AuthContext';
+import { useAuth, usePremiumClubIds } from '../context/AuthContext';
 
 export interface ClubCrestProps {
   clubId?: string;
@@ -79,15 +79,20 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   priorityProxy = false,
 }) => {
   const premiumClubIds = usePremiumClubIds();
+  const { activeSeasonId } = useAuth();
+  const [imageFailed, setImageFailed] = React.useState(false);
   const premium = Boolean(clubId && premiumClubIds.includes(clubId));
   const directUrl = logoUrl?.trim() || null;
-  const clubCrestProxyUrl = clubId ? `/api/clubs/${clubId}/crest${clubId === 'club-racing-santander' ? '?v=official-20261104' : ''}` : null;
+  const clubCrestProxyUrl = clubId
+    ? `/api/clubs/${encodeURIComponent(clubId)}/crest?seasonId=${encodeURIComponent(activeSeasonId)}${clubId === 'club-racing-santander' ? '&v=official-20261104' : ''}`
+    : null;
   const genericCrestProxyUrl = directUrl
     ? `/api/clubs/crest-proxy?url=${encodeURIComponent(directUrl)}`
     : null;
 
   // Same-origin URL only; no direct third-party CDN requests
   const currentSrc = clubCrestProxyUrl || genericCrestProxyUrl || null;
+  React.useEffect(() => { setImageFailed(false); }, [currentSrc]);
 
   const containerSizeClass = SIZE_CONTAINER_CLASSES[size] || SIZE_CONTAINER_CLASSES.md;
   const textSizeClass = SIZE_TEXT_CLASSES[size] || SIZE_TEXT_CLASSES.md;
@@ -95,7 +100,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   const colorScheme = getClubColorHash(shortName || name);
 
   // If no URL available -> render monogram fallback shield
-  if (!currentSrc) {
+  if (!currentSrc || imageFailed) {
     return (
       <div
         className={`relative inline-flex items-center justify-center shrink-0 rounded-lg bg-gradient-to-br ${colorScheme} border shadow-inner select-none overflow-hidden ${containerSizeClass} ${className}`}
@@ -118,14 +123,13 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
       aria-label={alt || name || shortName || 'Club Crest'}
       role="img"
     >
-      <div
-        className={`w-full h-full pointer-events-none ${imgClassName}`}
-        style={{
-          backgroundImage: `url("${currentSrc}")`,
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          backgroundSize: 'contain',
-        }}
+      <img
+        src={currentSrc}
+        alt={alt || name || shortName || 'Club Crest'}
+        loading={priorityProxy ? 'eager' : 'lazy'}
+        decoding="async"
+        onError={() => setImageFailed(true)}
+        className={`w-full h-full object-contain pointer-events-none ${imgClassName}`}
       />
       {premium && <span className="absolute bottom-0 right-0 rounded-tl bg-gradient-to-r from-fuchsia-500 via-amber-300 to-sky-400 px-0.5 text-[7px] font-black leading-none text-slate-950" aria-label="Premium club">★</span>}
     </div>
