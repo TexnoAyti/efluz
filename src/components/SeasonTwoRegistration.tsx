@@ -136,7 +136,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
 
         {priority && !mine?.banned && eligibleClubs.length > 0 && (
           <div className="space-y-2">
-            <h4 className="text-[11px] font-black uppercase tracking-widest text-[var(--efl-text-2)]">Sizning klublaringiz</h4>
+            <h4 className="text-[11px] font-black uppercase tracking-widest text-[var(--efl-text-2)]">Klubni saqlash</h4>
             {eligibleClubs.map(club => <div key={club.clubId} className="rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
