@@ -580,7 +580,9 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
 
         {leagues.length > 0 && (
-          <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={`flex w-full min-w-0 max-w-full items-center gap-3 overflow-x-auto overscroll-x-contain pb-3 pt-1 scrollbar-none scroll-mt-24 ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
+          <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={activeSeasonId === EFL_SECOND_SEASON.id && EFL_2_DESIGN_ENABLED
+            ? 'grid w-full min-w-0 grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 py-2 scroll-mt-24'
+            : `flex w-full min-w-0 max-w-full items-center gap-3 overflow-x-auto overscroll-x-contain pb-3 pt-1 scrollbar-none scroll-mt-24 ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
             {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
               const welcomeIcon = EFL_2_DESIGN_ENABLED ? welcomeLeagueIcons[league.id] : undefined;
@@ -610,7 +612,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   aria-pressed={isSelected}
                   title={`${league.name} — ${isLeagueSelectionOpen(admission, league.id) ? 'Qabul ochiq' : 'Navbatda'}`}
                   onClick={() => handleSelectLeague(league.id)}
-                  className={`flex items-center justify-center gap-2 rounded-xl font-bold text-xs transition-all shrink-0 ${logoOnly ? 'h-[68px] w-[76px] p-2.5 border border-transparent bg-transparent hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--efl-primary)]' : 'min-h-[48px] px-4 py-3 border whitespace-nowrap'} ${
+                  className={`flex items-center justify-center gap-2 rounded-xl font-bold text-xs transition-all shrink-0 ${logoOnly ? 'h-[88px] min-w-0 w-full p-3 border border-transparent bg-transparent hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--efl-primary)]' : 'min-h-[48px] px-4 py-3 border whitespace-nowrap'} ${
                     isSelected
                       ? (logoOnly ? 'opacity-100 ring-2 ring-[var(--efl-primary)]/60 ring-inset' : 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/40 text-[var(--efl-primary)] font-black shadow-xs')
                       : (logoOnly ? 'opacity-70 hover:opacity-100' : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]')
@@ -621,7 +623,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     alt={league.name}
                     loading="lazy"
                     className={logoOnly
-                      ? 'block h-full max-h-[53px] w-full max-w-[65px] shrink-0 object-contain'
+                      ? 'block h-[64px] max-h-full w-full max-w-[78px] shrink-0 object-contain'
                       : `w-4 h-4 object-contain shrink-0 ${welcomeIcon ? `efl-league-icon ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'efl-league-icon-monochrome' : ''}` : 'efl-theme-league-logo'}`}
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
