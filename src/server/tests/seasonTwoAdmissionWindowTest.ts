@@ -31,7 +31,7 @@ assert.equal(EFL_SECOND_SEASON.leagues.filter(l => l.group === 'EUROPE').length,
 assert.equal(EFL_SECOND_SEASON.leagues.filter(l => l.group === 'ASIA').length, 4);
 for (const name of ['uzbekistan-superliga', 'saudi-pro-league', 'j1-league', 'turkey-super-lig']) {
   const svg = readFileSync(`public/welcome/${name}.svg`, 'utf8');
-  assert.match(svg, /^<svg\\b/, `Missing bundled league emblem: ${name}`);
+  assert.match(svg, /^<svg\b/, `Missing bundled league emblem: ${name}`);
   assert.ok(svg.length > 1000, `Incomplete league emblem: ${name}`);
 }
 console.log('PASS: Europe/Asia tabs and all four locally bundled new league crests');
