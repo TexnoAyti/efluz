@@ -452,7 +452,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     if (activeSeasonId !== 'season-2027-28' || leagues.length === 0) return;
     const target = document.getElementById('efl-season-two-league-picker');
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [activeSeasonId]);
+  }, [activeSeasonId, leagues.length]);
 
   const currentLeague = leagues.find((l) => l.id === selectedLeagueId) || leagues[0];
 
