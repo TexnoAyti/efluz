@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getSessionToken, getTelegramInitData, getDevUserId } from '../lib/api';
 import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
+import { useAuth } from '../context/AuthContext';
 import { S2_OPENS_AT, S2_PUBLIC_AT } from '../lib/seasonTwoAdmissionWindow';
 
 type Admission = { phase: 'NOT_ACTIVATED' | 'NOT_STARTED' | 'PRIORITY' | 'PUBLIC'; registrationOpen: boolean };
@@ -22,6 +23,7 @@ async function readJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   return body;
 }
 export function SeasonTwoRegistration() {
+  const { setActiveSeasonId } = useAuth();
   const [status, setStatus] = useState<Admission | null>(null);
   const [mine, setMine] = useState<MyClubs | null>(null);
   const [time, setTime] = useState(Date.now());
@@ -92,7 +94,7 @@ export function SeasonTwoRegistration() {
       <div className="flex gap-2"><button className="rounded-lg bg-amber-400 text-black font-bold text-xs px-3 py-2" onClick={() => void decide(confirm.id, confirm.choice)}>Tasdiqlash</button>
       <button className="rounded-lg border border-white/20 text-xs px-3 py-2" onClick={() => setConfirm(null)}>Bekor qilish</button></div>
     </div>}
-    {phase === 'PUBLIC' && <p className="text-xs text-white/70">Umumiy klub qabuli ochildi. 2-mavsumni tanlab, ligalar bo‘limidan bo‘sh klubni oling.</p>}
+    {phase === 'PUBLIC' && !mine?.banned && <div className="space-y-2"><p className="text-xs text-white/70">Umumiy klub qabuli ochildi. Bo‘sh klublarni ko‘rishingiz mumkin.</p><button className="rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-black text-black" onClick={() => setActiveSeasonId(EFL_SECOND_SEASON.id)}>2-mavsum klublarini tanlash</button></div>}
     {notice && <p role="status" className="text-xs text-emerald-300">{notice}</p>}
     {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
     <button className="text-xs font-semibold text-white/60 underline" onClick={() => void load()}>Yangilash</button>
