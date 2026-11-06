@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { S2_OPENS_AT, S2_PUBLIC_AT, seasonTwoAdmissionPhase } from '../../lib/seasonTwoAdmissionWindow';
 import { CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
+import { SECOND_SEASON_CLUB_LOGOS, SECOND_SEASON_CREST_SOURCE_COMMIT } from '../../lib/seasonTwoClubLogos';
+import { SEED_CLUBS } from '../db/seed';
 
 assert.equal(S2_OPENS_AT, '2026-11-06T15:30:00.000Z');
 assert.equal(S2_PUBLIC_AT, '2026-11-06T15:45:00.000Z');
@@ -24,4 +26,16 @@ assert.deepEqual(EFL_SECOND_SEASON.leagues.map(l => l.id), [
   'league-turkey-super-lig',
 ]);
 assert.equal(new Set(EFL_SECOND_SEASON.leagues.flatMap(l => l.roster.clubs.map(c => c.id))).size, EFL_SECOND_SEASON.leagues.reduce((n,l)=>n+l.roster.clubs.length,0));
+const priorCrests = new Set(SEED_CLUBS.filter(c => Boolean(c.logoUrl)).map(c => c.id));
+const preparedClubIds = EFL_SECOND_SEASON.leagues.flatMap(l => l.roster.clubs.map(c => c.id));
+const addedClubIds = preparedClubIds.filter(id => !priorCrests.has(id));
+assert.equal(addedClubIds.length, 85, 'All 85 new-season clubs need real crest assets');
+assert.equal(Object.keys(SECOND_SEASON_CLUB_LOGOS).length, 85, 'Crest manifest must cover all new clubs');
+for (const clubId of addedClubIds) {
+  const url = SECOND_SEASON_CLUB_LOGOS[clubId];
+  assert.ok(url, `Missing verified crest for ${clubId}`);
+  assert.ok(url.startsWith(`https://raw.githubusercontent.com/JoseArroyave/football-logos/${SECOND_SEASON_CREST_SOURCE_COMMIT}/logos/`));
+  assert.ok(url.endsWith('.svg'));
+}
+console.log('PASS: all 85 newly-added season-two clubs have pinned real SVG crests');
 console.log('PASS: 20:30–20:45 Uzbekistan boundaries, season independence, roster uniqueness, league order');
