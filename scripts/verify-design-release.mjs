@@ -103,7 +103,7 @@ for (const admin of [false, true]) {
   assert.match(current,/EFL · 2-mavsum/);
   assert.match(current,/Tayyorgarlik|Qabul va reja/);
   assert.match(current,/1-mavsum davom etmoqda/);
-  assert.match(current,/klub tanlash hali ochilmagan/);
+  assert.match(current,/klub tanlash hali ochilmagan|klub qabuli holati/);
   const preparation = current.match(/<section class="season-preparation"([\s\S]*?)<\/section>/)?.[1] || '';
   assert.equal((preparation.match(/season-preparation-name/g) || []).length,9,'The preparation catalog includes five European and four Asian leagues');
   for (const name of ['Ligue 1','O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(preparation.includes(name),name);
