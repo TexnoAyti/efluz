@@ -5,7 +5,7 @@ import { getFirestoreDb } from '../firebase/admin';
 import { isPrimaryOwner } from '../services/telegramAiConfigService';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
 import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../readModel/readModelStore';
-import { publishAdmissionStatus } from '../services/clubAdmission';
+import { prepareAutomaticAdmissionAdvance, publishAdmissionStatus } from '../services/clubAdmission';
 
 export const seasonTwoAdmissionRouter = Router();
 const TARGET = EFL_SECOND_SEASON.id;
@@ -69,10 +69,11 @@ seasonTwoAdmissionRouter.post('/decision', requireAuth, async (req: Request, res
       const decisionRef = db.collection('season2_retention_decisions').doc(`${TARGET}_${clubId}`);
       const occupancyRef = db.collection('club_occupancies').doc(`${TARGET}_${clubId}`);
       const membershipRef = db.collection('user_memberships').doc(`${TARGET}_${uid}`);
+      const admissionRef = db.collection('club_admissions').doc(TARGET);
       // All authoritative reads precede writes; competing choices serialize on decision/occupancy.
-      const [season, ban, source, decision, occupancy, membership] = await Promise.all([
+      const [season, ban, source, decision, occupancy, membership, admissionDoc] = await Promise.all([
         tx.get(seasonRef), tx.get(banRef), tx.get(sourceRef), tx.get(decisionRef),
-        tx.get(occupancyRef), tx.get(membershipRef),
+        tx.get(occupancyRef), tx.get(membershipRef), tx.get(admissionRef),
       ]);
       if (season.data()?.registrationOpen !== true || String(season.data()?.status).toLowerCase() !== 'registration') failure('SEASON_NOT_OPEN');
       if (phase() !== 'PRIORITY') failure('PRIORITY_WINDOW_CLOSED');
@@ -88,7 +89,9 @@ seasonTwoAdmissionRouter.post('/decision', requireAuth, async (req: Request, res
       const existing = old?.status === 'active' ? [old.clubId, old.secondaryClubId].filter(Boolean) : [];
       if (choice === 'KEEP' && !existing.includes(clubId) && existing.length >= 2) failure('SEASON_CLUB_LIMIT');
       if (choice === 'KEEP' && !existing.includes(clubId) && existing.some((id: string) => rosterLeague.get(id) === rosterLeague.get(clubId))) failure('SAME_LEAGUE');
+      const stageAdvance = choice === 'KEEP' ? await prepareAutomaticAdmissionAdvance(tx, db, TARGET, admissionDoc.data(), clubId) : null;
       const at = new Date().toISOString();
+      if (stageAdvance) tx.set(admissionRef, stageAdvance);
       tx.create(decisionRef, { seasonId: TARGET, sourceSeasonId: SOURCE, userId: uid, clubId, choice, at });
       if (choice === 'KEEP') {
         tx.set(occupancyRef, { seasonId: TARGET, clubId, userId: uid, status: 'active', claimedAt: at, updatedAt: at });
@@ -98,10 +101,11 @@ seasonTwoAdmissionRouter.post('/decision', requireAuth, async (req: Request, res
         if (existing.length === 0) tx.set(membershipRef, { seasonId: TARGET, userId: uid, clubId, status: 'active', claimedAt: at, updatedAt: at });
         else if (!existing.includes(clubId)) tx.update(membershipRef, { secondaryClubId: clubId, secondaryLeagueId: rosterLeague.get(clubId), updatedAt: at });
       }
-      return { clubId, choice, replayed: false };
+      return { clubId, choice, replayed: false, stageAdvance };
     });
     if (result.choice === 'KEEP' && !result.replayed) {
-      await Promise.allSettled([invalidateClubReadModels(TARGET), invalidateUserMembershipReadModel(uid, TARGET)]);
+      await Promise.allSettled([invalidateClubReadModels(TARGET), invalidateUserMembershipReadModel(uid, TARGET),
+        ...(result.stageAdvance ? [publishAdmissionStatus(TARGET, result.stageAdvance)] : [])]);
     }
     res.setHeader('Cache-Control', 'no-store');
     res.json({ success: true, ...result });
