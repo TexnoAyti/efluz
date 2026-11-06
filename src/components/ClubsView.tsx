@@ -534,7 +534,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
 
   return (
-    <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
+    <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${activeSeasonId === EFL_SECOND_SEASON.id ? 'efl-season-two-page' : ''} ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
       {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3.5 text-[var(--efl-text)] shadow-sm dark:shadow-black/20"><div className="min-w-0"><strong className="text-sm font-black text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="mt-1 text-xs text-[var(--efl-text-2)]">Klub qabuli shu yerda. Davom etayotgan uchrashuvlar 1-mavsumda.</p></div><button type="button" className="min-h-[40px] shrink-0 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-2 text-xs font-bold text-[var(--efl-text)] transition-colors hover:border-[var(--efl-primary)] hover:text-[var(--efl-primary)] dark:shadow-black/20" onClick={() => setActiveSeasonId(CURRENT_SEASON_ID)}>1-mavsumga qaytish</button></div>}
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!EFL_2_DESIGN_ENABLED && (
@@ -592,7 +592,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
 
         {isSecondSeason && (
-          <div role="group" aria-label="Qitani tanlash" className="grid grid-cols-2 gap-2 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-1.5 text-[var(--efl-text)] dark:shadow-inner dark:shadow-black/15">
+          <div role="group" aria-label="Qitani tanlash" className="efl-season-two-tabs grid grid-cols-2 gap-2 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-1.5 text-[var(--efl-text)] dark:shadow-inner dark:shadow-black/15">
             {([
               { id: 'EUROPE' as const, label: 'Yevropa', count: 5 },
               { id: 'ASIA' as const, label: 'Osiyo', count: 4 },
@@ -641,7 +641,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   aria-pressed={isSelected}
                   title={`${league.name} — ${isLeagueSelectionOpen(admission, league.id) ? 'Qabul ochiq' : 'Navbatda'}`}
                   onClick={() => handleSelectLeague(league.id)}
-                  className={`flex items-center justify-center gap-2 rounded-xl font-bold text-xs transition-all shrink-0 ${logoOnly ? 'relative h-[76px] w-[72px] min-w-[72px] p-2 border-0 bg-transparent hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--efl-primary)]' : 'min-h-[48px] px-4 py-3 border whitespace-nowrap'} ${
+                  className={`flex items-center justify-center gap-2 rounded-xl font-bold text-xs transition-all shrink-0 ${logoOnly ? 'efl-season-two-league-tile' : ''} ${logoOnly ? 'relative h-[76px] w-[72px] min-w-[72px] p-2 border-0 bg-transparent hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--efl-primary)]' : 'min-h-[48px] px-4 py-3 border whitespace-nowrap'} ${
                     isSelected
                       ? (logoOnly ? 'opacity-100 after:absolute after:bottom-0 after:left-1/4 after:right-1/4 after:h-[3px] after:rounded-full after:bg-[var(--efl-primary)]' : 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/40 text-[var(--efl-primary)] font-black shadow-xs')
                       : (logoOnly ? 'opacity-70 hover:opacity-100' : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]')
