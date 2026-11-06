@@ -196,6 +196,18 @@ export async function prepareAutomaticAdmissionAdvance(transaction:any,db:any,se
 export async function publishAdmissionStatus(seasonId:string,data:any){
   try{await redisSetRaw(ReadModelKeys.clubAdmission(seasonId),{data:admissionStatus(seasonId,data),sourceVersion:'club-admission-'+data.revision},ADMISSION_CACHE_TTL_SECONDS);}
   catch(error){console.warn('[CLUB_ADMISSION] Committed automatic stage cache will retry',error);}
+  // Inform ALL registered players, not only the winning club owner, when a new
+  // second-season league opens. Dispatch is durable, idempotent and never
+  // reverses an already committed club assignment if Telegram is unavailable.
+  if(seasonId===EFL_SECOND_SEASON.id && Number(data.stage)>=1){
+    const work=import('./seasonTwoTelegramAnnouncements')
+      .then(({announceSeasonTwoLeagueAdvance})=>announceSeasonTwoLeagueAdvance(seasonId,data.stage))
+      .catch(error=>console.warn('[SEASON2_LEAGUE_NOTICE_DEFERRED]',error?.message||error));
+    if(process.env.VERCEL==='1') {
+      const {waitUntil}=await import('@vercel/functions');
+      waitUntil(work);
+    } else await work;
+  }
 }
 
 export async function reconcileAutomaticClubAdmission(seasonId:string){

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { S2_PUBLIC_AT } from '../../lib/seasonTwoAdmissionWindow';
 import { getUpstashClient, KEY_PREFIX, ReadModelKeys, redisGetFresh, redisGetLkg, invalidateClubReadModels, invalidateUserMembershipReadModel, type OwnerNeutralClub } from '../readModel/readModelStore';
 import { OUTBOX_KEYS, getDurableMutation, DurablePersistenceUnavailableError, type DurableOutboxMutation } from '../outbox/redisOutbox';
 import { admissionStatus, assertClubAdmissionOpen } from './clubAdmission';
@@ -57,6 +58,9 @@ export async function getClubClaimReceipt(userId: string, seasonId: string): Pro
 /** Accepts a durable request, never fabricates confirmed ownership from a stale snapshot. */
 export type ClaimActorProfile = { id: string; telegramId: string; username?: string; firstName?: string; lastName?: string };
 export async function requestDurableClubClaim(userId: string, clubId: string, seasonId: string, actor?: ClaimActorProfile) {
+  if (seasonId === 'season-2027-28' && Date.now() < Date.parse(S2_PUBLIC_AT)) {
+    throw new ClubConflictError('Umumiy klub qabuli 20:45 da ochiladi.', 'PRIORITY_WINDOW_ACTIVE');
+  }
   const verifiedProfile = actor && actor.id === userId && /^\d{1,20}$/.test(String(actor.telegramId)) && userId === `user-${actor.telegramId}` ? { id:userId, telegramId:String(actor.telegramId), username:String(actor.username || '').slice(0,64), firstName:String(actor.firstName || '').slice(0,100), lastName:String(actor.lastName || '').slice(0,100) } : undefined;
   if (process.env.DATABASE_PROVIDER === 'supabase') {
     // PostgreSQL is the authoritative store after cutover. The Redis intent

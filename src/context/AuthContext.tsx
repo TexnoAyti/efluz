@@ -77,6 +77,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+export function useOptionalAuth(): AuthContextType | undefined {
+  return useContext(AuthContext);
+}
+
 export function usePremiumClubIds(): string[] {
   const context = useContext(AuthContext);
   return context?.user?.isAdmin ? context.premiumClubIds : [];
@@ -186,6 +190,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshNotifications]);
 
+  // Season selection must refresh season-scoped ownership. Do not reuse the
+  // previous season's clubs while a new club admission is being displayed.
+  useEffect(() => {
+    if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview) return;
+    setOwnedClubs([]);
+    setCurrentClub(null);
+    void fetchUserData(activeSeasonId);
+  }, [activeSeasonId, authStatus, user?.id, fetchUserData]);
+
   // Initialize App & Telegram SDK with deterministic state transitions
   useEffect(() => {
     let isMounted = true;
@@ -252,7 +265,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await loadLoginBootstrap(api, tgCtx.initData, getDevUserId() || 'user-dev-a', seasons => {
           if (!isMounted) return;
           setSeasons(seasons);
-          const season = seasons.find(item => item.status === 'registration' || item.status === 'active') || seasons[0];
+          const season = seasons.find(item => item.id === 'season-2026-27' && item.status === 'active') || seasons.find(item => item.status === 'active') || seasons[0];
           if (season) {
             targetSeasonId = season.id;
             setActiveSeasonId(season.id);

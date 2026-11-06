@@ -9,7 +9,8 @@ import { Fixture, Club } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
-import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
+import {openMatchChat} from '../lib/matchChat';
+import {MatchChatUnreadBadge} from './MatchChatUnreadBadge';
 import {
   Shield,
   Trophy,
@@ -423,28 +424,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               </div>
 
-              {(() => {
-                const isHome = nextMatch.homeOwnerId === user?.id || nextMatch.homeClub?.claimedByUserId === user?.id;
-                const oppTg = isHome
-                  ? (nextMatch.awayOwner?.username || nextMatch.awayUser?.username || nextMatch.awayClub?.claimedByUsername)
-                  : (nextMatch.homeOwner?.username || nextMatch.homeUser?.username || nextMatch.homeClub?.claimedByUsername);
-                const hasOpponentTg = isValidTelegramUsername(oppTg);
-
-                return (
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    {hasOpponentTg && (
+              <div className="flex flex-col sm:flex-row gap-2">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          openTelegramChat(oppTg);
+                          openMatchChat({kind:'fixture',matchId:nextMatch.id});
                         }}
                         className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md min-h-[44px] touch-manipulation"
                       >
                         <Send className="w-3.5 h-3.5" />
                         <span>Raqibga yozish</span>
+                        <MatchChatUnreadBadge kind="fixture" matchId={nextMatch.id}/>
                       </button>
-                    )}
                     <button
                       onClick={() => {
                         if (onSelectFixtureForMatchCenter) onSelectFixtureForMatchCenter(nextMatch);
@@ -455,9 +447,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <Swords className="w-3.5 h-3.5" />
                       <span>{t.openMatchCenter}</span>
                     </button>
-                  </div>
-                );
-              })()}
+              </div>
             </div>
           ) : (
             <div className="py-6 text-center text-xs text-slate-400">

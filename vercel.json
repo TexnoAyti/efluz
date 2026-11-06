@@ -1,6 +1,8 @@
 {
   "version": 2,
-  "regions": ["fra1"],
+  "regions": [
+    "fra1"
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
@@ -19,6 +21,10 @@
     {
       "path": "/api/internal/telegram-worker",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/internal/season-two-notices",
+      "schedule": "30 15 6 11 *"
     }
   ],
   "functions": {

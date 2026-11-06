@@ -1,12 +1,13 @@
 import React from 'react';
+import { SeasonTwoRegistration } from './SeasonTwoRegistration';
 import { useI18n } from '../i18n';
 import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import './season-preparation.css';
 
 const copy = {
-  uz: { title: 'EFL · 2-mavsum', status: 'Tayyorgarlik', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub tanlash hali ochilmagan.', pending: 'Klub tarkiblari, liga qoidalari va EFL kubok rejasi tayyor. UEFA saralashi va mavsumni ishga tushirish hali tayyorlanmoqda.', details: 'Ligalar rejasini ko‘rish' },
-  ru: { title: 'EFL · Сезон 2', status: 'Подготовка', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Выбор клуба на сезон 2 ещё не открыт.', pending: 'Составы, правила лиг и план кубков EFL готовы. Отбор УЕФА и запуск сезона ещё готовятся.', details: 'Посмотреть план лиг' },
-  en: { title: 'EFL · Season 2', status: 'In preparation', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 is ongoing. Club selection for season 2 is not open yet.', pending: 'Club rosters, league rules and the EFL cup plan are ready. UEFA qualification and season activation are still being prepared.', details: 'View league plan' },
+  uz: { title: 'EFL · 2-mavsum', status: 'Qabul va reja', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub qabuli holati va turnir rejasi shu yerda.', pending: 'Klub tarkiblari, liga qoidalari va EFL kubok rejasi tayyor. UEFA saralashi va mavsumni ishga tushirish hali tayyorlanmoqda.', details: 'Ligalar rejasini ko‘rish' },
+  ru: { title: 'EFL · Сезон 2', status: 'Приём и план', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Здесь отображаются приём клубов и план сезона 2.', pending: 'Составы, правила лиг и план кубков EFL готовы. Отбор УЕФА и запуск сезона ещё готовятся.', details: 'Посмотреть план лиг' },
+  en: { title: 'EFL · Season 2', status: 'Registration & plan', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 continues. Season 2 registration status and tournament plans are shown here.', pending: 'Club rosters, league rules and the EFL cup plan are ready. UEFA qualification and season activation are still being prepared.', details: 'View league plan' },
 };
 
 const internationalCopy = {
@@ -15,7 +16,7 @@ const internationalCopy = {
   en: { title: 'International tournament', name: 'Asian Champions League', qualification: '8 clubs from each league', teams: 'clubs', places: 'places', pending: 'Places 1–8 from each league qualify based on season 2 results.', format: 'Like the European UCL: one league phase, 8 matches per club. Places 1–8: round of 16; 9–24: knockout play-offs; 25–32: eliminated.' },
 };
 
-export function SeasonPreparationCard({ compact = false }: { compact?: boolean }) {
+export function SeasonPreparationCard({ compact = false, onOpenLeagues }: { compact?: boolean; onOpenLeagues?: () => void }) {
   const { language } = useI18n();
   const c = copy[language];
   const intl = internationalCopy[language];
@@ -79,9 +80,12 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
     <p className="season-preparation-pending">{c.pending}</p>
   </>;
 
-  return <section className="season-preparation" aria-label={c.title}>
+  return <div className="space-y-3">
+    <SeasonTwoRegistration onOpenLeagues={onOpenLeagues} />
+    <section className="season-preparation" aria-label={c.title}>
     <div className="season-preparation-header"><h3>{c.title}</h3><span>{c.status}</span></div>
     <p className="season-preparation-note">{c.note}</p>
     {compact ? <details><summary>{c.details}</summary><div className="season-preparation-groups">{content}</div></details> : <div className="season-preparation-groups">{content}</div>}
-  </section>;
+    </section>
+  </div>;
 }

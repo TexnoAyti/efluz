@@ -27,7 +27,8 @@ import { api } from '../lib/api';
 import { Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { CompetitionMark } from './CompetitionMark';
-import { isValidTelegramUsername, openTelegramChat } from '../lib/telegramUtils';
+import {openMatchChat} from '../lib/matchChat';
+import {MatchChatUnreadBadge} from './MatchChatUnreadBadge';
 import { ContentBoundary } from './ContentBoundary';
 const ResultSubmissionModal = lazy(() => import('./ResultSubmissionModal').then(module => ({ default: module.ResultSubmissionModal })));
 
@@ -380,16 +381,6 @@ export const MatchdayHomeView: React.FC<Props> = ({
   const awayTeam = heroMatch ? getClubDisplay(heroMatch, 'away') : null;
   const isFinished = heroMatch?.status === 'CONFIRMED';
 
-  // Determine opponent Telegram username
-  const opponentTelegram = useMemo(() => {
-    if (!heroMatch) return null;
-    const isHome = heroMatch.homeClubId === activeClub?.id || heroMatch.homeClub?.id === activeClub?.id;
-    const oppTg = isHome
-      ? heroMatch.awayOwner?.username || heroMatch.awayUser?.username || heroMatch.awayClub?.claimedByUsername
-      : heroMatch.homeOwner?.username || heroMatch.homeUser?.username || heroMatch.homeClub?.claimedByUsername;
-    return isValidTelegramUsername(oppTg) ? oppTg : null;
-  }, [heroMatch, user?.id, activeClub?.id]);
-
   // Operational strip for dispute or pending confirmation
   const actionBanner = useMemo(() => {
     if (!heroMatch) return null;
@@ -639,18 +630,17 @@ export const MatchdayHomeView: React.FC<Props> = ({
               </span>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                {/* 1-tap Telegram opponent chat */}
-                {opponentTelegram && !isFinished && (
-                  <button
+                {/* Match-bound EFLUZ opponent chat */}
+                <button
                     type="button"
                     data-guide="opponent-chat"
-                    onClick={() => openTelegramChat(opponentTelegram)}
+                    onClick={() => openMatchChat({kind:'fixture',matchId:heroMatch.id})}
                     className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 text-sky-700 efl-theme-sky dark:text-sky-400 font-bold text-xs transition-colors min-h-[38px]"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>{c.chatWithOpponent}</span>
-                  </button>
-                )}
+                    <MatchChatUnreadBadge kind="fixture" matchId={heroMatch.id}/>
+                </button>
 
                 {/* Primary CTA button */}
                 <button

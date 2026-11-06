@@ -22,6 +22,7 @@ import { readGuideStatus, saveGuideStatus, type GuideStatus } from './lib/firstV
 import { isDesignPreview } from './designPreview';
 import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import {MatchChatHost} from './components/MatchChatHost';
 
 const loadHome = () => import('./components/MatchdayHomeView').then(module => ({ default: module.MatchdayHomeView }));
 const MatchdayHomeView = lazy(loadHome);
@@ -328,6 +329,7 @@ const AppContent: React.FC = () => {
       </main>
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400"><div className="max-w-7xl mx-auto flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">EFL UZ</span><span className="text-slate-600">•</span><span>Official 2026/27 European Competitions</span></div><div className="flex items-center gap-3"><span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span></div></div></footer>
       {isNotificationOpen && <ContentBoundary><NotificationModal isOpen onClose={() => setIsNotificationOpen(false)} /></ContentBoundary>}
+      <MatchChatHost />
       {canUseGlobalAdminTools && isDiagnosticsOpen && <ContentBoundary><TelegramDiagnosticsModal isOpen onClose={() => setIsDiagnosticsOpen(false)} currentRoute={activeTab} /></ContentBoundary>}
       {isSearchOpen && <ContentBoundary><GlobalSearchModal
         isOpen={isSearchOpen}

@@ -30,6 +30,7 @@ import { scheduleMutationReconciliation, reconcileDurableMutations } from './syn
 import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { seasonsRouter } from './routes/seasons.routes';
+import { seasonTwoAdmissionRouter } from './routes/seasonTwoAdmission.routes';
 import { leaguesRouter } from './routes/leagues.routes';
 import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
@@ -53,6 +54,7 @@ import {teamLeaguePreviewRouter} from './routes/teamLeaguePreview.routes';
 import {uzeflifeRouter} from './routes/uzeflife.routes';
 import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
+import {matchChatRouter} from './routes/matchChat.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -145,7 +147,7 @@ export function createApp() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://resources.premierleague.com https://crests.football-data.org https://t.me; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://resources.premierleague.com https://crests.football-data.org https://t.me https://commons.wikimedia.org https://upload.wikimedia.org https://raw.githubusercontent.com; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org");
     if (req.method === 'OPTIONS') {
       if (origin && !allowedOrigins.has(origin)) { res.sendStatus(403); return; }
       res.sendStatus(204); return;
@@ -179,6 +181,32 @@ export function createApp() {
         res.status(202).json({accepted:true});
       }else{await runRoundPostWorker(round,hop);res.json({processed:true});}
     }catch{res.status(503).json({error:'ROUND_POST_WORKER_UNAVAILABLE'});}
+  });
+
+  // One-time 2-mavsum Bot DM + in-app announcements, guarded by CRON_SECRET.
+  // Vercel cron fires at 20:30 and 20:45 Asia/Tashkent on 6 November 2026.
+  app.get('/api/internal/season-two-notices', async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const actual = Buffer.from(req.headers.authorization || '');
+    const expected = Buffer.from(`Bearer ${secret || ''}`);
+    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      res.status(401).json({ error: 'UNAUTHORIZED' }); return;
+    }
+    if (process.env.VERCEL_ENV !== 'production' || process.env.DATABASE_PROVIDER !== 'supabase') {
+      res.status(403).json({ error: 'PRODUCTION_ONLY' }); return;
+    }
+    try {
+      await ensureDbReady();
+      const { announceDueSeasonTwoMilestones } = await import('./services/seasonTwoTelegramAnnouncements');
+      const { waitUntil } = await import('@vercel/functions');
+      waitUntil(announceDueSeasonTwoMilestones().catch(error => {
+        console.error('[SEASON2_BROADCAST_DEFERRED]', error?.message || error);
+      }));
+      res.status(202).json({ accepted: true });
+    } catch (error: any) {
+      console.error('[SEASON2_BROADCAST_START_FAILED]', error?.message || error);
+      res.status(503).json({ error: 'NOTIFICATION_UNAVAILABLE' });
+    }
   });
 
   app.all('/api/internal/telegram-worker', async (req, res) => {
@@ -222,6 +250,7 @@ export function createApp() {
   app.use('/api/health/probe', rateLimit('health-probe', 3, 600));
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
+  app.use('/api/match-chat', rateLimit('match-chat', 45, 60));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
   app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
@@ -229,6 +258,7 @@ export function createApp() {
   app.use('/api/auth/android',androidAuthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
+  app.use('/api/season-two-admission', seasonTwoAdmissionRouter);
   app.use('/api/season-lifecycle', seasonLifecycleRouter);
   app.use('/api/season-ops', seasonOperationsConsistencyRouter);
   app.use('/api/season-ops', seasonOperationsRouter);
@@ -237,6 +267,7 @@ export function createApp() {
   app.use('/api/competitions', competitionConsistencyRouter);
   app.use('/api/competitions', competitionsRouter);
   app.use('/api/fixtures', fixturesRouter);
+  app.use('/api/match-chat', matchChatRouter);
   app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);

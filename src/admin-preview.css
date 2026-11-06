@@ -936,3 +936,65 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 .efl-preview.theme-light .efl-custom-tournaments [class~="text-emerald-400"] { color: #047857 !important; }
 .efl-preview.theme-light .efl-custom-tournaments :is([class~="text-rose-400"], [class~="text-rose-300"]) { color: #be123c !important; }
 .efl-preview.theme-light .efl-custom-tournaments :is([class~="text-amber-400"], [class~="text-amber-300"]) { color: #92400e !important; }
+
+
+/* Season-two club selection: independent, legible dark-mode contrast.
+   Keep league emblems transparent and respect the global light palette. */
+.efl-preview.theme-dark .efl-season-two-page,
+.efl-preview.theme-dark .efl-season-two-panel {
+  --efl-surface: #141e2d;
+  --efl-surface-2: #202d40;
+  --efl-border: #42536c;
+  --efl-text: #f8fafc;
+  --efl-text-2: #d1dceb;
+  --efl-muted: #b2c1d4;
+  --efl-primary-soft: rgba(96, 165, 250, 0.18);
+  color: var(--efl-text);
+}
+
+.efl-preview.theme-dark .efl-season-two-page .efl-season-two-tabs {
+  background: #1a2738;
+  border-color: #4b5e77;
+}
+
+.efl-preview.theme-dark .efl-season-two-page .efl-season-two-tabs button {
+  color: #d1dceb;
+}
+
+.efl-preview.theme-dark .efl-season-two-page .efl-season-two-tabs button[aria-pressed="true"] {
+  color: #dbeafe;
+  background: #24446e;
+  border-color: #7db7ff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07);
+}
+
+.efl-preview.theme-dark .efl-season-two-page .efl-season-two-league-tile {
+  background: transparent;
+  opacity: .92;
+}
+
+.efl-preview.theme-dark .efl-season-two-page .efl-season-two-league-tile[aria-pressed="true"] {
+  opacity: 1;
+  filter: drop-shadow(0 1px 5px rgba(147,197,253,.18));
+}
+
+.efl-preview.theme-dark .efl-season-two-page .efl-season-two-league-tile:focus-visible,
+.efl-preview.theme-dark .efl-season-two-page .efl-season-two-tabs button:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.efl-preview.theme-dark .efl-season-two-panel .efl-season-two-primary {
+  background: #1d4ed8;
+  color: #fff;
+  border: 1px solid #6396fb;
+}
+
+.efl-preview.theme-dark .efl-season-two-panel [role="status"] {
+  color: #bfdbfe;
+}
+
+.efl-preview.theme-dark .efl-season-two-panel [role="alert"] {
+  border-color: #64748b;
+  color: #f8fafc;
+}
