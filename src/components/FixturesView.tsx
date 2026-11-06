@@ -613,7 +613,7 @@ export const FixturesView: React.FC = () => {
                             e.stopPropagation();
                             openMatchChat({kind:'fixture',matchId:fixture.id});
                           }}
-                          className="px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 shadow-sm"
+                          className="efl-chat-trigger px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 min-h-[34px] touch-manipulation"
                         >
                           <Send className="w-3 h-3" />
                           <span>Raqibga yozish</span>

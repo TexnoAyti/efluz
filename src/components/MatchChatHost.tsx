@@ -41,7 +41,7 @@ export function MatchChatHost(){
    {chat&&<div className="match-chat-quick" aria-label="Tezkor xabarlar">{chat.quickMessages.map(item=><button key={item} disabled={busy||!chat.canSend} onClick={()=>void send(item)}>{item}</button>)}</div>}
    <footer className="match-chat-compose">
     {chat?.closed?<div className="match-chat-blocked"><Check size={16}/><span>Natija tasdiqlangan. Chat o‘qish holatida.</span></div>:chat?.blocked?<div className="match-chat-blocked"><Lock size={16}/><span>{chat.blockedByMe?'Siz chatni bloklagansiz.':'Chat vaqtincha bloklangan.'}</span>{chat.blockedByMe&&<button disabled={busy} onClick={()=>void toggleBlock()}>Blokni ochish</button>}</div>:<>
-      <textarea ref={input} rows={1} maxLength={500} value={text} disabled={busy||!chat?.canSend} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Xabar yozing…" aria-label="Xabar"/>
+      <textarea ref={input} rows={1} maxLength={500} value={text} disabled={busy||!chat?.canSend} onChange={e=>{setText(e.target.value);e.currentTarget.style.height='auto';e.currentTarget.style.height=`${Math.min(e.currentTarget.scrollHeight,104)}px`;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Xabar yozing…" aria-label="Xabar"/>
       <button className="match-chat-send" disabled={busy||!text.trim()||!chat?.canSend} onClick={()=>void send()} aria-label="Xabarni yuborish">{busy?<LoaderCircle size={19} className="animate-spin"/>:<Send size={19}/>}</button>
     </>}
    </footer>

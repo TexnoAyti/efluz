@@ -635,7 +635,7 @@ export const MatchdayHomeView: React.FC<Props> = ({
                     type="button"
                     data-guide="opponent-chat"
                     onClick={() => openMatchChat({kind:'fixture',matchId:heroMatch.id})}
-                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 text-sky-700 efl-theme-sky dark:text-sky-400 font-bold text-xs transition-colors min-h-[38px]"
+                    className="efl-chat-trigger flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs min-h-[38px]"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>{c.chatWithOpponent}</span>
