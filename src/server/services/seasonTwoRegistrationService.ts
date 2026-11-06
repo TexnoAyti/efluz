@@ -14,7 +14,7 @@ export async function activateSecondSeasonRegistration(actorId = 'AUTO_SCHEDULE_
     const admissionRef = db.collection('club_admissions').doc(TARGET);
     const [season, admission] = await Promise.all([tx.get(seasonRef), tx.get(admissionRef)]);
     if (season.data()?.registrationOpen === true && ['registration','active'].includes(String(season.data()?.status).toLowerCase())) return { alreadyActive: true, admissionData: null };
-    if (season.exists && !['preparation','registration'].includes(String(season.data()?.status).toLowerCase())) {
+    if (season.exists && !['upcoming','preparation','registration'].includes(String(season.data()?.status).toLowerCase())) {
       throw new Error('SEASON_STATE_CONFLICT');
     }
     if (admission.exists && admission.data()?.enabled === true) throw new Error('ADMISSION_ALREADY_CONFIGURED');
