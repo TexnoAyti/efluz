@@ -86,8 +86,18 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   }[language] || { unavailable: 'Klub qabuli holatini yuklab bo‘lmadi.', checking: 'Klub qabuli tekshirilmoqda…', open: 'Klub tanlash ochiq.', leagueOpen: 'Bu ligada klub qabuli ochiq.', otherLeague: (name: string) => `Hozir ${name} klublari qabul qilinmoqda. Bu liga navbatda yoki yopilgan.`, finished: 'Klub qabuli yakunlangan.', retry: 'Qayta urinish', closed: 'Qabul yopiq' };
 
   // League & Data states
-  const [leagues, setLeagues] = useState<League[]>([]);
+  // Render the prepared second-season navigation immediately; never briefly
+  // display the previous season while waiting for the API response.
+  const [leagues, setLeagues] = useState<League[]>(() =>
+    activeSeasonId === EFL_SECOND_SEASON.id
+      ? EFL_SECOND_SEASON.leagues.map(league => ({
+          id: league.id, name: league.name, country: league.country,
+          tier: 1, logoUrl: '', totalClubs: league.roster.clubs.length, createdAt: '',
+        }))
+      : []
+  );
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
+    if (activeSeasonId === EFL_SECOND_SEASON.id) return 'league-premier-league';
     try { return EFL_2_DESIGN_ENABLED && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
   });
   const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>(() => {
@@ -217,35 +227,29 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   } | null>(null);
 
   // 1. Load clubs for selected league
+  const clubRequestVersion = useRef(0);
   const loadClubsForLeague = useCallback(async (leagueId: string, forceRefresh = false) => {
     if (!leagueId) return;
+    const version = ++clubRequestVersion.current;
+    // Don't leave old-season or old-league club cards visible during a switch.
+    setClubs([]);
     setIsLoadingClubs(true);
     setError(null);
     try {
       const res = await api.getLeagueClubs(leagueId, activeSeasonId, forceRefresh);
-      if (res.clubs && res.clubs.length > 0) {
-        setClubs(res.clubs);
-      } else if (clubs.length === 0) {
-        setClubs([]);
-      }
+      if (version !== clubRequestVersion.current) return;
+      setClubs(res.clubs || []);
     } catch (err: any) {
+      if (version !== clubRequestVersion.current) return;
       console.error('Failed to load clubs:', err);
-      const isQuota =
-        err?.httpStatus === 429 ||
-        err?.data?.error === 'RESOURCE_EXHAUSTED' ||
-        err?.isQuota ||
-        err?.message?.includes('quota') ||
-        err?.message?.includes('RESOURCE_EXHAUSTED');
-
-      setError({
-        message: "Couldn't load data. Please try again.",
-        isQuota,
-      });
-      // Do not wipe out existing clubs if we have them cached
+      const isQuota = err?.httpStatus === 429 ||
+        err?.data?.error === 'RESOURCE_EXHAUSTED' || err?.isQuota ||
+        err?.message?.includes('quota') || err?.message?.includes('RESOURCE_EXHAUSTED');
+      setError({ message: "Couldn't load data. Please try again.", isQuota });
     } finally {
-      setIsLoadingClubs(false);
+      if (version === clubRequestVersion.current) setIsLoadingClubs(false);
     }
-  }, [activeSeasonId, clubs.length]);
+  }, [activeSeasonId]);
 
   // 2. Load fixtures & standings for selected league on demand
   const loadLeagueStandings = useCallback(async (leagueId: string, compsList?: Competition[]) => {
@@ -304,7 +308,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         setSelectedLeagueId((prev) => {
           const exists = domesticLeagues.some((l) => l.id === prev);
           const target = exists ? prev : domesticLeagues[0].id;
-          loadClubsForLeague(target);
+          if (activeSeasonId !== EFL_SECOND_SEASON.id) void loadClubsForLeague(target);
           return target;
         });
       }
@@ -325,8 +329,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   }, [activeSeasonId, loadClubsForLeague]);
 
   useEffect(() => {
-    loadLeaguesAndComps();
-  }, [loadLeaguesAndComps]);
+    if (activeSeasonId === EFL_SECOND_SEASON.id) {
+      // Fetch prepared-season club availability without waiting for the
+      // competitions endpoint, which can be considerably slower.
+      void loadClubsForLeague('league-premier-league');
+    }
+    void loadLeaguesAndComps();
+  }, [activeSeasonId, loadClubsForLeague, loadLeaguesAndComps]);
 
   // Load tab-specific data when tab or league changes
   useEffect(() => {

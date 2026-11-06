@@ -8,6 +8,8 @@ import {
   ClubNotFoundError,
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS } from '../db/seed';
+import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
+import { SECOND_SEASON_CLUB_LOGOS, SECOND_SEASON_CREST_SOURCE_COMMIT } from '../../lib/seasonTwoClubLogos';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { verifyTelegramGroupMembership } from '../services/telegramBotService';
 import { ClubAdmissionConflictError, getClubAdmissionStatus } from '../services/clubAdmission';
@@ -20,6 +22,12 @@ import {
 import { requestDurableClubClaim, getClubClaimReceipt } from '../services/durableClubClaim';
 import { scheduleMutationReconciliation } from '../sync/scheduleReconciliation';
 import { getPublicClubFixtures } from '../services/publicClubFixtures';
+
+const preparedSecondSeasonClubs = new Map(
+  EFL_SECOND_SEASON.leagues.flatMap(league =>
+    league.roster.clubs.map(club => [club.id, club.name] as const)
+  )
+);
 
 export const clubsRouter = Router();
 
@@ -110,6 +118,11 @@ function parseAllowedCrestUrl(value: string): URL | null {
     // Racing's old numeric CDN ID belongs to US Orléans. Allow only this
     // exact official asset, not arbitrary proxy URLs on another host.
     if (parsed.href === 'https://www.realracingclub.es/svg/logos/logo.svg') return parsed;
+    if (parsed.hostname.toLowerCase() === 'raw.githubusercontent.com') {
+      const prefix = `/JoseArroyave/football-logos/${SECOND_SEASON_CREST_SOURCE_COMMIT}/logos/`;
+      if (!parsed.pathname.startsWith(prefix) || !parsed.pathname.endsWith('.svg')) return null;
+      return parsed;
+    }
     if (!ALLOWED_CREST_HOSTS.has(parsed.hostname.toLowerCase())) return null;
     return parsed;
   } catch {
@@ -293,6 +306,28 @@ clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
     }
 
     const canonicalId = resolvedSeedClub?.id || requestedId;
+
+    // The new season includes clubs absent from the first-season seed.
+    // Resolve them from the verified prepared roster instead of querying
+    // an unrelated season and rendering a raw "club-..." identifier.
+    const preparedName = seasonId === EFL_SECOND_SEASON.id
+      ? preparedSecondSeasonClubs.get(canonicalId)
+      : undefined;
+    if (preparedName && !resolvedSeedClub) {
+      const officialCrestUrl = SECOND_SEASON_CLUB_LOGOS[canonicalId];
+      if (officialCrestUrl) {
+        await fetchAndServeImage(officialCrestUrl, res, preparedName, preparedName.slice(0, 3));
+        return;
+      }
+      const initials = preparedName.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+        .slice(0, 3).map(word => word[0]).join('').toUpperCase();
+      const svg = generateFallbackSvgBadge(preparedName, initials);
+      res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+      setSafeSvgHeaders(res);
+      res.send(Buffer.from(svg, 'utf-8'));
+      return;
+    }
 
     // 2. Lookup club in Firestore with canonicalId first, then requestedId
     let club = await getClubByIdFirestore(canonicalId, seasonId);

@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
+import { useAuth } from '../context/AuthContext';
 import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
@@ -19,6 +20,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
+  const { activeSeasonId } = useAuth();
   const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife' | 'awards'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
@@ -116,7 +118,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       {/* 3. Category Content */}
       <div className="min-w-0">
         {subTab === 'awards'&&<Suspense fallback={<p role="status">Mukofotlar yuklanmoqda…</p>}><SeasonAwardsPanel/></Suspense>}
-        {subTab === 'leagues' && <ClubsView onNavigateTab={onNavigateTab} />}
+        {subTab === 'leagues' && <ClubsView key={activeSeasonId} onNavigateTab={onNavigateTab} />}
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}
         {subTab === 'season' && <SeasonHubView onNavigateTab={onNavigateTab} />}
