@@ -1118,6 +1118,9 @@ export async function claimClubAtomicFirestore(
         }
         const admissionDoc = await transaction.get(db.collection('club_admissions').doc(seasonId));
         assertClubAdmissionOpen(admissionStatus(seasonId, admissionDoc.data()), clubData.leagueId);
+        if (primaryId && seasonId === 'season-2027-28') {
+          throw new ClubConflictError('2-mavsumda faqat bitta klub tanlash mumkin.', 'CLUB_SELECTION_LOCKED');
+        }
         if (primaryId) {
           const primaryLeagueId = seasonClubs(seasonId).find(c => c.id === primaryId)?.leagueId;
           if (!primaryLeagueId) throw new ClubConflictError('Primary club league needs admin review.', 'OWNERSHIP_INCONSISTENT');
