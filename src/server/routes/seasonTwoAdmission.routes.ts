@@ -26,6 +26,7 @@ const rosterLeague = new Map(EFL_SECOND_SEASON.leagues.flatMap(l => l.roster.clu
 /** Public read; deliberately does not infer the user's ownership from an untrusted request. */
 seasonTwoAdmissionRouter.get('/status', async (_req, res) => {
   try {
+    await autoActivateSecondSeasonWhenDue();
     const doc = await getFirestoreDb().collection('seasons').doc(TARGET).get();
     const enabled = doc.data()?.registrationOpen === true && String(doc.data()?.status).toLowerCase() === 'registration';
     res.setHeader('Cache-Control', 'no-store');
