@@ -537,7 +537,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="efl-league-section-heading flex items-center justify-between">
           <div className="text-[11px] font-black text-[var(--efl-text-2)] uppercase tracking-wider flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
-            <span>{EFL_2_DESIGN_ENABLED ? previewText.domestic : 'Domestic Leagues'} (2026/27)</span>
+            <span>{EFL_2_DESIGN_ENABLED ? previewText.domestic : 'Domestic Leagues'} ({activeSeasonId === EFL_SECOND_SEASON.id ? '2027/28' : '2026/27'})</span>
           </div>
           <button
             id="btn-refresh-clubs-view"
@@ -558,7 +558,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
 
         {leagues.length > 0 && (
-          <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={`flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none scroll-mt-24 ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
+          <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={`flex w-full min-w-0 max-w-full items-center gap-3 overflow-x-auto overscroll-x-contain pb-3 pt-1 scrollbar-none scroll-mt-24 ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
             {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
               const welcomeIcon = EFL_2_DESIGN_ENABLED ? welcomeLeagueIcons[league.id] : undefined;
@@ -587,7 +587,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   aria-pressed={isSelected}
                   title={league.name}
                   onClick={() => handleSelectLeague(league.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all min-h-[42px] border shrink-0 whitespace-nowrap ${
+                  className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-xs transition-all min-h-[48px] border shrink-0 whitespace-nowrap ${
                     isSelected
                       ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/40 text-[var(--efl-primary)] font-black shadow-xs'
                       : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
