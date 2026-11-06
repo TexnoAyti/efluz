@@ -1,4 +1,5 @@
 import {seasonLeagues} from '../services/seasonCatalog';
+import { S2_PUBLIC_AT } from '../routes/seasonTwoAdmission.routes';
 import {isClubSelectionBanned} from '../services/clubSelectionBan';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
@@ -1040,6 +1041,7 @@ export async function claimClubAtomicFirestore(
       const claimResult = await db.runTransaction(async (transaction) => {
         automaticAdmission=null;
         if(seasonId==='season-2027-28'){
+          if (Date.now() < Date.parse(S2_PUBLIC_AT)) throw new ClubConflictError('Umumiy klub qabuli 19:45 da ochiladi.','PRIORITY_WINDOW_ACTIVE');
           const targetSeason=await transaction.get(db.collection('seasons').doc(seasonId));
           if(!['registration','active'].includes(String(targetSeason.data()?.status).toLowerCase())||targetSeason.data()?.registrationOpen!==true)throw new ClubConflictError('2-mavsum hali ochilmagan.','SEASON_NOT_OPEN');
         }
