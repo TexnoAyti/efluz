@@ -8,8 +8,8 @@ import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../
 import { publishAdmissionStatus } from '../services/clubAdmission';
 
 export const seasonTwoAdmissionRouter = Router();
-export const S2_OPENS_AT = '2026-11-06T14:30:00.000Z'; // 19:30 Asia/Tashkent
-export const S2_PUBLIC_AT = '2026-11-06T14:45:00.000Z'; // 19:45 Asia/Tashkent
+export const S2_OPENS_AT = '2026-11-06T15:00:00.000Z'; // 20:00 Asia/Tashkent
+export const S2_PUBLIC_AT = '2026-11-06T15:15:00.000Z'; // 20:15 Asia/Tashkent
 const TARGET = EFL_SECOND_SEASON.id;
 const SOURCE = EFL_SECOND_SEASON.sourceSeasonId;
 
