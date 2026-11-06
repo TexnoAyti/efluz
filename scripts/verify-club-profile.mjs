@@ -11,7 +11,7 @@ const bundled=await build({absWorkingDir:root,entryPoints:['src/components/Publi
  build.onResolve({filter:/AuthContext$/},()=>({path:'auth',namespace:'profile-test'}));
  build.onResolve({filter:/UserProfileContext$/},()=>({path:'profiles',namespace:'profile-test'}));
  build.onResolve({filter:/\/i18n$/},()=>({path:'i18n',namespace:'profile-test'}));
- build.onLoad({filter:/.*/,namespace:'profile-test'},({path})=>({contents:path==='auth'?'export const useAuth=()=>({activeSeasonId:"season-2026-27"});export const usePremiumClubIds=()=>[];':path==='profiles'?'export const useUserProfile=()=>({openUserProfile:()=>{}});':'export const useI18n=()=>({language:"uz"});'}));
+ build.onLoad({filter:/.*/,namespace:'profile-test'},({path})=>({contents:path==='auth'?'export const useAuth=()=>({activeSeasonId:"season-2026-27"});export const useOptionalAuth=()=>({activeSeasonId:"season-2026-27"});export const usePremiumClubIds=()=>[];':path==='profiles'?'export const useUserProfile=()=>({openUserProfile:()=>{}});':'export const useI18n=()=>({language:"uz"});'}));
 }}]});
 const context={require,module:{exports:{}},exports:{},console};context.exports=context.module.exports;
 vm.createContext(context);vm.runInContext(bundled.outputFiles[0].text,context);
