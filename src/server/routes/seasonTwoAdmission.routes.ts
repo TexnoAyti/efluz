@@ -6,6 +6,7 @@ import { isPrimaryOwner } from '../services/telegramAiConfigService';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
 import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../readModel/readModelStore';
 import { prepareAutomaticAdmissionAdvance, publishAdmissionStatus } from '../services/clubAdmission';
+import { autoActivateSecondSeasonWhenDue } from '../services/seasonTwoRegistrationService';
 
 export const seasonTwoAdmissionRouter = Router();
 const TARGET = EFL_SECOND_SEASON.id;
