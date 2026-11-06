@@ -1,4 +1,5 @@
 import {UZEFLIFE_RESULT_TOPIC} from '../../lib/uzeflifeResultTopic';
+import { PENALTY_MENU_LABEL, sendPenaltyWidget } from '../services/telegramPenaltyWidget';
 import {offerAndroidLogin,markAndroidOfferDelivered,answerAndroidLogin} from '../services/androidAuth';
 import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
@@ -185,6 +186,20 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         if(androidStart){
           if(message.chat.type!=='private'||message.chat.id!==message.from.id||message.from.is_bot||message.sender_chat||message.forward_origin||message.forward_from||message.forward_from_chat){response={ok:true,ignored:'android_login_private_only'};}
           else try{const offer=await offerAndroidLogin(androidStart[1],message.from);const sent=await sendTelegramMessage(message.chat.id,`EFLUZ Android’ga kirish\n\nIlovadagi kod: ${offer.code}\n\nKod APK ekranidagi kod bilan bir xil bo‘lsagina tasdiqlang. Bu tugma so‘rovni boshlagan qurilmaga akkauntingizga kirish huquqini beradi. Agar siz boshlamagan bo‘lsangiz, rad eting.`,{parse_mode:null,reply_markup:{inline_keyboard:[[{text:'Kirishni tasdiqlash',callback_data:'android_login:approve:'+offer.challengeId},{text:'Rad etish',callback_data:'android_login:deny:'+offer.challengeId}]]}});if(!sent.ok)throw new Error('ANDROID_LOGIN_OFFER_NOT_SENT');await markAndroidOfferDelivered(offer.challengeId,message.from.id,sent.result?.message_id);response={ok:true,handled:'android_login_offer'};}catch(error:any){if(!error.statusCode)throw error;await sendTelegramMessage(message.chat.id,error.message,{parse_mode:null});response={ok:true,handled:'android_login_offer',offered:false};}
+        } else if (message.chat.type === 'private' && message.chat.id === message.from.id &&
+          !message.from.is_bot && !message.sender_chat &&
+          (message.text.trim() === PENALTY_MENU_LABEL || /^\\/penalty(?:@[a-zA-Z0-9_]+)?$/.test(message.text.trim()))) {
+          const result = await sendPenaltyWidget(message.chat.id);
+          if (!result.ok) {
+            // Never send an HTML file and call it a live chat widget.
+            // Until the public API supports sendWidget, explain availability.
+            const reply = await sendTelegramMessage(message.chat.id,
+              '⚽ Penalti widgeti tayyor, lekin Telegram ushbu bot uchun chat widgetlarini yuborishni hali yoqmagan. Telegram widget API faollashganda shu tugma orqali o‘yin chat ichida ochiladi.', {
+                parse_mode: null,
+              });
+            if (!reply.ok) throw new Error('PENALTY_WIDGET_UNAVAILABLE_MESSAGE_NOT_SENT');
+          }
+          response = { ok: true, handled: 'penalty_widget', sent: result.ok, ...(result.ok ? {} : { error: result.error }) };
         } else if (command === 'start') {
           const result = await handleTelegramStart(message.chat.id, message.from, { message_thread_id: message.message_thread_id, reply_to_message_id: message.message_id });
           if ((!result.ok || !result.messageSent) && !result.terminalDeliveryFailure) throw new Error('START_MESSAGE_NOT_SENT: ' + (result.error || 'unknown'));
