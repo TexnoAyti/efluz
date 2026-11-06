@@ -4,6 +4,8 @@ import { getFirestoreDb } from '../firebase/admin';
 import { isClubSelectionBanned } from '../services/clubSelectionBan';
 import { isPrimaryOwner } from '../services/telegramAiConfigService';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
+import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../readModel/readModelStore';
+import { publishAdmissionStatus } from '../services/clubAdmission';
 
 export const seasonTwoAdmissionRouter = Router();
 export const S2_OPENS_AT = '2026-11-06T14:30:00.000Z'; // 19:30 Asia/Tashkent
@@ -103,6 +105,9 @@ seasonTwoAdmissionRouter.post('/decision', requireAuth, async (req: Request, res
       }
       return { clubId, choice, replayed: false };
     });
+    if (result.choice === 'KEEP' && !result.replayed) {
+      await Promise.allSettled([invalidateClubReadModels(TARGET), invalidateUserMembershipReadModel(uid, TARGET)]);
+    }
     res.setHeader('Cache-Control', 'no-store');
     res.json({ success: true, ...result });
   } catch (error) { handle(res, error); }
@@ -127,6 +132,9 @@ seasonTwoAdmissionRouter.post('/activate', requireAuth, async (req, res) => {
         leagueOverrides: {}, updatedAt: at, revision: at, updatedBy: req.user!.id });
       return { alreadyActive: false };
     });
+    if (!result.alreadyActive) {
+      await publishAdmissionStatus(TARGET, { seasonId: TARGET, enabled: true, automatic: true, stage: 0, leagueOverrides: {}, updatedAt: new Date().toISOString(), revision: new Date().toISOString() });
+    }
     res.json({ success: true, ...result, phase: phase(), priorityFrom: S2_OPENS_AT, publicFrom: S2_PUBLIC_AT });
   } catch (error) { handle(res, error); }
 });
