@@ -308,7 +308,7 @@ clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
       ? preparedSecondSeasonClubs.get(canonicalId)
       : undefined;
     if (preparedName && !resolvedSeedClub) {
-      const initials = preparedName.split(/[^\\p{L}\\p{N}]+/u).filter(Boolean)
+      const initials = preparedName.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
         .slice(0, 3).map(word => word[0]).join('').toUpperCase();
       const svg = generateFallbackSvgBadge(preparedName, initials);
       res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
