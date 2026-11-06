@@ -28,7 +28,7 @@ const result = await build({
     build.onLoad({ filter: /.*/, namespace: 'release-test' }, (args) => {
       if (args.path === 'auth') return { contents: 'export const AuthProvider=({children})=>children; export const useAuth=()=>globalThis.releaseAuth; export const usePremiumClubIds=()=>[]; export const APP_BUILD_ID="release-test";' };
       if (args.path === 'profiles') return { contents: 'export const UserProfileProvider=({children})=>children;' };
-      if (args.path === 'api') return { contents: 'export const api={};' };
+      if (args.path === 'api') return { contents: 'export const api={}; export const getSessionToken=()=>null; export const getTelegramInitData=()=>""; export const getDevUserId=()=>null;' };
       if (args.path === 'i18n') return { contents: 'export const I18nProvider=({children})=>children; export const useI18n=()=>({language:globalThis.releaseLanguage||"uz",setLanguage:()=>{},t:{navHome:"Bosh sahifa",navLeagues:"Turnirlar",navAdmin:"Admin"}});' };
       return { resolveDir: root, contents: `import React from 'react'; export const ${args.path}=()=>React.createElement('div',{'data-test-view':'${args.path}'});` };
     });
