@@ -188,7 +188,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           else try{const offer=await offerAndroidLogin(androidStart[1],message.from);const sent=await sendTelegramMessage(message.chat.id,`EFLUZ Android’ga kirish\n\nIlovadagi kod: ${offer.code}\n\nKod APK ekranidagi kod bilan bir xil bo‘lsagina tasdiqlang. Bu tugma so‘rovni boshlagan qurilmaga akkauntingizga kirish huquqini beradi. Agar siz boshlamagan bo‘lsangiz, rad eting.`,{parse_mode:null,reply_markup:{inline_keyboard:[[{text:'Kirishni tasdiqlash',callback_data:'android_login:approve:'+offer.challengeId},{text:'Rad etish',callback_data:'android_login:deny:'+offer.challengeId}]]}});if(!sent.ok)throw new Error('ANDROID_LOGIN_OFFER_NOT_SENT');await markAndroidOfferDelivered(offer.challengeId,message.from.id,sent.result?.message_id);response={ok:true,handled:'android_login_offer'};}catch(error:any){if(!error.statusCode)throw error;await sendTelegramMessage(message.chat.id,error.message,{parse_mode:null});response={ok:true,handled:'android_login_offer',offered:false};}
         } else if (message.chat.type === 'private' && message.chat.id === message.from.id &&
           !message.from.is_bot && !message.sender_chat &&
-          (message.text.trim() === PENALTY_MENU_LABEL || /^\\/penalty(?:@[a-zA-Z0-9_]+)?$/.test(message.text.trim()))) {
+          (message.text.trim() === PENALTY_MENU_LABEL || message.text.trim() === '/penalty')) {
           const result = await sendPenaltyWidget(message.chat.id);
           if (!result.ok) {
             // Never send an HTML file and call it a live chat widget.
