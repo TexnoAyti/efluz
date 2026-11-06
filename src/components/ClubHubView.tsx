@@ -767,7 +767,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
                 type="button"
                 data-guide="opponent-chat"
                 onClick={() => openMatchChat({kind:'fixture',matchId:heroMatch.id})}
-                className="py-2.5 px-4 rounded-xl text-xs font-bold bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 flex items-center justify-center gap-1.5 transition-all min-h-[40px]"
+                className="efl-chat-trigger py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 min-h-[40px]"
                 title="EFLUZ ichida raqib bilan chat"
               >
                 <Send className="w-3.5 h-3.5" />

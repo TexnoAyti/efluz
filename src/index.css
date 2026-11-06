@@ -417,3 +417,25 @@
 .match-chat-unread{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;font-size:9px;font-weight:900;box-shadow:0 0 0 2px color-mix(in srgb,var(--efl-surface,#fff) 80%,transparent)}
 @media(min-width:640px){.match-chat-backdrop{align-items:center;padding:24px}.match-chat-sheet{height:min(760px,calc(100dvh - 48px));border-radius:28px}.match-chat-header>.match-chat-icon:first-child{display:none}.match-chat-close{display:grid}}
 @media(prefers-reduced-motion:reduce){.match-chat-bubble,.match-chat-icon{scroll-behavior:auto;transition:none}}
+
+/* Final EFL polish: use one calm cobalt action language across every opponent entry point. */
+.efl-chat-trigger{position:relative;overflow:hidden;border:1px solid color-mix(in srgb,var(--efl-primary,#2563eb) 28%,var(--efl-border,#e2e6ec));background:color-mix(in srgb,var(--efl-primary,#2563eb) 9%,var(--efl-surface,#fff));color:var(--efl-primary,#2563eb);box-shadow:0 5px 18px color-mix(in srgb,var(--efl-primary,#2563eb) 8%,transparent);transition:transform .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease}
+.efl-chat-trigger::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 22%,rgba(255,255,255,.18) 48%,transparent 72%);transform:translateX(-120%);transition:transform .5s ease;pointer-events:none}
+.efl-chat-trigger:hover{border-color:color-mix(in srgb,var(--efl-primary,#2563eb) 52%,var(--efl-border,#e2e6ec));background:color-mix(in srgb,var(--efl-primary,#2563eb) 14%,var(--efl-surface,#fff));box-shadow:0 8px 22px color-mix(in srgb,var(--efl-primary,#2563eb) 15%,transparent);transform:translateY(-1px)}
+.efl-chat-trigger:hover::after{transform:translateX(120%)}
+.efl-chat-trigger:active{transform:translateY(0) scale(.985)}
+.efl-chat-trigger .match-chat-unread{margin-left:2px}
+.match-chat-backdrop{animation:match-chat-fade-in .2s ease both}
+.match-chat-sheet{animation:match-chat-sheet-in .28s cubic-bezier(.22,.8,.25,1) both}
+.match-chat-header{box-shadow:0 1px 0 color-mix(in srgb,var(--efl-primary,#2563eb) 5%,transparent)}
+.match-chat-avatar{background:linear-gradient(145deg,color-mix(in srgb,var(--efl-primary,#2563eb) 18%,var(--efl-surface,#fff)),color-mix(in srgb,var(--efl-primary,#2563eb) 6%,var(--efl-surface-2,#f1f5f9)));border:1px solid color-mix(in srgb,var(--efl-primary,#2563eb) 18%,var(--efl-border,#e2e6ec));box-shadow:inset 0 1px 0 rgba(255,255,255,.32)}
+.match-chat-avatar span{background:var(--efl-primary,#2563eb);box-shadow:0 0 0 3px color-mix(in srgb,var(--efl-primary,#2563eb) 12%,transparent)}
+.match-chat-messages{background:radial-gradient(circle at 100% 0,color-mix(in srgb,var(--efl-primary,#2563eb) 5%,transparent),transparent 34%),linear-gradient(180deg,color-mix(in srgb,var(--efl-bg,#f4f5f7) 78%,var(--efl-surface,#fff)),var(--efl-bg,#f4f5f7))}
+.match-chat-bubble{animation:match-chat-bubble-in .22s ease both;transition:transform .18s ease,box-shadow .18s ease}.match-chat-bubble:hover{transform:translateY(-1px);box-shadow:0 7px 20px rgba(2,6,23,.09)}
+.match-chat-compose textarea{transition:border-color .18s ease,box-shadow .18s ease,background .18s ease}.match-chat-compose textarea::placeholder{color:var(--efl-text-2,#64748b);opacity:.72}
+.match-chat-send{transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease}.match-chat-send:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 12px 26px color-mix(in srgb,var(--efl-primary,#2563eb) 30%,transparent)}
+@keyframes match-chat-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes match-chat-sheet-in{from{opacity:0;transform:translateY(18px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes match-chat-bubble-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:420px){.match-chat-sheet{height:calc(100dvh - max(8px,env(safe-area-inset-top)));border-radius:22px 22px 0 0}.match-chat-header{min-height:64px;padding-inline:9px;gap:8px}.match-chat-icon{width:40px;height:40px;flex-basis:40px;border-radius:14px}.match-chat-avatar{width:40px;height:40px;flex-basis:40px}.match-chat-messages{padding-inline:11px}.match-chat-compose{padding-inline:9px}.match-chat-quick{padding-inline:9px}}
+@media(prefers-reduced-motion:reduce){.efl-chat-trigger,.match-chat-backdrop,.match-chat-sheet,.match-chat-bubble,.match-chat-send{animation:none;transition:none}.efl-chat-trigger::after{display:none}}

@@ -21,7 +21,7 @@ export function FixtureOpponentContact({fixture, clubId}: {fixture: Fixture; clu
   return <button type="button" data-guide="opponent-chat" data-fixture-contact={fixture.id}
     aria-label={`${label} · ${opponent.clubName} · ${fixture.roundName || fixture.matchday}`}
     onClick={event => {event.stopPropagation();openMatchChat({kind:'fixture',matchId:fixture.id,title:opponent.clubName,opponentName:owner.displayText});}}
-    className="w-full min-w-0 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-700 efl-theme-sky dark:text-sky-400 hover:bg-sky-500/20">
+    className="efl-chat-trigger w-full min-w-0 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold">
     <Send size={16} className="shrink-0"/>
     <span className="min-w-0 text-center"><span className="block">{label}</span>{opponent.clubName && <small className="block font-medium break-words">{opponent.clubName}</small>}</span>
     <MatchChatUnreadBadge kind="fixture" matchId={fixture.id}/>

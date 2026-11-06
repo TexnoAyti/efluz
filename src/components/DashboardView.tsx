@@ -431,7 +431,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           e.stopPropagation();
                           openMatchChat({kind:'fixture',matchId:nextMatch.id});
                         }}
-                        className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md min-h-[44px] touch-manipulation"
+                        className="efl-chat-trigger flex-1 py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 min-h-[44px] touch-manipulation"
                       >
                         <Send className="w-3.5 h-3.5" />
                         <span>Raqibga yozish</span>
