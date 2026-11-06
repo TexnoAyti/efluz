@@ -1,5 +1,5 @@
 import {seasonLeagues} from '../services/seasonCatalog';
-import { S2_PUBLIC_AT } from '../routes/seasonTwoAdmission.routes';
+import { S2_PUBLIC_AT } from '../../lib/seasonTwoAdmissionWindow';
 import {isClubSelectionBanned} from '../services/clubSelectionBan';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
