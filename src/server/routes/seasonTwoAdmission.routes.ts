@@ -14,15 +14,15 @@ const TARGET = EFL_SECOND_SEASON.id;
 const SOURCE = EFL_SECOND_SEASON.sourceSeasonId;
 
 const phase = seasonTwoAdmissionPhase;
-let lastPublicAnnouncementCheck = 0;
-function schedulePublicAnnouncementIfDue() {
+let lastMilestoneAnnouncementCheck = 0;
+function scheduleMilestoneAnnouncementIfDue() {
   if (process.env.VERCEL_ENV !== 'production' || process.env.DATABASE_PROVIDER !== 'supabase') return;
   const now = Date.now();
-  if (now < Date.parse(S2_PUBLIC_AT) || now - lastPublicAnnouncementCheck < 30000) return;
-  lastPublicAnnouncementCheck = now;
+  if (now < Date.parse(S2_OPENS_AT) || now - lastMilestoneAnnouncementCheck < 30000) return;
+  lastMilestoneAnnouncementCheck = now;
   const work = import('../services/seasonTwoTelegramAnnouncements')
     .then(({announceDueSeasonTwoMilestones}) => announceDueSeasonTwoMilestones(now))
-    .catch(error => console.warn('[SEASON2_PUBLIC_NOTICE_DEFERRED]', error?.message || error));
+    .catch(error => console.warn('[SEASON2_MILESTONE_NOTICE_DEFERRED]', error?.message || error));
   if (process.env.VERCEL === '1') waitUntil(work);
   else void work;
 }
@@ -46,7 +46,7 @@ seasonTwoAdmissionRouter.get('/status', async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ seasonId: TARGET, sourceSeasonId: SOURCE, phase: enabled ? phase() : 'NOT_ACTIVATED',
       priorityFrom: S2_OPENS_AT, publicFrom: S2_PUBLIC_AT, registrationOpen: enabled });
-    if (enabled) schedulePublicAnnouncementIfDue();
+    if (enabled) scheduleMilestoneAnnouncementIfDue();
   } catch (error) { handle(res, error); }
 });
 
