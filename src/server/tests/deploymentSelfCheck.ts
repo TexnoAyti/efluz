@@ -57,10 +57,12 @@ async function runDeploymentSelfCheck() {
   }
   const crons = Array.isArray(vercelConfig.crons) ? vercelConfig.crons : [];
   const workerCron = crons.find((cron: any) => cron.path === '/api/internal/telegram-worker');
-  if (crons.length !== 1 || !workerCron || workerCron.schedule !== '0 3 * * *') {
-    throw new Error('FAILED [CHECK 2]: notification recovery must use exactly one Hobby-compatible daily cron at 03:00 UTC.');
+  const seasonTwoCron = crons.find((cron: any) => cron.path === '/api/internal/season-two-notices');
+  if (crons.length !== 2 || !workerCron || workerCron.schedule !== '0 3 * * *'
+      || !seasonTwoCron || seasonTwoCron.schedule !== '30 15 6 11 *') {
+    throw new Error('FAILED [CHECK 2]: preserve the 03:00 daily worker and one Hobby-compatible 20:30 season-two notification cron.');
   }
-  console.log('✅ PASS [CHECK 2]: API routes, SPA fallback, and 03:00 UTC daily notification recovery cron are valid.');
+  console.log('✅ PASS [CHECK 2]: API routes, SPA fallback, daily recovery and 20:30 season-two notifications are valid.');
 
   // --- CHECK 3: API bundle execution & health check ---
   console.log('\n--- [CHECK 3] Live API Bundle Invocation ---');
