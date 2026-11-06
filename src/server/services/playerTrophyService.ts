@@ -4,7 +4,7 @@ import { getFirestoreDb } from '../firebase/admin';
 import { trackFirestoreRead, trackFirestoreWrite } from '../firebase/firestoreStore';
 import { SEED_COMPETITIONS } from '../db/seed';
 import { DOMESTIC_LEAGUE_CONFIG, ReadModelKeys, invalidateDataset, redisGetFresh, redisGetLkg, redisIsDirty, persistReadSnapshot } from '../readModel/readModelStore';
-import { getSeasonTrophies } from './seasonInsightsService';
+import { getSeasonAwards, getSeasonTrophies } from './seasonInsightsService';
 import { sharedReadRefresh } from '../readModel/sharedReadRefresh';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 
@@ -188,20 +188,36 @@ export function mergeClubTrophies(clubId: string, live: TrophyRecord[], history:
   return mergeTrophies(live, history, activeSeasonId, trophy => trophy.clubId === clubId);
 }
 
-async function getTrophyCabinet(activeSeasonId: string, belongsTo: (trophy: TrophyRecord) => boolean): Promise<PlayerTrophyCabinet> {
-  const [history, live] = await Promise.all([readHistory(), getSeasonTrophies(activeSeasonId).catch(() => null)]);
+async function getTrophyCabinet(activeSeasonId: string, belongsTo: (trophy: TrophyRecord) => boolean, awardBelongsTo: (clubId: string, userId?: string) => boolean): Promise<PlayerTrophyCabinet> {
+  const [history, live, awardResult] = await Promise.all([
+    readHistory(),
+    getSeasonTrophies(activeSeasonId).catch(() => null),
+    getSeasonAwards(activeSeasonId).catch(() => null),
+  ]);
   const saved = history.data.records.filter(record => record.active && record.seasonId === activeSeasonId);
   const current = live ? [...live.trophies, ...saved.filter(record => live.unavailableCompetitions.includes(record.competitionId))] : saved;
-  return { trophies: mergeTrophies(current, history.data, activeSeasonId, belongsTo), stale: history.stale || !live || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
+  const awards = awardResult?.awards.flatMap(award => award.leaders
+    .filter(leader => awardBelongsTo(leader.clubId, leader.userId))
+    .map(leader => ({
+      id: `${activeSeasonId}__${award.id}__${leader.clubId}`,
+      label: award.label,
+      description: award.description,
+      unit: award.unit,
+      value: leader.value,
+      seasonId: activeSeasonId,
+      clubId: leader.clubId,
+      clubName: leader.clubName,
+    }))) || [];
+  return { trophies: mergeTrophies(current, history.data, activeSeasonId, belongsTo), awards, stale: history.stale || !live || !awardResult || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
 }
 
 export async function getPlayerTrophyCabinet(userId: string, activeSeasonId: string): Promise<PlayerTrophyCabinet> {
-  return getTrophyCabinet(activeSeasonId, trophy => trophy.winnerUserId === userId);
+  return getTrophyCabinet(activeSeasonId, trophy => trophy.winnerUserId === userId, (_clubId, leaderUserId) => leaderUserId === userId);
 }
 
 /** Club titles remain visible to every visitor, independently of who is logged in. */
 export async function getClubTrophyCabinet(clubId: string, activeSeasonId: string): Promise<PlayerTrophyCabinet> {
-  return getTrophyCabinet(activeSeasonId, trophy => trophy.clubId === clubId);
+  return getTrophyCabinet(activeSeasonId, trophy => trophy.clubId === clubId, leaderClubId => leaderClubId === clubId);
 }
 
 export async function preserveRecordedTrophyOwners(trophies: TrophyRecord[]): Promise<TrophyRecord[]> {
