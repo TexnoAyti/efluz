@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, LockKeyhole, RefreshCw, ShieldCheck, Trophy, X } from 'lucide-react';
 import { getSessionToken, getTelegramInitData, getDevUserId } from '../lib/api';
 import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
@@ -32,26 +32,49 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [confirm, setConfirm] = useState<{ id: string; choice: Decision } | null>(null);
-  const load = useCallback(async () => {
-    try {
-      const next = await readJson<Admission>('/api/season-two-admission/status');
-      setStatus(next);
-      if (next.registrationOpen) {
-        const personal = await readJson<MyClubs>('/api/season-two-admission/mine');
-        setMine(personal);
-      }
-      setError('');
-    } catch (e: any) { setError(e.message || 'Ma’lumotlar yuklanmadi'); }
+  const pendingLoad = useRef<Promise<void> | null>(null);
+  const lastLoadAt = useRef(0);
+  const load = useCallback((force = false): Promise<void> => {
+    if (pendingLoad.current && !force) return pendingLoad.current;
+    lastLoadAt.current = Date.now();
+    const work = (async () => {
+      try {
+        // Personal ownership is needed only once priority registration begins.
+        // Do not serialize the public status and personalized reads.
+        const personalRequest = Date.now() >= Date.parse(S2_OPENS_AT)
+          ? readJson<MyClubs>('/api/season-two-admission/mine').catch(() => null)
+          : Promise.resolve(null);
+        const next = await readJson<Admission>('/api/season-two-admission/status');
+        setStatus(next);
+        if (next.registrationOpen) {
+          const personal = await personalRequest;
+          if (personal) setMine(personal);
+        }
+        setError('');
+      } catch (e: any) { setError(e.message || 'Ma’lumotlar yuklanmadi'); }
+    })();
+    pendingLoad.current = work;
+    void work.finally(() => { if (pendingLoad.current === work) pendingLoad.current = null; });
+    return work;
   }, []);
   useEffect(() => {
     void load();
+    // The countdown is visual-only: ticking must not trigger database traffic.
     const clock = window.setInterval(() => setTime(Date.now()), 1000);
-    const refresh = window.setInterval(() => { if (!document.hidden) void load(); }, 15000);
-    const onFocus = () => { setTime(Date.now()); void load(); };
+    const refresh = window.setInterval(() => { if (!document.hidden) void load(); }, 60000);
+    const onFocus = () => {
+      setTime(Date.now());
+      if (Date.now() - lastLoadAt.current > 15000) void load();
+    };
+    const boundaryTimers = [S2_OPENS_AT, S2_PUBLIC_AT]
+      .map(at => Date.parse(at) - Date.now())
+      .filter(delay => delay > 0 && delay <= 2147483647)
+      .map(delay => window.setTimeout(() => void load(true), delay + 100));
     window.addEventListener('focus', onFocus);
     return () => {
       window.clearInterval(clock);
       window.clearInterval(refresh);
+      boundaryTimers.forEach(window.clearTimeout);
       window.removeEventListener('focus', onFocus);
     };
   }, [load]);
@@ -62,7 +85,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
   const display = `${String(Math.floor(remaining / 60)).padStart(2,'0')}:${String(remaining % 60).padStart(2,'0')}`;
   async function activate() {
     setBusy('activate'); setError('');
-    try { await readJson('/api/season-two-admission/activate', { method: 'POST' }); await load(); setNotice('Qabul sozlamalari saqlandi. Ustuvor tanlov 20:30 da ochiladi.'); }
+    try { await readJson('/api/season-two-admission/activate', { method: 'POST' }); await load(true); setNotice('Qabul sozlamalari saqlandi. Ustuvor tanlov 20:30 da ochiladi.'); }
     catch (e: any) { setError(e.message || 'Qabul faollashtirilmadi'); }
     finally { setBusy(null); }
   }
@@ -73,7 +96,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clubId: id, choice }),
       });
       setNotice(choice === 'KEEP' ? 'Klubingiz 2-mavsum uchun saqlandi.' : '2-mavsum uchun klubdan voz kechildi. Umumiy qabulni kuting.');
-      await load();
+      await load(true);
     } catch (e: any) { setError(e.message || 'Qaror saqlanmadi'); }
     finally { setBusy(null); }
   }
