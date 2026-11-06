@@ -30,6 +30,7 @@ import { scheduleMutationReconciliation, reconcileDurableMutations } from './syn
 import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { seasonsRouter } from './routes/seasons.routes';
+import { seasonTwoAdmissionRouter } from './routes/seasonTwoAdmission.routes';
 import { leaguesRouter } from './routes/leagues.routes';
 import { clubsRouter } from './routes/clubs.routes';
 import { competitionsRouter } from './routes/competitions.routes';
@@ -229,6 +230,7 @@ export function createApp() {
   app.use('/api/auth/android',androidAuthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
+  app.use('/api/season-two-admission', seasonTwoAdmissionRouter);
   app.use('/api/season-lifecycle', seasonLifecycleRouter);
   app.use('/api/season-ops', seasonOperationsConsistencyRouter);
   app.use('/api/season-ops', seasonOperationsRouter);
