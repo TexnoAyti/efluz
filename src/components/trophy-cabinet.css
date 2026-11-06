@@ -1,8 +1,95 @@
-.efl-honours{--honours-gold:#b88718;--honours-gold-soft:#f8efd7;min-width:0;padding:18px;border:1px solid var(--efl-border);border-radius:22px;background:var(--efl-surface);color:var(--efl-text);box-shadow:var(--efl-shadow)}
-.theme-dark .efl-honours{--honours-gold:#e3bd61;--honours-gold-soft:#302717}
-.efl-honours-header{display:flex;align-items:center;justify-content:space-between;gap:14px}.efl-honours-heading{display:flex;align-items:center;gap:12px;min-width:0}.efl-honours-mark{display:grid;place-items:center;width:45px;height:45px;flex:0 0 45px;border-radius:15px;background:var(--honours-gold-soft);color:var(--honours-gold)}.efl-honours-mark svg{width:22px}.efl-honours-eyebrow{display:flex;align-items:center;gap:5px;font-size:8px;line-height:1.5;font-weight:950;letter-spacing:.15em;color:var(--efl-primary)}.efl-honours-eyebrow svg{width:11px;height:11px}.efl-honours h2{margin:2px 0 0;font-size:20px;line-height:1.1;font-weight:950;letter-spacing:-.04em}.efl-honours-header p{margin:4px 0 0;font-size:10px;color:var(--efl-text-2)}.efl-honours-filter select{min-height:38px;max-width:150px;padding:7px 10px;border:1px solid var(--efl-border);border-radius:11px;background:var(--efl-surface-2);color:var(--efl-text);font-size:10px;font-weight:800}.efl-honours-stale{margin:12px 0 0;padding:8px 10px;border-radius:10px;background:var(--efl-surface-2);font-size:10px;color:var(--efl-text-2)}
-.efl-honours-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) 1.6fr;gap:8px;margin-top:16px}.efl-honours-summary>div{display:flex;align-items:center;gap:8px;min-width:0;padding:10px 11px;border:1px solid var(--efl-border);border-radius:13px;background:var(--efl-surface-2)}.efl-honours-summary svg{width:17px;height:17px;flex:0 0 17px;color:var(--honours-gold)}.efl-honours-summary strong{font-size:17px;line-height:1;font-weight:950;font-variant-numeric:tabular-nums}.efl-honours-summary span{font-size:9px;font-weight:800;color:var(--efl-text-2)}.efl-honours-summary .efl-honours-season{display:grid;align-content:center;gap:3px}.efl-honours-season span{font-size:11px;color:var(--efl-text);font-weight:900}.efl-honours-season small{overflow:hidden;font-size:9px;color:var(--efl-text-2);text-overflow:ellipsis;white-space:nowrap}
-.efl-honours-body{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-top:17px}.efl-honours-section{min-width:0}.efl-honours-section-title{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--efl-border)}.efl-honours-section-title span{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:950}.efl-honours-section-title svg{width:15px;height:15px;color:var(--honours-gold)}.efl-honours-section-title b{font-size:10px;color:var(--efl-muted)}.efl-honours-trophies{display:grid;gap:5px;margin:8px 0 0;padding:0;list-style:none}.efl-honour-trophy{display:flex;align-items:center;gap:10px;min-width:0;padding:7px 8px;border:1px solid transparent;border-radius:13px}.efl-honour-trophy:hover{border-color:var(--efl-border);background:var(--efl-surface-2)}.efl-honour-trophy-art{display:flex;align-items:center;justify-content:center;width:45px;height:58px;flex:0 0 45px}.efl-honour-trophy-image-link{width:100%;height:100%}.efl-honour-trophy-image{width:43px;height:56px}.efl-honour-trophy .efl-trophy-fallback{width:32px;height:40px;color:var(--honours-gold)}.efl-honour-trophy-copy{min-width:0}.efl-honour-trophy-copy h3{overflow:hidden;margin:0;font-size:11px;line-height:1.35;font-weight:900;text-overflow:ellipsis;white-space:nowrap}.efl-honour-trophy-copy p{margin:4px 0 0;font-size:9px;color:var(--efl-text-2)}.efl-honour-trophy-copy p strong{color:var(--efl-primary)}.efl-honour-trophy-copy span{display:block;overflow:hidden;margin-top:2px;font-size:9px;color:var(--efl-muted);text-overflow:ellipsis;white-space:nowrap}
-.efl-honours-awards{display:grid;gap:7px;margin-top:8px}.efl-honour-award{display:flex;align-items:center;gap:9px;min-width:0;padding:9px;border:1px solid var(--efl-border);border-radius:13px;background:var(--honours-gold-soft)}.efl-honour-award-icon{display:grid;place-items:center;width:29px;height:29px;flex:0 0 29px;border-radius:9px;background:var(--efl-surface);color:var(--honours-gold)}.efl-honour-award-icon svg{width:15px}.efl-honour-award-copy{min-width:0;flex:1}.efl-honour-award-topline{display:flex;justify-content:space-between;gap:8px;font-size:8px;color:var(--efl-text-2)}.efl-honour-award-topline strong{color:var(--honours-gold);white-space:nowrap}.efl-honour-award h3{overflow:hidden;margin:3px 0 0;font-size:10px;font-weight:950;text-overflow:ellipsis;white-space:nowrap}.efl-honour-award p{overflow:hidden;margin:2px 0 0;font-size:8px;color:var(--efl-text-2);text-overflow:ellipsis;white-space:nowrap}.efl-honours-empty{display:grid;place-items:center;gap:7px;padding:24px 12px;margin-top:16px;border:1px dashed var(--efl-border);border-radius:15px;color:var(--efl-text-2);text-align:center}.efl-honours-empty svg{width:27px;height:27px;color:var(--efl-muted)}.efl-honours-empty p{margin:0;font-size:11px}.efl-honours-status{min-height:95px;display:grid;place-items:center;font-size:11px;color:var(--efl-text-2)}.efl-honours-status-row{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;font-size:11px}.efl-honours-status-row button{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:7px 10px;border:1px solid var(--efl-border);border-radius:10px;background:var(--efl-surface-2);color:var(--efl-primary);font-size:10px;font-weight:800}.efl-honours-status-row svg{width:14px;height:14px}
-@media(max-width:720px){.efl-honours-body{grid-template-columns:1fr}.efl-honours-awards{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:480px){.efl-honours{padding:14px;border-radius:19px}.efl-honours-header{align-items:flex-start}.efl-honours-heading{gap:9px}.efl-honours-mark{width:38px;height:38px;flex-basis:38px;border-radius:12px}.efl-honours-mark svg{width:19px}.efl-honours h2{font-size:18px}.efl-honours-header p{font-size:9px}.efl-honours-filter select{max-width:118px;min-height:35px;font-size:9px}.efl-honours-summary{grid-template-columns:1fr 1fr;margin-top:13px}.efl-honours-summary .efl-honours-season{grid-column:1/-1}.efl-honours-awards{grid-template-columns:1fr}}
+.efl-honours {
+  --honours-gold: #a97712;
+  --honours-gold-soft: color-mix(in srgb, #d6a83d 14%, var(--efl-surface));
+  --honours-gold-line: color-mix(in srgb, #d6a83d 34%, var(--efl-border));
+  min-width: 0;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid var(--efl-border);
+  border-radius: 24px;
+  background: var(--efl-surface);
+  color: var(--efl-text);
+  box-shadow: var(--efl-shadow);
+}
+.theme-dark .efl-honours {
+  --honours-gold: #e9c76b;
+  --honours-gold-soft: color-mix(in srgb, #d6a83d 12%, var(--efl-surface));
+  --honours-gold-line: color-mix(in srgb, #e9c76b 30%, var(--efl-border));
+}
+.efl-honours-header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.efl-honours-heading { display:flex; align-items:center; gap:12px; min-width:0; }
+.efl-honours-mark { display:grid; place-items:center; width:46px; height:46px; flex:0 0 46px; border:1px solid var(--honours-gold-line); border-radius:15px; background:var(--honours-gold-soft); color:var(--honours-gold); }
+.efl-honours-mark svg { width:22px; height:22px; }
+.efl-honours-eyebrow { display:flex; align-items:center; gap:5px; color:var(--efl-primary); font-size:8px; line-height:1.5; font-weight:950; letter-spacing:.16em; }
+.efl-honours-eyebrow svg { width:11px; height:11px; }
+.efl-honours h2 { margin:2px 0 0; font-size:21px; line-height:1.1; font-weight:950; letter-spacing:-.045em; }
+.efl-honours-header p { margin:5px 0 0; color:var(--efl-text-2); font-size:10px; line-height:1.45; }
+.efl-honours-filter { flex:0 0 auto; }
+.efl-honours-filter select { min-height:40px; max-width:170px; padding:8px 30px 8px 11px; border:1px solid var(--efl-border); border-radius:12px; outline:none; background:var(--efl-surface-2); color:var(--efl-text); font-size:10px; font-weight:850; cursor:pointer; }
+.efl-honours-filter select:focus-visible { border-color:var(--efl-primary); box-shadow:0 0 0 3px color-mix(in srgb, var(--efl-primary) 18%, transparent); }
+.efl-honours-stale { margin:12px 0 0; padding:8px 10px; border:1px solid var(--efl-border); border-radius:11px; background:var(--efl-surface-2); color:var(--efl-text-2); font-size:10px; }
+.efl-honours-summary { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)) 1.65fr; gap:8px; margin-top:16px; }
+.efl-honours-summary > div { display:flex; align-items:center; gap:8px; min-width:0; padding:11px 12px; border:1px solid var(--efl-border); border-radius:14px; background:var(--efl-surface-2); }
+.efl-honours-summary svg { width:17px; height:17px; flex:0 0 17px; color:var(--honours-gold); }
+.efl-honours-summary strong { font-size:18px; line-height:1; font-weight:950; font-variant-numeric:tabular-nums; }
+.efl-honours-summary span { color:var(--efl-text-2); font-size:9px; font-weight:850; }
+.efl-honours-summary .efl-honours-season { display:grid; align-content:center; gap:3px; border-color:var(--honours-gold-line); background:var(--honours-gold-soft); }
+.efl-honours-season span { color:var(--efl-text); font-size:11px; font-weight:950; }
+.efl-honours-season small { overflow:hidden; color:var(--efl-text-2); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.efl-honours-body { display:grid; grid-template-columns:1.08fr .92fr; gap:18px; margin-top:18px; }
+.efl-honours-section { min-width:0; }
+.efl-honours-section-title { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 1px 9px; border-bottom:1px solid var(--efl-border); }
+.efl-honours-section-title span { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:950; }
+.efl-honours-section-title svg { width:15px; height:15px; color:var(--honours-gold); }
+.efl-honours-section-title b { min-width:22px; padding:3px 6px; border-radius:999px; background:var(--efl-surface-2); color:var(--efl-text-2); font-size:9px; text-align:center; }
+.efl-honours-trophies { display:grid; gap:5px; margin:8px 0 0; padding:0; list-style:none; }
+.efl-honour-trophy { display:flex; align-items:center; gap:11px; min-width:0; padding:8px 9px; border:1px solid transparent; border-radius:14px; transition:background .18s ease, border-color .18s ease, transform .18s ease; }
+.efl-honour-trophy:hover { border-color:var(--efl-border); background:var(--efl-surface-2); transform:translateY(-1px); }
+.efl-honour-trophy-art { display:flex; align-items:center; justify-content:center; width:48px; height:60px; flex:0 0 48px; border-radius:12px; background:linear-gradient(145deg, var(--honours-gold-soft), transparent); }
+.efl-honour-trophy-image-link { display:flex; align-items:center; justify-content:center; width:100%; height:100%; border-radius:10px; }
+.efl-honour-trophy-image-link:focus-visible { outline:2px solid var(--efl-primary); outline-offset:2px; }
+.efl-honour-trophy-image { width:43px; height:56px; object-fit:contain; }
+.efl-honour-trophy .efl-trophy-fallback { width:30px; height:38px; color:var(--honours-gold); }
+.efl-honour-trophy-copy { min-width:0; }
+.efl-honour-trophy-copy h3 { overflow:hidden; margin:0; font-size:11px; line-height:1.35; font-weight:900; text-overflow:ellipsis; white-space:nowrap; }
+.efl-honour-trophy-copy p { margin:4px 0 0; color:var(--efl-text-2); font-size:9px; }
+.efl-honour-trophy-copy p strong { color:var(--efl-primary); }
+.efl-honour-trophy-copy span { display:block; overflow:hidden; margin-top:2px; color:var(--efl-muted); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.efl-honours-awards { display:grid; gap:7px; margin-top:8px; }
+.efl-honour-award { display:flex; align-items:center; gap:9px; min-width:0; padding:10px; border:1px solid var(--honours-gold-line); border-radius:14px; background:var(--honours-gold-soft); transition:transform .18s ease, box-shadow .18s ease; }
+.efl-honour-award:hover { transform:translateY(-1px); box-shadow:0 8px 24px color-mix(in srgb, var(--honours-gold) 10%, transparent); }
+.efl-honour-award-icon { display:grid; place-items:center; width:31px; height:31px; flex:0 0 31px; border:1px solid var(--honours-gold-line); border-radius:10px; background:var(--efl-surface); color:var(--honours-gold); }
+.efl-honour-award-icon svg { width:15px; height:15px; }
+.efl-honour-award-copy { min-width:0; flex:1; }
+.efl-honour-award-topline { display:flex; justify-content:space-between; gap:8px; color:var(--efl-text-2); font-size:8px; }
+.efl-honour-award-topline strong { color:var(--honours-gold); white-space:nowrap; }
+.efl-honour-award h3 { overflow:hidden; margin:3px 0 0; font-size:10px; font-weight:950; text-overflow:ellipsis; white-space:nowrap; }
+.efl-honour-award p { overflow:hidden; margin:3px 0 0; color:var(--efl-text-2); font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.efl-honours-empty { display:grid; place-items:center; gap:7px; margin-top:16px; padding:26px 12px; border:1px dashed var(--efl-border); border-radius:16px; color:var(--efl-text-2); text-align:center; }
+.efl-honours-empty svg { width:27px; height:27px; color:var(--efl-muted); }
+.efl-honours-empty p { margin:0; font-size:11px; }
+.efl-honours-status { min-height:98px; display:grid; place-items:center; color:var(--efl-text-2); font-size:11px; }
+.efl-honours-status-row { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
+.efl-honours-status-row button { display:inline-flex; align-items:center; gap:6px; min-height:40px; padding:8px 11px; border:1px solid var(--efl-border); border-radius:11px; background:var(--efl-surface-2); color:var(--efl-primary); font-size:10px; font-weight:850; }
+.efl-honours-status-row button:focus-visible { outline:2px solid var(--efl-primary); outline-offset:2px; }
+.efl-honours-status-row svg { width:14px; height:14px; }
+@media (max-width:720px) {
+  .efl-honours-body { grid-template-columns:1fr; gap:20px; }
+  .efl-honours-awards { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width:480px) {
+  .efl-honours { padding:14px; border-radius:20px; }
+  .efl-honours-header { align-items:flex-start; gap:10px; }
+  .efl-honours-heading { gap:9px; }
+  .efl-honours-mark { width:38px; height:38px; flex-basis:38px; border-radius:12px; }
+  .efl-honours-mark svg { width:19px; height:19px; }
+  .efl-honours h2 { font-size:18px; }
+  .efl-honours-header p { font-size:9px; }
+  .efl-honours-filter select { max-width:120px; min-height:36px; font-size:9px; }
+  .efl-honours-summary { grid-template-columns:1fr 1fr; margin-top:13px; }
+  .efl-honours-summary .efl-honours-season { grid-column:1 / -1; }
+  .efl-honours-awards { grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .efl-honour-trophy, .efl-honour-award { transition:none; }
+}
