@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, LockKeyhole, RefreshCw, ShieldCheck, Trophy, X } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, ChevronRight, LockKeyhole, RefreshCw, ShieldCheck, Trophy, X } from 'lucide-react';
 import { getSessionToken, getTelegramInitData, getDevUserId } from '../lib/api';
 import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import { useAuth } from '../context/AuthContext';
@@ -81,11 +81,9 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
   const phase = time < Date.parse(S2_OPENS_AT) ? 'NOT_STARTED' :
     !status?.registrationOpen ? 'NOT_ACTIVATED' :
     time < Date.parse(S2_PUBLIC_AT) ? 'PRIORITY' : 'PUBLIC';
-  const remaining = Math.max(0, Math.ceil((Date.parse(phase === 'NOT_STARTED' ? S2_OPENS_AT : S2_PUBLIC_AT) - time) / 1000));
-  const display = `${String(Math.floor(remaining / 60)).padStart(2,'0')}:${String(remaining % 60).padStart(2,'0')}`;
   async function activate() {
     setBusy('activate'); setError('');
-    try { await readJson('/api/season-two-admission/activate', { method: 'POST' }); await load(true); setNotice('Qabul sozlamalari saqlandi. Ustuvor tanlov 20:30 da ochiladi.'); }
+    try { await readJson('/api/season-two-admission/activate', { method: 'POST' }); await load(true); setNotice('Qabul sozlamalari saqlandi.'); }
     catch (e: any) { setError(e.message || 'Qabul faollashtirilmadi'); }
     finally { setBusy(null); }
   }
@@ -95,7 +93,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
       await readJson('/api/season-two-admission/decision', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clubId: id, choice }),
       });
-      setNotice(choice === 'KEEP' ? 'Klubingiz 2-mavsum uchun saqlandi.' : '2-mavsum uchun klubdan voz kechildi. Umumiy qabulni kuting.');
+      setNotice(choice === 'KEEP' ? 'Klubingiz 2-mavsum uchun saqlandi.' : '2-mavsum uchun klubdan voz kechildi.');
       await load(true);
     } catch (e: any) { setError(e.message || 'Qaror saqlanmadi'); }
     finally { setBusy(null); }
@@ -107,12 +105,12 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
     phase === 'NOT_STARTED' ? 'OCHILISH KUTILMOQDA' : 'QABUL TEKSHIRILMOQDA';
   const eligibleClubs = mine?.clubs.filter(c => c.eligible) || [];
   return (
-    <section aria-label="EFL 2-mavsum klublar qabuli" className="relative isolate min-w-0 overflow-hidden rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] shadow-sm transition-colors duration-200">
+    <section aria-label="EFL 2-mavsum klublar qabuli" className="relative isolate min-w-0 overflow-hidden rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] text-[var(--efl-text)] shadow-sm dark:shadow-black/20 transition-colors duration-200">
       <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full opacity-[.09] blur-3xl" style={{ background: 'var(--efl-primary)' }} />
       <div className="relative min-w-0 space-y-5 p-4 sm:p-6">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] shadow-xs">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] shadow-xs dark:shadow-black/20">
               <Trophy size={23} strokeWidth={2} className="text-[var(--efl-primary)]" />
             </span>
             <div className="min-w-0">
@@ -120,36 +118,16 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
               <h3 className="text-lg sm:text-xl font-black leading-snug tracking-tight text-[var(--efl-text)]">2-mavsum · Klub qabuli</h3>
             </div>
           </div>
-          <span className="inline-flex min-h-[29px] items-center gap-1.5 rounded-full border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-1 text-[10px] font-black tracking-wide text-[var(--efl-primary)]">
+          <span className="inline-flex min-h-[29px] items-center gap-1.5 rounded-full border border-[var(--efl-primary)]/25 bg-[var(--efl-primary-soft)] px-3 py-1 text-[10px] font-black tracking-wide text-[var(--efl-primary)] dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-300">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--efl-primary)]" />
             {statusLabel}
           </span>
         </header>
 
-        <div className="grid grid-cols-1 gap-3 min-[440px]:grid-cols-2">
-          <div className="min-w-0 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-4">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--efl-text-2)]"><ShieldCheck size={14} /> Klub egalari</div>
-            <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:30 <span className="text-[11px] text-[var(--efl-text-2)]">– 20:45</span></div>
-            <p className="mt-1 text-[10px] text-[var(--efl-text-2)]">Klubni saqlash huquqi</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-4">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--efl-text-2)]"><CalendarDays size={14} /> Barcha o‘yinchilar</div>
-            <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:45 <span className="text-[11px] text-[var(--efl-text-2)]">dan</span></div>
-            <p className="mt-1 text-[10px] text-[var(--efl-text-2)]">Bo‘sh klublarni tanlash</p>
-          </div>
-        </div>
-
-        {(phase === 'NOT_STARTED' || priority) && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-primary-soft)] px-4 py-3">
-            <span className="flex items-center gap-2 text-xs font-bold text-[var(--efl-text)]"><Clock3 size={16} className="text-[var(--efl-primary)]" /> {priority ? 'Ustuvor muddat tugashiga' : 'Qabul ochilishigacha'}</span>
-            <span className="font-mono text-xl font-black tabular-nums tracking-tight text-[var(--efl-primary)]">{display}</span>
-          </div>
-        )}
-
         {phase === 'NOT_ACTIVATED' && <div className="rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-3">
-          <p className="flex items-start gap-2 text-xs text-[var(--efl-text-2)]"><LockKeyhole size={15} className="mt-0.5 shrink-0" /> Qabul hali faollashmagan. Belgilangan vaqtda avtomatik ochilishi sozlangan.</p>
+          <p className="flex items-start gap-2 text-xs text-[var(--efl-text-2)]"><LockKeyhole size={15} className="mt-0.5 shrink-0" /> Qabul hozircha faollashmagan. Holatni yangilab tekshiring.</p>
           {user?.isAdmin && <button type="button" disabled={!!busy} onClick={() => void activate()}
-            className="mt-3 inline-flex min-h-[38px] items-center justify-center rounded-xl bg-[var(--efl-primary)] px-4 text-xs font-black text-white shadow-sm disabled:opacity-50">
+            className="mt-3 inline-flex min-h-[38px] items-center justify-center rounded-xl bg-[var(--efl-primary)] px-4 text-xs font-black text-white shadow-sm disabled:opacity-50 dark:text-white">
             Qabulni faollashtirish <ChevronRight size={15} className="ml-1" />
           </button>}
         </div>}
@@ -187,7 +165,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
         </div>}
 
         {ready && !mine?.banned && <button type="button" onClick={() => { setActiveSeasonId(EFL_SECOND_SEASON.id); onOpenLeagues?.(); }}
-          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--efl-primary)] px-4 text-sm font-black text-white shadow-sm transition-[transform,opacity] duration-200 hover:opacity-90 active:scale-[.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--efl-primary)]">
+          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--efl-primary)] px-4 text-sm font-black text-white shadow-sm dark:shadow-black/25 transition-[transform,opacity] duration-200 hover:opacity-90 active:scale-[.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--efl-primary)]">
           <Trophy size={18} /> 2-mavsum klublarini tanlash <ArrowRight size={18} />
         </button>}
 

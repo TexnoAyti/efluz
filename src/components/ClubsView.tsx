@@ -535,7 +535,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
   return (
     <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
-      {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3"><div><strong className="text-sm text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="text-xs text-[var(--efl-text-2)]">Hozir faqat klub qabuli. 1-mavsum davom etmoqda.</p></div><button type="button" className="rounded-lg border border-[var(--efl-border)] px-3 py-2 text-xs font-bold text-[var(--efl-text)]" onClick={() => setActiveSeasonId(CURRENT_SEASON_ID)}>1-mavsumga qaytish</button></div>}
+      {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3.5 text-[var(--efl-text)] shadow-sm dark:shadow-black/20"><div className="min-w-0"><strong className="text-sm font-black text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="mt-1 text-xs text-[var(--efl-text-2)]">Klub qabuli shu yerda. Davom etayotgan uchrashuvlar 1-mavsumda.</p></div><button type="button" className="min-h-[40px] shrink-0 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-2 text-xs font-bold text-[var(--efl-text)] transition-colors hover:border-[var(--efl-primary)] hover:text-[var(--efl-primary)] dark:shadow-black/20" onClick={() => setActiveSeasonId(CURRENT_SEASON_ID)}>1-mavsumga qaytish</button></div>}
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!EFL_2_DESIGN_ENABLED && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -592,7 +592,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
 
         {isSecondSeason && (
-          <div role="group" aria-label="Qitani tanlash" className="grid grid-cols-2 gap-2 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-1.5">
+          <div role="group" aria-label="Qitani tanlash" className="grid grid-cols-2 gap-2 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-1.5 text-[var(--efl-text)] dark:shadow-inner dark:shadow-black/15">
             {([
               { id: 'EUROPE' as const, label: 'Yevropa', count: 5 },
               { id: 'ASIA' as const, label: 'Osiyo', count: 4 },
@@ -600,8 +600,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
               <button type="button" key={item.id} aria-pressed={continent === item.id}
                 onClick={() => changeContinent(item.id)}
                 className={`flex min-h-[45px] items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-extrabold transition-colors ${continent === item.id
-                  ? 'bg-[var(--efl-surface)] text-[var(--efl-primary)] shadow-sm'
-                  : 'text-[var(--efl-text-2)] hover:text-[var(--efl-text)]'}`}>
+                  ? 'border border-[var(--efl-primary)]/30 bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] shadow-sm dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-300'
+                  : 'border border-transparent text-[var(--efl-text-2)] hover:bg-[var(--efl-surface)] hover:text-[var(--efl-text)]'}`}>
                 {item.label}<span className="text-[10px] tabular-nums opacity-60">{item.count}</span>
               </button>
             ))}
@@ -652,7 +652,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                     alt={league.name}
                     loading="lazy"
                     className={logoOnly
-                      ? 'block h-[60px] w-[60px] shrink-0 object-contain drop-shadow-sm'
+                      ? `block h-[60px] w-[60px] shrink-0 object-contain drop-shadow-sm dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.08)] ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'dark:brightness-0 dark:invert' : ''}`
                       : `w-4 h-4 object-contain shrink-0 ${welcomeIcon ? `efl-league-icon ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'efl-league-icon-monochrome' : ''}` : 'efl-theme-league-logo'}`}
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
