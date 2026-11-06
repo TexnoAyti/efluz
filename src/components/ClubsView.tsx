@@ -53,12 +53,12 @@ const secondSeasonLeagueLogos: Record<string, string> = {
   'league-serie-a': '/welcome/serie-a.svg',
   'league-bundesliga': '/welcome/bundesliga.svg',
   'league-ligue-1': '/welcome/ligue-1.svg',
-  // Transparent league crests; sourced from Wikimedia Commons.
-  'league-uzbekistan-superliga': 'https://commons.wikimedia.org/wiki/Special:FilePath/Uzbekistan_super_league_logo_2024.png',
-  'league-saudi-pro-league': 'https://commons.wikimedia.org/wiki/Special:FilePath/Saudi_Pro_League_Logo.svg',
-  'league-j1': 'https://commons.wikimedia.org/wiki/Special:FilePath/J1_league_logo_2026.svg',
-  'league-turkey-super-lig': 'https://commons.wikimedia.org/wiki/Special:FilePath/Trendyol_S%C3%BCper_Lig_logo_dikey.svg',
-};
+  // Bundled transparent SVGs prevent failed external CDNs in Telegram WebView.
+  'league-uzbekistan-superliga': '/welcome/uzbekistan-superliga.svg',
+  'league-saudi-pro-league': '/welcome/saudi-pro-league.svg',
+  'league-j1': '/welcome/j1-league.svg',
+  'league-turkey-super-lig': '/welcome/turkey-super-lig.svg',
+}
 
 interface ClubsViewProps {
   onNavigateTab?: (tab: any) => void;
@@ -88,6 +88,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   // League & Data states
   // Render the prepared second-season navigation immediately; never briefly
   // display the previous season while waiting for the API response.
+  const [continent, setContinent] = useState<'EUROPE' | 'ASIA'>('EUROPE');
   const [leagues, setLeagues] = useState<League[]>(() =>
     activeSeasonId === EFL_SECOND_SEASON.id
       ? EFL_SECOND_SEASON.leagues.map(league => ({
@@ -475,6 +476,17 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     const target = document.getElementById('efl-season-two-league-picker');
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [activeSeasonId, leagues.length]);
+
+  const isSecondSeason = activeSeasonId === EFL_SECOND_SEASON.id;
+  const visibleLeagues = isSecondSeason
+    ? leagues.filter(league => EFL_SECOND_SEASON.leagues.some(item => item.id === league.id && item.group === continent))
+    : leagues;
+  const changeContinent = (next: 'EUROPE' | 'ASIA') => {
+    if (continent === next) return;
+    setContinent(next);
+    const first = EFL_SECOND_SEASON.leagues.find(item => item.group === next);
+    if (first) handleSelectLeague(first.id);
+  };
 
   const currentLeague = leagues.find((l) => l.id === selectedLeagueId) || leagues[0];
 
