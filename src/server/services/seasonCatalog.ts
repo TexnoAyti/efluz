@@ -1,4 +1,5 @@
 import {EFL_SECOND_SEASON} from '../../lib/seasonPreparation';
+import {SECOND_SEASON_CLUB_LOGOS} from '../../lib/seasonTwoClubLogos';
 import {SEED_CLUBS,SEED_LEAGUES} from '../db/seed';
 
 /** Static metadata only. Owners and results always come from the requested season. */
@@ -7,7 +8,7 @@ export function seasonClubs(seasonId:string):typeof SEED_CLUBS{
   return EFL_SECOND_SEASON.leagues.flatMap(league=>league.roster.clubs.map(club=>{
     const previous=SEED_CLUBS.find(c=>c.id===club.id);
     return {id:club.id,name:club.name,shortName:previous?.shortName||club.name,
-      country:league.country,leagueId:league.id,logoUrl:previous?.logoUrl||'',
+      country:league.country,leagueId:league.id,logoUrl:previous?.logoUrl||SECOND_SEASON_CLUB_LOGOS[club.id]||'',
       ...(previous?.stadium?{stadium:previous.stadium}:{})};
   }));
 }
