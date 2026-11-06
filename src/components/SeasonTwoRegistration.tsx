@@ -45,14 +45,19 @@ export function SeasonTwoRegistration() {
   }, []);
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => {
-      setTime(Date.now());
-      void load();
-    }, 15000);
-    return () => window.clearInterval(timer);
+    const clock = window.setInterval(() => setTime(Date.now()), 1000);
+    const refresh = window.setInterval(() => { if (!document.hidden) void load(); }, 15000);
+    const onFocus = () => { setTime(Date.now()); void load(); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(clock);
+      window.clearInterval(refresh);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [load]);
-  const phase = !status?.registrationOpen ? 'NOT_ACTIVATED' :
-    time < Date.parse(S2_OPENS_AT) ? 'NOT_STARTED' : time < Date.parse(S2_PUBLIC_AT) ? 'PRIORITY' : 'PUBLIC';
+  const phase = time < Date.parse(S2_OPENS_AT) ? 'NOT_STARTED' :
+    !status?.registrationOpen ? 'NOT_ACTIVATED' :
+    time < Date.parse(S2_PUBLIC_AT) ? 'PRIORITY' : 'PUBLIC';
   const remaining = Math.max(0, Math.ceil((Date.parse(phase === 'NOT_STARTED' ? S2_OPENS_AT : S2_PUBLIC_AT) - time) / 1000));
   const display = `${String(Math.floor(remaining / 60)).padStart(2,'0')}:${String(remaining % 60).padStart(2,'0')}`;
   async function activate() {
@@ -76,10 +81,10 @@ export function SeasonTwoRegistration() {
   const priority = phase === 'PRIORITY';
   const statusLabel = phase === 'PUBLIC' ? 'UMUMIY QABUL' :
     phase === 'PRIORITY' ? 'USTUVOR TANLOV' :
-    phase === 'NOT_STARTED' ? 'OCHILISH KUTILMOQDA' : 'FAOLLASHTIRILMOQDA';
+    phase === 'NOT_STARTED' ? 'OCHILISH KUTILMOQDA' : 'QABUL TEKSHIRILMOQDA';
   const eligibleClubs = mine?.clubs.filter(c => c.eligible) || [];
   return (
-    <section aria-label="EFL 2-mavsum klublar qabuli" className="relative isolate overflow-hidden rounded-[22px] border border-[var(--efl-border)] bg-[var(--efl-surface)] shadow-sm">
+    <section aria-label="EFL 2-mavsum klublar qabuli" className="relative isolate min-w-0 overflow-hidden rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] shadow-sm transition-colors duration-200">
       <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full opacity-[.09] blur-3xl" style={{ background: 'var(--efl-primary)' }} />
       <div className="relative space-y-4 p-4 sm:p-5">
         <header className="flex flex-wrap items-start justify-between gap-3">
@@ -159,7 +164,7 @@ export function SeasonTwoRegistration() {
         </div>}
 
         {ready && !mine?.banned && <button type="button" onClick={() => setActiveSeasonId(EFL_SECOND_SEASON.id)}
-          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--efl-primary)] px-4 text-sm font-black text-white shadow-sm transition hover:opacity-90">
+          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--efl-primary)] px-4 text-sm font-black text-white shadow-sm transition-[transform,opacity] duration-200 hover:opacity-90 active:scale-[.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--efl-primary)]">
           <Trophy size={18} /> 2-mavsum klublarini tanlash <ArrowRight size={18} />
         </button>}
 
