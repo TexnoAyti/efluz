@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { waitUntil } from '@vercel/functions';
 import { S2_OPENS_AT, S2_PUBLIC_AT, seasonTwoAdmissionPhase } from '../../lib/seasonTwoAdmissionWindow';
 import { requireAuth } from '../middleware/authMiddleware';
 import { getFirestoreDb } from '../firebase/admin';
@@ -22,10 +23,8 @@ function schedulePublicAnnouncementIfDue() {
   const work = import('../services/seasonTwoTelegramAnnouncements')
     .then(({announceDueSeasonTwoMilestones}) => announceDueSeasonTwoMilestones(now))
     .catch(error => console.warn('[SEASON2_PUBLIC_NOTICE_DEFERRED]', error?.message || error));
-  if (process.env.VERCEL === '1') {
-    import('@vercel/functions').then(({waitUntil}) => waitUntil(work))
-      .catch(error => console.warn('[SEASON2_PUBLIC_NOTICE_WAIT_UNAVAILABLE]', error?.message || error));
-  } else void work;
+  if (process.env.VERCEL === '1') waitUntil(work);
+  else void work;
 }
 function failure(code: string, status = 409): never {
   throw Object.assign(new Error(code), { statusCode: status });
