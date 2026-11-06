@@ -14,8 +14,20 @@ export interface PlayerTrophy extends TrophyRecord {
   id: string;
 }
 
+export interface ProfileAward {
+  id: string;
+  label: string;
+  description: string;
+  unit: string;
+  value: number;
+  seasonId: string;
+  clubId: string;
+  clubName: string;
+}
+
 export interface PlayerTrophyCabinet {
   trophies: PlayerTrophy[];
+  awards: ProfileAward[];
   stale: boolean;
 }
 

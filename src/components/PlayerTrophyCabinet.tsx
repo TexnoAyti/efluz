@@ -1,63 +1,59 @@
 import { CompetitionTrophy } from './CompetitionTrophy';
 import { useEffect, useId, useState } from 'react';
-import { Trophy, RefreshCw } from 'lucide-react';
+import { Award, Crown, Medal, RefreshCw, Sparkles, Trophy } from 'lucide-react';
 import { useI18n, type Language } from '../i18n';
-import { seasonLabel, type PlayerTrophyCabinet as CabinetData, type PlayerTrophy } from '../types/trophies';
+import { seasonLabel, type PlayerTrophyCabinet as CabinetData, type PlayerTrophy, type ProfileAward } from '../types/trophies';
 
 const copy = {
-  uz: { title: 'Sovrinlar', description: 'Musobaqa va mavsum bo‘yicha chempionliklar', all: 'Barcha mavsumlar', season: 'Mavsum', champion: 'Chempion', empty: 'Hali sovrin yo‘q. Musobaqada g‘olib bo‘lsangiz, sovrin shu yerda ko‘rinadi.', loading: 'Sovrinlar yuklanmoqda…', error: 'Sovrinlarni hozir yuklab bo‘lmadi.', retry: 'Qayta urinish', stale: 'Oxirgi saqlangan sovrinlar ko‘rsatilmoqda.' },
-  ru: { title: 'Трофеи', description: 'Чемпионские титулы по турнирам и сезонам', all: 'Все сезоны', season: 'Сезон', champion: 'Чемпион', empty: 'Трофеев пока нет. Победа в турнире появится здесь.', loading: 'Загрузка трофеев…', error: 'Не удалось загрузить трофеи.', retry: 'Повторить', stale: 'Показаны последние сохранённые трофеи.' },
-  en: { title: 'Trophies', description: 'Championships by competition and season', all: 'All seasons', season: 'Season', champion: 'Champion', empty: 'No trophies yet. Your competition wins will appear here.', loading: 'Loading trophies…', error: 'Trophies are temporarily unavailable.', retry: 'Retry', stale: 'Showing the last saved trophies.' },
+  uz: {
+    title: 'EFL Honours', subtitle: 'Sovrinlar va shaxsiy mavsum mukofotlari', titles: 'Sovrinlar', awards: 'Mavsum awardlari', all: 'Barcha mavsumlar', season: 'Mavsum', champion: 'Chempion', awardHolder: 'Shaxsiy natija', empty: 'Hali sovrin yo‘q. Mavsum awardlari ham shu yerda ko‘rinadi.', loading: 'Sovrinlar yuklanmoqda…', error: 'Sovrinlarni hozir yuklab bo‘lmadi.', retry: 'Qayta urinish', stale: 'Oxirgi saqlangan ma’lumotlar ko‘rsatilmoqda.', countTitles: 'sovrin', countAwards: 'award', clubAward: 'Klub natijasi', noAwards: 'Bu mavsumda shaxsiy award yo‘q.'
+  },
+  ru: {
+    title: 'EFL Honours', subtitle: 'Трофеи и личные награды сезона', titles: 'Трофеи', awards: 'Награды сезона', all: 'Все сезоны', season: 'Сезон', champion: 'Чемпион', awardHolder: 'Личный результат', empty: 'Трофеев и наград пока нет.', loading: 'Загрузка трофеев…', error: 'Не удалось загрузить трофеи.', retry: 'Повторить', stale: 'Показаны последние сохранённые данные.', countTitles: 'трофеев', countAwards: 'наград', clubAward: 'Результат клуба', noAwards: 'Личных наград в этом сезоне нет.'
+  },
+  en: {
+    title: 'EFL Honours', subtitle: 'Trophies and personal season awards', titles: 'Trophies', awards: 'Season awards', all: 'All seasons', season: 'Season', champion: 'Champion', awardHolder: 'Personal result', empty: 'No trophies or awards yet.', loading: 'Loading honours…', error: 'Honours are temporarily unavailable.', retry: 'Retry', stale: 'Showing the last saved data.', countTitles: 'trophies', countAwards: 'awards', clubAward: 'Club result', noAwards: 'No personal awards in this season.'
+  },
 };
 
-export function TrophyCabinetView({ trophies, language, stale = false }: { trophies: PlayerTrophy[]; language: Language; stale?: boolean }) {
+function AwardCard({ award, language }: { award: ProfileAward; language: Language }) {
+  const text = copy[language];
+  const labels: Record<string, string> = language === 'uz' ? {
+    GOLDEN_BALL: 'Oltin to‘p', MOST_WINS: 'Eng ko‘p g‘alaba', MOST_GOALS: 'Eng ko‘p gol', BEST_DEFENCE: 'Eng yaxshi himoya', LONGEST_UNBEATEN: 'Eng uzun mag‘lubiyatsiz seriya', LONGEST_WIN_STREAK: 'Eng uzun g‘alabalar seriyasi',
+  } : language === 'ru' ? {
+    GOLDEN_BALL: 'Золотой мяч', MOST_WINS: 'Больше всего побед', MOST_GOALS: 'Больше всего голов', BEST_DEFENCE: 'Лучшая защита', LONGEST_UNBEATEN: 'Самая длинная серия без поражений', LONGEST_WIN_STREAK: 'Самая длинная победная серия',
+  } : {};
+  const units: Record<string, string> = language === 'uz' ? { winner: 'sohibi', wins: 'g‘alaba', goals: 'gol', conceded: 'gol o‘tkazildi', matches: 'o‘yin' } : language === 'ru' ? { winner: 'лауреат', wins: 'побед', goals: 'голов', conceded: 'пропущено', matches: 'матчей' } : {};
+  return <article className="efl-honour-award">
+    <div className="efl-honour-award-icon"><Medal aria-hidden="true" /></div>
+    <div className="efl-honour-award-copy">
+      <div className="efl-honour-award-topline"><span>{seasonLabel(award.seasonId)}</span><strong>{award.value} {units[award.unit] || award.unit}</strong></div>
+      <h3>{labels[award.id] || award.label}</h3>
+      <p>{award.clubName} · {text.clubAward}</p>
+    </div>
+  </article>;
+}
+
+export function TrophyCabinetView({ trophies, awards = [], language, stale = false }: { trophies: PlayerTrophy[]; awards?: ProfileAward[]; language: Language; stale?: boolean }) {
   const text = copy[language];
   const [selectedSeason, setSelectedSeason] = useState('ALL');
   const filterId = useId();
-  const seasons = [...new Set(trophies.map(trophy => trophy.seasonId))].sort().reverse();
+  const seasons = [...new Set([...trophies.map(item => item.seasonId), ...awards.map(item => item.seasonId)])].sort().reverse();
   const filter = seasons.includes(selectedSeason) ? selectedSeason : 'ALL';
-  const visible = filter === 'ALL' ? trophies : trophies.filter(trophy => trophy.seasonId === filter);
+  const visibleTrophies = filter === 'ALL' ? trophies : trophies.filter(item => item.seasonId === filter);
+  const visibleAwards = filter === 'ALL' ? awards : awards.filter(item => item.seasonId === filter);
   return (
-    <section aria-label={text.title} className="efl-trophy-cabinet">
-      <div className="efl-trophy-heading">
-        <div>
-          <h2 className="efl-trophy-title">
-            <Trophy aria-hidden="true" className="efl-trophy-heading-icon" />{text.title}
-            <span className="efl-trophy-count">{trophies.length}</span>
-          </h2>
-          <p className="efl-trophy-description">{text.description}</p>
-        </div>
-        {seasons.length > 1 && (
-          <div>
-            <label htmlFor={filterId} className="sr-only">{text.season}</label>
-            <select id={filterId} value={filter} onChange={event => setSelectedSeason(event.target.value)} className="min-h-11 max-w-full rounded-xl border border-[var(--efl-border,rgba(255,255,255,0.1))] bg-[var(--efl-surface-2,#171e2c)] px-3 text-xs font-bold text-[var(--efl-text,#f8fafc)]">
-              <option value="ALL">{text.all}</option>
-              {seasons.map(season => <option key={season} value={season}>{seasonLabel(season)}</option>)}
-            </select>
-          </div>
-        )}
-      </div>
-      {stale && <p role="status" className="text-xs text-[var(--efl-text-2,#94a3b8)]">{text.stale}</p>}
-      {visible.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-[var(--efl-border,rgba(255,255,255,0.1))] p-5 text-xs leading-5 text-[var(--efl-text-2,#94a3b8)]">{text.empty}</p>
-      ) : (
-        <ul className="efl-trophy-list">
-          {visible.map(trophy => {
-            return (
-              <li key={trophy.id} className="efl-trophy-item">
-                <div className="efl-trophy-art">
-                  <CompetitionTrophy competitionId={trophy.competitionId} name={trophy.competitionName} />
-                </div>
-                <div className="efl-trophy-details">
-                  <p className="efl-trophy-competition">{trophy.competitionName}</p>
-                  <p className="efl-trophy-season">{seasonLabel(trophy.seasonId)}<span aria-hidden="true"> · </span><span className="efl-trophy-champion">{text.champion}</span></p>
-                  <p className="efl-trophy-club">{trophy.clubName}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+    <section aria-label={text.title} className="efl-honours">
+      <header className="efl-honours-header">
+        <div className="efl-honours-heading"><div className="efl-honours-mark"><Crown aria-hidden="true" /></div><div><div className="efl-honours-eyebrow"><Sparkles aria-hidden="true" /> EFL PLAYER HONOURS</div><h2>{text.title}</h2><p>{text.subtitle}</p></div></div>
+        {seasons.length > 1 && <div className="efl-honours-filter"><label htmlFor={filterId} className="sr-only">{text.season}</label><select id={filterId} value={filter} onChange={event => setSelectedSeason(event.target.value)}><option value="ALL">{text.all}</option>{seasons.map(season => <option key={season} value={season}>{seasonLabel(season)}</option>)}</select></div>}
+      </header>
+      {stale && <p role="status" className="efl-honours-stale">{text.stale}</p>}
+      <div className="efl-honours-summary"><div><Trophy aria-hidden="true" /><strong>{visibleTrophies.length}</strong><span>{text.countTitles}</span></div><div><Award aria-hidden="true" /><strong>{visibleAwards.length}</strong><span>{text.countAwards}</span></div><div className="efl-honours-season"><span>{filter === 'ALL' ? text.all : seasonLabel(filter)}</span><small>{visibleTrophies.length + visibleAwards.length ? text.awardHolder : text.empty}</small></div></div>
+      {(visibleTrophies.length > 0 || visibleAwards.length > 0) ? <div className="efl-honours-body">
+        {visibleTrophies.length > 0 && <section className="efl-honours-section"><div className="efl-honours-section-title"><span><Trophy aria-hidden="true" />{text.titles}</span><b>{visibleTrophies.length}</b></div><ul className="efl-honours-trophies">{visibleTrophies.map(trophy => <li key={trophy.id} className="efl-honour-trophy"><div className="efl-honour-trophy-art"><CompetitionTrophy competitionId={trophy.competitionId} name={trophy.competitionName} /></div><div className="efl-honour-trophy-copy"><h3>{trophy.competitionName}</h3><p>{seasonLabel(trophy.seasonId)} · <strong>{text.champion}</strong></p><span>{trophy.clubName}</span></div></li>)}</ul></section>}
+        {visibleAwards.length > 0 && <section className="efl-honours-section"><div className="efl-honours-section-title"><span><Award aria-hidden="true" />{text.awards}</span><b>{visibleAwards.length}</b></div><div className="efl-honours-awards">{visibleAwards.map(award => <AwardCard key={award.id} award={award} language={language} />)}</div></section>}
+      </div> : <div className="efl-honours-empty"><Trophy aria-hidden="true" /><p>{text.empty}</p></div>}
     </section>
   );
 }
@@ -72,33 +68,14 @@ function RemoteTrophyCabinet({ subjectId, kind, seasonId = 'season-2026-27' }: {
     const controller = new AbortController();
     setState({ subjectId, seasonId });
     void fetch(`/api/insights/${kind}/${encodeURIComponent(subjectId)}/trophies?seasonId=${encodeURIComponent(seasonId)}`, { signal: controller.signal, headers: { Accept: 'application/json' } })
-      .then(async response => {
-        if (!response.ok) throw new Error('TROPHIES_UNAVAILABLE');
-        const data: CabinetData = await response.json();
-        if (!Array.isArray(data.trophies)) throw new Error('INVALID_TROPHIES');
-        if (!controller.signal.aborted) setState({ subjectId, seasonId, data });
-      })
+      .then(async response => { if (!response.ok) throw new Error('HONOURS_UNAVAILABLE'); const data: CabinetData = await response.json(); if (!Array.isArray(data.trophies)) throw new Error('INVALID_HONOURS'); if (!controller.signal.aborted) setState({ subjectId, seasonId, data: { ...data, awards: Array.isArray(data.awards) ? data.awards : [] } }); })
       .catch(() => { if (!controller.signal.aborted) setState({ subjectId, seasonId, error: true }); });
     return () => controller.abort();
   }, [subjectId, kind, seasonId, retry]);
   const current = state.subjectId === subjectId && state.seasonId === seasonId;
-  if (current && state.data) return <TrophyCabinetView key={subjectId} trophies={state.data.trophies} language={language} stale={state.data.stale} />;
-  return (
-    <section aria-label={text.title} className="efl-trophy-cabinet efl-trophy-status">
-      {current && state.error ? (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3">
-          <span>{text.error}</span>
-          <button type="button" onClick={() => setRetry(value => value + 1)} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 font-bold text-[var(--efl-primary,#60a5fa)]"><RefreshCw aria-hidden="true" className="h-4 w-4" />{text.retry}</button>
-        </div>
-      ) : <p role="status">{text.loading}</p>}
-    </section>
-  );
+  if (current && state.data) return <TrophyCabinetView key={`${kind}:${subjectId}`} trophies={state.data.trophies} awards={state.data.awards} language={language} stale={state.data.stale} />;
+  return <section aria-label={text.title} className="efl-honours efl-honours-status">{current && state.error ? <div role="alert" className="efl-honours-status-row"><span>{text.error}</span><button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw aria-hidden="true" />{text.retry}</button></div> : <p role="status">{text.loading}</p>}</section>;
 }
 
-export function PlayerTrophyCabinet({ userId, seasonId }: { userId: string; seasonId?: string }) {
-  return <RemoteTrophyCabinet key={`player:${userId}`} subjectId={userId} kind="player" seasonId={seasonId} />;
-}
-
-export function ClubTrophyCabinet({ clubId, seasonId }: { clubId: string; seasonId?: string }) {
-  return <RemoteTrophyCabinet key={`club:${clubId}`} subjectId={clubId} kind="club" seasonId={seasonId} />;
-}
+export function PlayerTrophyCabinet({ userId, seasonId }: { userId: string; seasonId?: string }) { return <RemoteTrophyCabinet key={`player:${userId}`} subjectId={userId} kind="player" seasonId={seasonId} />; }
+export function ClubTrophyCabinet({ clubId, seasonId }: { clubId: string; seasonId?: string }) { return <RemoteTrophyCabinet key={`club:${clubId}`} subjectId={clubId} kind="club" seasonId={seasonId} />; }
