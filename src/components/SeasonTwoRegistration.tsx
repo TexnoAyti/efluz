@@ -105,7 +105,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
     phase === 'NOT_STARTED' ? 'OCHILISH KUTILMOQDA' : 'QABUL TEKSHIRILMOQDA';
   const eligibleClubs = mine?.clubs.filter(c => c.eligible) || [];
   return (
-    <section aria-label="EFL 2-mavsum klublar qabuli" className="relative isolate min-w-0 overflow-hidden rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] text-[var(--efl-text)] shadow-sm dark:shadow-black/20 transition-colors duration-200">
+    <section aria-label="EFL 2-mavsum klublar qabuli" className="efl-season-two-panel relative isolate min-w-0 overflow-hidden rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] text-[var(--efl-text)] shadow-sm dark:shadow-black/20 transition-colors duration-200">
       <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full opacity-[.09] blur-3xl" style={{ background: 'var(--efl-primary)' }} />
       <div className="relative min-w-0 space-y-5 p-4 sm:p-6">
         <header className="flex flex-wrap items-start justify-between gap-3">
@@ -165,7 +165,7 @@ export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () =>
         </div>}
 
         {ready && !mine?.banned && <button type="button" onClick={() => { setActiveSeasonId(EFL_SECOND_SEASON.id); onOpenLeagues?.(); }}
-          className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--efl-primary)] px-4 text-sm font-black text-white shadow-sm dark:shadow-black/25 transition-[transform,opacity] duration-200 hover:opacity-90 active:scale-[.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--efl-primary)]">
+          className="efl-season-two-primary flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--efl-primary)] px-4 text-sm font-black text-white shadow-sm dark:shadow-black/25 transition-[transform,opacity] duration-200 hover:opacity-90 active:scale-[.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--efl-primary)]">
           <Trophy size={18} /> 2-mavsum klublarini tanlash <ArrowRight size={18} />
         </button>}
 
