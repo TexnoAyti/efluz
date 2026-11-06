@@ -69,6 +69,7 @@ const outcomeClass: Record<'W' | 'D' | 'L', string> = {
 };
 
 export const PlayerSeasonProfile: React.FC<PlayerSeasonProfileProps> = ({ userId, seasonId = 'season-2026-27' }) => {
+  // Season Awards are presented in the shared PlayerTrophyCabinet so every profile uses one honours system.
   const { user } = useAuth();
   const [data, setData] = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(true);
