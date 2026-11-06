@@ -186,6 +186,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshNotifications]);
 
+  // Season selection must refresh season-scoped ownership. Do not reuse the
+  // previous season's clubs while a new club admission is being displayed.
+  useEffect(() => {
+    if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview) return;
+    setOwnedClubs([]);
+    setCurrentClub(null);
+    void fetchUserData(activeSeasonId);
+  }, [activeSeasonId, authStatus, user?.id, fetchUserData]);
+
   // Initialize App & Telegram SDK with deterministic state transitions
   useEffect(() => {
     let isMounted = true;
