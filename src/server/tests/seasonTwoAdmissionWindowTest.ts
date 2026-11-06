@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { S2_OPENS_AT, S2_PUBLIC_AT, seasonTwoAdmissionPhase } from '../../lib/seasonTwoAdmissionWindow';
 import { CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
@@ -26,6 +27,14 @@ assert.deepEqual(EFL_SECOND_SEASON.leagues.map(l => l.id), [
   'league-turkey-super-lig',
 ]);
 assert.equal(new Set(EFL_SECOND_SEASON.leagues.flatMap(l => l.roster.clubs.map(c => c.id))).size, EFL_SECOND_SEASON.leagues.reduce((n,l)=>n+l.roster.clubs.length,0));
+assert.equal(EFL_SECOND_SEASON.leagues.filter(l => l.group === 'EUROPE').length, 5);
+assert.equal(EFL_SECOND_SEASON.leagues.filter(l => l.group === 'ASIA').length, 4);
+for (const name of ['uzbekistan-superliga', 'saudi-pro-league', 'j1-league', 'turkey-super-lig']) {
+  const svg = readFileSync(`public/welcome/${name}.svg`, 'utf8');
+  assert.match(svg, /^<svg\b/, `Missing bundled league emblem: ${name}`);
+  assert.ok(svg.length > 1000, `Incomplete league emblem: ${name}`);
+}
+console.log('PASS: Europe/Asia tabs and all four locally bundled new league crests');
 const priorCrests = new Set(SEED_CLUBS.filter(c => Boolean(c.logoUrl)).map(c => c.id));
 const preparedClubIds = EFL_SECOND_SEASON.leagues.flatMap(l => l.roster.clubs.map(c => c.id));
 const addedClubIds = preparedClubIds.filter(id => !priorCrests.has(id));

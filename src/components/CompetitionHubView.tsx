@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../context/AuthContext';
+import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
@@ -20,7 +21,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
-  const { activeSeasonId } = useAuth();
+  const { activeSeasonId, setActiveSeasonId, authStatus } = useAuth();
   const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife' | 'awards'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
@@ -31,6 +32,15 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
     } catch {}
     return initialSubTab;
   });
+
+  // Make season-two club registration the default when players open the
+  // league section. Choosing "1-mavsumga qaytish" in ClubsView remains
+  // effective until they leave and re-enter the league section.
+  useEffect(() => {
+    if (subTab === 'leagues' && authStatus !== 'AUTH_LOADING') {
+      setActiveSeasonId(EFL_SECOND_SEASON.id);
+    }
+  }, [subTab, authStatus, setActiveSeasonId]);
 
   // Sync subTab if initialSubTab prop changes (e.g. from Home shortcuts)
   useEffect(() => {
