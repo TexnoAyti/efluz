@@ -446,11 +446,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const openSeasonTwoLeagues = () => {
     setActiveLeagueTab('CLUBS');
     setSelectedLeagueId('league-premier-league');
-    // The season switch loads the new roster; keep the user on the league picker.
-    window.requestAnimationFrame(() => {
-      document.getElementById('efl-season-two-league-picker')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   };
+
+  useEffect(() => {
+    if (activeSeasonId !== 'season-2027-28' || leagues.length === 0) return;
+    const target = document.getElementById('efl-season-two-league-picker');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [activeSeasonId, leagues.length]);
 
   const currentLeague = leagues.find((l) => l.id === selectedLeagueId) || leagues[0];
 
@@ -556,9 +558,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         </div>
 
         {leagues.length > 0 && (
-          <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={activeSeasonId === 'season-2027-28'
-            ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3 scroll-mt-24'
-            : `flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
+          <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={`flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none scroll-mt-24 ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
             {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
               const welcomeIcon = EFL_2_DESIGN_ENABLED ? welcomeLeagueIcons[league.id] : undefined;
@@ -587,7 +587,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   aria-pressed={isSelected}
                   title={league.name}
                   onClick={() => handleSelectLeague(league.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all min-h-[42px] border ${secondSeason ? 'min-w-0 flex-wrap justify-start text-left' : 'shrink-0'} ${
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs transition-all min-h-[42px] border shrink-0 whitespace-nowrap ${
                     isSelected
                       ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/40 text-[var(--efl-primary)] font-black shadow-xs'
                       : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
@@ -603,7 +603,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   />}
                   {(secondSeason || !EFL_2_DESIGN_ENABLED) && <>
                   <span>{flag}</span>
-                  <span className={secondSeason ? 'min-w-0 flex-1 break-words leading-tight' : ''}>{league.name}</span>
+                  <span>{league.name}</span>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
                       isSelected
@@ -613,7 +613,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   >
                     {secondSeason ? (EFL_SECOND_SEASON.leagues.find(item => item.id === league.id)?.roster.clubs.length ?? 0) : (league.totalClubs || (league.name === 'Bundesliga' || league.name === 'Ligue 1' ? 18 : 20))}
                   </span>
-                  {secondSeason && <span className={`w-full text-[10px] font-bold ${leagueOpen ? 'text-[var(--efl-primary)]' : 'text-[var(--efl-text-2)]'}`}>{leagueOpen ? '● Klub qabuli ochiq' : '○ Navbatda'}</span>}
+                  {secondSeason && <span aria-label={leagueOpen ? 'Qabul ochiq' : 'Navbatda'} title={leagueOpen ? 'Qabul ochiq' : 'Navbatda'} className={`h-2 w-2 shrink-0 rounded-full ${leagueOpen ? 'bg-[var(--efl-primary)]' : 'bg-[var(--efl-muted)] opacity-40'}`} />}
                   </>}
                 </button>
               );
