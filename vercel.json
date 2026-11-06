@@ -24,7 +24,7 @@
     },
     {
       "path": "/api/internal/season-two-notices",
-      "schedule": "30,45 15 6 11 *"
+      "schedule": "30 15 6 11 *"
     }
   ],
   "functions": {
