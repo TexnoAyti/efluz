@@ -82,7 +82,7 @@ seasonTwoAdmissionRouter.post('/decision', requireAuth, async (req: Request, res
       if (source.data()?.userId !== uid || ['released','inactive'].includes(String(source.data()?.status))) failure('NOT_SEASON_ONE_OWNER', 403);
       if (decision.exists) {
         if (decision.data()?.choice !== choice) failure('DECISION_ALREADY_FINAL');
-        return { clubId, choice, replayed: true };
+        return { clubId, choice, replayed: true, stageAdvance: null };
       }
       const currentOwner = occupancy.data()?.userId;
       if (currentOwner && currentOwner !== uid && !['released','inactive'].includes(String(occupancy.data()?.status))) failure('CLUB_OCCUPIED');
