@@ -57,7 +57,7 @@ export function SeasonTwoRegistration() {
   const display = `${String(Math.floor(remaining / 60)).padStart(2,'0')}:${String(remaining % 60).padStart(2,'0')}`;
   async function activate() {
     setBusy('activate'); setError('');
-    try { await readJson('/api/season-two-admission/activate', { method: 'POST' }); await load(); setNotice('Qabul sozlamalari saqlandi. Ustuvor tanlov 20:00 da ochiladi.'); }
+    try { await readJson('/api/season-two-admission/activate', { method: 'POST' }); await load(); setNotice('Qabul sozlamalari saqlandi. Ustuvor tanlov 20:30 da ochiladi.'); }
     catch (e: any) { setError(e.message || 'Qabul faollashtirilmadi'); }
     finally { setBusy(null); }
   }
@@ -101,12 +101,12 @@ export function SeasonTwoRegistration() {
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--efl-text-2)]"><ShieldCheck size={14} /> Klub egalari</div>
-            <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:00 <span className="text-[11px] text-[var(--efl-text-2)]">– 20:15</span></div>
+            <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:30 <span className="text-[11px] text-[var(--efl-text-2)]">– 20:45</span></div>
             <p className="mt-1 text-[10px] text-[var(--efl-text-2)]">Klubni saqlash huquqi</p>
           </div>
           <div className="rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--efl-text-2)]"><CalendarDays size={14} /> Barcha o‘yinchilar</div>
-            <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:15 <span className="text-[11px] text-[var(--efl-text-2)]">dan</span></div>
+            <div className="mt-1.5 text-lg font-black tabular-nums text-[var(--efl-text)]">20:45 <span className="text-[11px] text-[var(--efl-text-2)]">dan</span></div>
             <p className="mt-1 text-[10px] text-[var(--efl-text-2)]">Bo‘sh klublarni tanlash</p>
           </div>
         </div>
