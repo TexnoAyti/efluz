@@ -9,6 +9,7 @@ import {
 } from '../firebase/firestoreStore';
 import { SEED_CLUBS } from '../db/seed';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
+import { SECOND_SEASON_CLUB_LOGOS, SECOND_SEASON_CREST_SOURCE_COMMIT } from '../../lib/seasonTwoClubLogos';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import { verifyTelegramGroupMembership } from '../services/telegramBotService';
 import { ClubAdmissionConflictError, getClubAdmissionStatus } from '../services/clubAdmission';
@@ -117,6 +118,11 @@ function parseAllowedCrestUrl(value: string): URL | null {
     // Racing's old numeric CDN ID belongs to US Orléans. Allow only this
     // exact official asset, not arbitrary proxy URLs on another host.
     if (parsed.href === 'https://www.realracingclub.es/svg/logos/logo.svg') return parsed;
+    if (parsed.hostname.toLowerCase() === 'raw.githubusercontent.com') {
+      const prefix = `/JoseArroyave/football-logos/${SECOND_SEASON_CREST_SOURCE_COMMIT}/logos/`;
+      if (!parsed.pathname.startsWith(prefix) || !parsed.pathname.endsWith('.svg')) return null;
+      return parsed;
+    }
     if (!ALLOWED_CREST_HOSTS.has(parsed.hostname.toLowerCase())) return null;
     return parsed;
   } catch {
@@ -308,6 +314,11 @@ clubsRouter.get('/:id/crest', async (req: Request, res: Response) => {
       ? preparedSecondSeasonClubs.get(canonicalId)
       : undefined;
     if (preparedName && !resolvedSeedClub) {
+      const officialCrestUrl = SECOND_SEASON_CLUB_LOGOS[canonicalId];
+      if (officialCrestUrl) {
+        await fetchAndServeImage(officialCrestUrl, res, preparedName, preparedName.slice(0, 3));
+        return;
+      }
       const initials = preparedName.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
         .slice(0, 3).map(word => word[0]).join('').toUpperCase();
       const svg = generateFallbackSvgBadge(preparedName, initials);
