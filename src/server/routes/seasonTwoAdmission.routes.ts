@@ -110,8 +110,8 @@ seasonTwoAdmissionRouter.post('/decision', requireAuth, async (req: Request, res
       if (currentOwner && currentOwner !== uid && !['released','inactive'].includes(String(occupancy.data()?.status))) failure('CLUB_OCCUPIED');
       const old = membership.data();
       const existing = old?.status === 'active' ? [old.clubId, old.secondaryClubId].filter(Boolean) : [];
-      if (choice === 'KEEP' && !existing.includes(clubId) && existing.length >= 2) failure('SEASON_CLUB_LIMIT');
-      if (choice === 'KEEP' && !existing.includes(clubId) && existing.some((id: string) => rosterLeague.get(id) === rosterLeague.get(clubId))) failure('SAME_LEAGUE');
+      // One club per player across all leagues in season two, including KEEP.
+      if (choice === 'KEEP' && !existing.includes(clubId) && existing.length >= 1) failure('SEASON_CLUB_LIMIT');
       const stageAdvance = choice === 'KEEP' ? await prepareAutomaticAdmissionAdvance(tx, db, TARGET, admissionDoc.data(), clubId) : null;
       const at = new Date().toISOString();
       if (stageAdvance) tx.set(admissionRef, stageAdvance);
