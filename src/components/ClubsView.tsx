@@ -375,7 +375,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       setClubToClaim(null);
       return;
     }
-    if (ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) || !premiumStatusReady) {
+    if (ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (activeSeasonId === EFL_SECOND_SEASON.id ? 1 : premiumActive ? 2 : 1) || !premiumStatusReady) {
       showToast(ownedClubs.some((owned) => owned.leagueId === club.leagueId) ? 'Bitta ligadan faqat bitta klub tanlash mumkin.' : t.alreadyHaveClubMessage, 'error');
       setClubToClaim(null);
       return;
