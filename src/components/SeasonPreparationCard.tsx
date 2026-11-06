@@ -16,7 +16,7 @@ const internationalCopy = {
   en: { title: 'International tournament', name: 'Asian Champions League', qualification: '8 clubs from each league', teams: 'clubs', places: 'places', pending: 'Places 1–8 from each league qualify based on season 2 results.', format: 'Like the European UCL: one league phase, 8 matches per club. Places 1–8: round of 16; 9–24: knockout play-offs; 25–32: eliminated.' },
 };
 
-export function SeasonPreparationCard({ compact = false }: { compact?: boolean }) {
+export function SeasonPreparationCard({ compact = false, onOpenLeagues }: { compact?: boolean; onOpenLeagues?: () => void }) {
   const { language } = useI18n();
   const c = copy[language];
   const intl = internationalCopy[language];
@@ -81,7 +81,7 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
   </>;
 
   return <div className="space-y-3">
-    <SeasonTwoRegistration />
+    <SeasonTwoRegistration onOpenLeagues={onOpenLeagues} />
     <section className="season-preparation" aria-label={c.title}>
     <div className="season-preparation-header"><h3>{c.title}</h3><span>{c.status}</span></div>
     <p className="season-preparation-note">{c.note}</p>
