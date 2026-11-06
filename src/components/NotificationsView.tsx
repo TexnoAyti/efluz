@@ -1,4 +1,5 @@
 import {openUzeflifeMatch} from '../lib/uzeflifeLinks';
+import {openMatchChat} from '../lib/matchChat';
 import {openElClasico,openTeamTournament} from '../lib/teamNavigation';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
 import React, { useState, useEffect } from 'react';
@@ -22,6 +23,7 @@ import {
   ExternalLink,
   Check,
   Layers,
+  MessageCircle,
 } from 'lucide-react';
 
 interface NotificationsViewProps {
@@ -71,6 +73,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
     if (!notif.isRead) {
       markNotificationAsRead(notif.id);
     }
+    if(notif.type==='MATCH_CHAT'&&(notif.data?.kind==='fixture'||notif.data?.kind==='uzeflife')&&typeof notif.data?.matchId==='string'){openMatchChat({kind:notif.data.kind,matchId:notif.data.matchId});return;}
     if(notif.entityType==='uzeflife'&&notif.entityId){try{openUzeflifeMatch(notif.entityId);}catch{/* Ignore invalid navigation metadata. */}return;}
     if(notif.entityType==='team-event'){openElClasico();return;}
     if(notif.entityType==='team-tournament'&&notif.entityId){openTeamTournament(notif.entityId,notif.fixtureId);return;}
@@ -87,6 +90,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
       case 'RESULT_CONFIRMED':
       case 'MATCH_CONFIRMED':
         return <CheckCircle2 className="w-4 h-4 text-emerald-400 efl-theme-emerald" />;
+      case 'MATCH_CHAT':
+        return <MessageCircle className="w-4 h-4 text-sky-400 efl-theme-sky" />;
       case 'DISPUTE_OPENED':
       case 'MATCH_DISPUTED':
         return <AlertTriangle className="w-4 h-4 text-rose-400 efl-theme-rose" />;
@@ -152,6 +157,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
         'DISPUTE_OPENED',
         'MATCH_DISPUTED',
         'DISPUTE_RESOLVED',
+        'MATCH_CHAT',
       ].includes(n.type);
     }
     if (activeFilter === 'competitions') {
@@ -493,13 +499,13 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onNavigate
                       {formatTimestamp(notif.createdAt)}
                     </span>
 
-                    {notif.fixtureId && (
+                    {(notif.fixtureId||notif.type==='MATCH_CHAT') && (
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-bold group-hover:underline ${
                           EFL_2_DESIGN_ENABLED ? 'text-blue-600 efl-theme-blue dark:text-blue-400' : 'text-emerald-400 efl-theme-emerald'
                         }`}
                       >
-                        <span>{t.notificationsViewMatch}</span>
+                        <span>{notif.type==='MATCH_CHAT'?'Chatni ochish':t.notificationsViewMatch}</span>
                         <ExternalLink className="w-3 h-3" />
                       </span>
                     )}

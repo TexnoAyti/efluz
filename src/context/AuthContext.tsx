@@ -77,6 +77,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+export function useOptionalAuth(): AuthContextType | undefined {
+  return useContext(AuthContext);
+}
+
 export function usePremiumClubIds(): string[] {
   const context = useContext(AuthContext);
   return context?.user?.isAdmin ? context.premiumClubIds : [];

@@ -9,7 +9,8 @@ import { ClubCrest } from './ClubCrest';
 import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
-import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
+import {openMatchChat} from '../lib/matchChat';
+import {MatchChatUnreadBadge} from './MatchChatUnreadBadge';
 import {
   Swords,
   Calendar,
@@ -267,17 +268,18 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                                 {t.profile}
                               </button>
                             )}
-                            {homeOwnerInfo.hasValidTelegram && homeOwnerInfo.username && (
+                            {homeOwnerInfo.userId && (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openTelegramChat(homeOwnerInfo.username!);
+                                  openMatchChat({kind:'fixture',matchId:focusedFixture.id,opponentName:homeOwnerInfo.displayText});
                                 }}
                                 className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
                               >
                                 <Send className="w-2.5 h-2.5" />
                                 <span>{t.writeToOpponent}</span>
+                                <MatchChatUnreadBadge kind="fixture" matchId={focusedFixture.id}/>
                               </button>
                             )}
                           </div>
@@ -358,17 +360,18 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
                                 {t.profile}
                               </button>
                             )}
-                            {awayOwnerInfo.hasValidTelegram && awayOwnerInfo.username && (
+                            {awayOwnerInfo.userId && (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openTelegramChat(awayOwnerInfo.username!);
+                                  openMatchChat({kind:'fixture',matchId:focusedFixture.id,opponentName:awayOwnerInfo.displayText});
                                 }}
                                 className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition-colors flex items-center gap-1 shadow-sm"
                               >
                                 <Send className="w-2.5 h-2.5" />
                                 <span>{t.writeToOpponent}</span>
+                                <MatchChatUnreadBadge kind="fixture" matchId={focusedFixture.id}/>
                               </button>
                             )}
                           </div>

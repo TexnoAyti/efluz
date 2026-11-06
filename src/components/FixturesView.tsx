@@ -11,7 +11,8 @@ import { ClubCrest } from './ClubCrest';
 import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
-import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
+import {openMatchChat} from '../lib/matchChat';
+import {MatchChatUnreadBadge} from './MatchChatUnreadBadge';
 import {
   Calendar,
   Trophy,
@@ -605,21 +606,18 @@ export const FixturesView: React.FC = () => {
                   <div className="flex items-center gap-1.5 shrink-0">
                     {(() => {
                       if (!isUserParticipant) return null;
-                      const oppUsername = isHomeUser
-                        ? (fixture.awayOwner?.username || fixture.awayUser?.username || fixture.awayClub?.claimedByUsername)
-                        : (fixture.homeOwner?.username || fixture.homeUser?.username || fixture.homeClub?.claimedByUsername);
-                      if (!isValidTelegramUsername(oppUsername)) return null;
                       return (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openTelegramChat(oppUsername);
+                            openMatchChat({kind:'fixture',matchId:fixture.id});
                           }}
                           className="px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 shadow-sm"
                         >
                           <Send className="w-3 h-3" />
                           <span>Raqibga yozish</span>
+                          <MatchChatUnreadBadge kind="fixture" matchId={fixture.id}/>
                         </button>
                       );
                     })()}

@@ -16,6 +16,7 @@ export const COLLECTIONS = {
   NOTIFICATIONS: 'notifications',
   AUDIT_LOGS: 'audit_logs',
   MATCHDAY_LOCKS: 'matchday_locks',
+  MATCH_CHAT_ROOMS: 'match_chat_rooms',
 } as const;
 
 export const ACTIVE_MEMBERSHIP_STATUS = 'active' as const;

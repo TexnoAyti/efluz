@@ -16,7 +16,8 @@ import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { MatchdayCountdown } from './MatchdayCountdown';
 import { FluidGlassExperiment } from './FluidGlassExperiment';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
-import { openTelegramChat, isValidTelegramUsername } from '../lib/telegramUtils';
+import {openMatchChat} from '../lib/matchChat';
+import {MatchChatUnreadBadge} from './MatchChatUnreadBadge';
 import {
   Shield,
   Trophy,
@@ -352,16 +353,6 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
   );
 
   const heroPositions = useFixtureClubPositions(heroMatch, activeSeasonId);
-
-  // Opponent Telegram Username for Hero Match
-  const opponentTelegram = useMemo(() => {
-    if (!heroMatch) return null;
-    const isHome = heroMatch.homeClubId === activeClub?.id || heroMatch.homeClub?.id === activeClub?.id;
-    const oppUsername = isHome
-      ? heroMatch.awayOwner?.username || heroMatch.awayUser?.username || heroMatch.awayClub?.claimedByUsername
-      : heroMatch.homeOwner?.username || heroMatch.homeUser?.username || heroMatch.homeClub?.claimedByUsername;
-    return isValidTelegramUsername(oppUsername) ? oppUsername : null;
-  }, [heroMatch, activeClub?.id]);
 
   // Season Snapshot Data
 
@@ -772,18 +763,17 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
               </button>
             )}
 
-            {opponentTelegram && (
-              <button
+            <button
                 type="button"
                 data-guide="opponent-chat"
-                onClick={() => openTelegramChat(opponentTelegram)}
+                onClick={() => openMatchChat({kind:'fixture',matchId:heroMatch.id})}
                 className="py-2.5 px-4 rounded-xl text-xs font-bold bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/20 flex items-center justify-center gap-1.5 transition-all min-h-[40px]"
-                title={`Telegram @${opponentTelegram}`}
+                title="EFLUZ ichida raqib bilan chat"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>{copy.chatWithOpponent}</span>
-              </button>
-            )}
+                <MatchChatUnreadBadge kind="fixture" matchId={heroMatch.id}/>
+            </button>
           </div>
         </section>
       )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuth, usePremiumClubIds } from '../context/AuthContext';
+import { useOptionalAuth, usePremiumClubIds } from '../context/AuthContext';
 
 export interface ClubCrestProps {
   clubId?: string;
@@ -79,7 +79,7 @@ export const ClubCrest: React.FC<ClubCrestProps> = ({
   priorityProxy = false,
 }) => {
   const premiumClubIds = usePremiumClubIds();
-  const { activeSeasonId } = useAuth();
+  const activeSeasonId = useOptionalAuth()?.activeSeasonId || 'season-2026-27';
   const [imageFailed, setImageFailed] = React.useState(false);
   const [imageLoaded, setImageLoaded] = React.useState(false);
   const premium = Boolean(clubId && premiumClubIds.includes(clubId));

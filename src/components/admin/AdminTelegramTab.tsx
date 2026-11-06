@@ -19,6 +19,7 @@ import {
   Info,
   ChevronRight,
 } from 'lucide-react';
+import {MatchChatReportsPanel} from './MatchChatReportsPanel';
 
 interface PublicRecipient {
   userId: string;
@@ -661,6 +662,8 @@ export const AdminTelegramTab: React.FC = () => {
           {[[loc('Jami', 'Всего', 'Total'), deliveryHealth.total, 'text-white'], [loc('Yuborildi', 'Отправлено', 'Sent'), deliveryHealth.sent, 'text-emerald-300'], [loc('Kutilmoqda', 'Ожидает', 'Pending'), deliveryHealth.pending, 'text-sky-300'], [loc('Xato', 'Ошибки', 'Failed'), deliveryHealth.failed, 'text-rose-300'], [loc('Yetkazilishi noma’lum', 'Доставка неизвестна', 'Delivery unknown'), deliveryHealth.uncertain, 'text-amber-300'], [loc('O‘tkazildi', 'Пропущено', 'Skipped'), deliveryHealth.skipped, 'text-slate-400']].map(([label, value, cls]) => <div key={String(label)} className="rounded-xl bg-slate-950/60 border border-white/[0.05] p-3"><div className={`text-lg font-black font-mono ${cls}`}>{value}</div><div className="text-[9px] uppercase font-bold text-slate-500">{label}</div></div>)}
         </div>
       </div>
+
+      <MatchChatReportsPanel />
 
       {/* Broadcast Delivery History Table */}
       <div className="glass-panel p-5 rounded-2xl border-slate-800 space-y-4">

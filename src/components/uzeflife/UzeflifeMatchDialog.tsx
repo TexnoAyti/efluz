@@ -1,11 +1,12 @@
 import {isULeague,uMatchFinished} from '../../lib/uzeflifeLeague';
-import {uzeflifeOpponentUsername} from '../../lib/uzeflifeMyMatch';
 import {UZEFLIFE_RESULT_TOPIC_URL} from '../../lib/uzeflifeResultTopic';
 import {UzeflifeDispute} from './UzeflifeDispute';
 import {fromTashkentInput,toTashkentInput} from '../../lib/fixtureScheduling';
 import React,{useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {X,CalendarDays,MessageSquare} from 'lucide-react';
+import {openMatchChat} from '../../lib/matchChat';
+import {MatchChatUnreadBadge} from '../MatchChatUnreadBadge';
 import {uRoundLabel,uSourceLabel,uMatchNumber} from '../../lib/uzeflifePresentation';
 import type {UViewState} from '../../lib/uzeflifeApi';
 import type {UMatch} from '../../types/uzeflife';
@@ -19,14 +20,14 @@ export function UzeflifeMatchDialog({match:m,state:s,userId,busy,error,subscript
   const canResult=s.permissions.includes('results');
   const isPlayer=[m.home,m.away].includes(userId||'')&&s.participants.find(p=>p.id===userId)?.status==='approved';
   const canReport=real&&s.status==='playing'&&(m.round===s.round||isULeague(s)&&m.round<s.round)&&m.home&&m.away&&(canResult||isPlayer&&!uMatchFinished(m));
-  const opponentId=m.home===userId?m.away:m.home,opponentUsername=isPlayer?uzeflifeOpponentUsername(s,opponentId):null;
+  const opponentId=m.home===userId?m.away:m.home;
   const canConfirm=!!(real&&s.status==='playing'&&m.proposal&&!uMatchFinished(m)&&m.dispute?.status!=='open'&&(canResult||isPlayer&&m.proposal.by!==userId));
   const name=(side:'home'|'away')=>s.participants.find(p=>p.id===m[side])?.name||uSourceLabel(m,side);
   return createPortal(<dialog ref={dialog} className="competition-dialog uzeflife u-native-dialog" onCancel={e=>{e.preventDefault();onClose();}} aria-labelledby="u-match-title">
     <header><div><p className="competition-eyebrow">{isULeague(s)?'Umumiy liga':m.bracket?`${m.bracket}-setka`:'Final bosqichi'} · {uRoundLabel(m.round,s.format)}</p><h2 id="u-match-title">{uMatchNumber(m)}-o‘yin</h2></div><button type="button" className="competition-button !p-2" onClick={onClose} aria-label="O‘yinni yopish"><X size={18}/></button></header>
     <div className="competition-dialog-body">
       <div className="u-dialog-score u-dialog-scoreboard"><div><span>{name('home')}</span><strong>{m.homeScore??'–'}</strong></div><div><span>{name('away')}</span><strong>{m.awayScore??'–'}</strong></div></div>
-      {opponentUsername&&<a className="competition-button primary" href={`https://t.me/${opponentUsername}`} target="_blank" rel="noreferrer"><MessageSquare size={16}/>Raqibga yozish · @{opponentUsername}</a>}
+      {isPlayer&&<button type="button" className="competition-button primary" onClick={()=>openMatchChat({kind:'uzeflife',matchId:m.id,opponentName:s.participants.find(p=>p.id===opponentId)?.name})}><MessageSquare size={16}/>Raqib bilan chat<MatchChatUnreadBadge kind="uzeflife" matchId={m.id}/></button>}
       {m.penaltyHome!==null&&<p className="competition-muted">Penaltilar: {m.penaltyHome} : {m.penaltyAway}</p>}
       <p className="competition-muted">{uMatchFinished(m)?'Natija tasdiqlangan.':m.proposal?'Natija yuborilgan. Raqib yoki administrator tasdig‘i kutilmoqda.':real?'O‘yin hali yakunlanmagan.':'Qur’a tashlangach raqiblar shu yerda ko‘rinadi.'}</p>
       {m.scheduledAt&&<p className="flex items-center gap-2 text-xs"><CalendarDays size={14}/>{new Date(m.scheduledAt).toLocaleString('uz-UZ',{timeZone:'Asia/Tashkent',dateStyle:'medium',timeStyle:'short'})}</p>}
