@@ -4,13 +4,14 @@ import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
 import { ChampionsLeagueView } from './ChampionsLeagueView';
 import { SeasonHubView } from './SeasonHubView';
+const SeasonAwardsPanel=lazy(()=>import('./SeasonAwardsPanel').then(m=>({default:m.SeasonAwardsPanel})));
 const UzeflifeView=lazy(()=>import('./uzeflife/UzeflifeView').then(m=>({default:m.UzeflifeView})));
 import { TeamLeaguePreviewView } from './teamLeaguePreview/TeamLeaguePreviewView';
 import { Trophy, Award, Globe2, Users } from 'lucide-react';
 
 interface CompetitionHubViewProps {
   onNavigateTab: (tab: any) => void;
-  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife';
+  initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife' | 'awards';
 }
 
 export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
@@ -18,10 +19,10 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
-  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife'>(() => {
+  const [subTab, setSubTab] = useState<'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife' | 'awards'>(() => {
     try {
       const saved = sessionStorage.getItem('efl:competition-hub-subtab');
-      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'custom' || saved === 'uzeflife') {
+      if (saved === 'leagues' || saved === 'cups' || saved === 'european' || saved === 'season' || saved === 'custom' || saved === 'uzeflife' || saved === 'awards') {
         sessionStorage.removeItem('efl:competition-hub-subtab');
         return saved as any;
       }
@@ -111,8 +112,10 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         })}
       </div>
 
+      <button type="button" onClick={()=>setSubTab('awards')} aria-pressed={subTab==='awards'} className={`w-full min-h-[44px] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl border border-[var(--efl-border)] text-sm font-bold ${subTab==='awards'?'bg-[var(--efl-primary)] text-white':'bg-[var(--efl-surface)] text-[var(--efl-text)]'}`}><Award size={17}/>Mukofotlar · Oltin to‘p</button>
       {/* 3. Category Content */}
       <div className="min-w-0">
+        {subTab === 'awards'&&<Suspense fallback={<p role="status">Mukofotlar yuklanmoqda…</p>}><SeasonAwardsPanel/></Suspense>}
         {subTab === 'leagues' && <ClubsView onNavigateTab={onNavigateTab} />}
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}

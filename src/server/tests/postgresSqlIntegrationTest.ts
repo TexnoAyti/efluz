@@ -1,3 +1,4 @@
+import {verifySeasonAwards} from './seasonAwardsAudit';
 import {verifyUzeflifeRoundAdvance} from './uzeflifeRoundAdvanceAudit';
 import {verifyLeagueBacklogReminders} from './leagueBacklogReminderRegressionTest';
 import {verifyAllCompetitionBacklog} from './allCompetitionBacklogAudit';
@@ -321,7 +322,7 @@ try {
   await verifyTeamTournamentSettings(()=>{failTeamPreviewCommit=true;});
   await verifyTeamPlayerMatches();await verifyElClasico(()=>{failClasicoCommit=true;});
   await verifyUzeflifeLeague();
-await verifyUzeflifeRoundAdvance();await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
+await verifySeasonAwards();await verifyUzeflifeRoundAdvance();await verifyUzeflifeAutoLink();await verifyUzeflifeFourFeatures();
   await verifyUzeflifeNotificationDelivery();
   await verifyUzeflifeRoundPosts();
   await verifyCompetitionNotices(()=>{failClasicoCommit=true;});

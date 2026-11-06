@@ -1,4 +1,5 @@
 import {correctCurrentPayload} from '../content/currentClubCorrections';
+import {seasonAwardsRouter} from './routes/seasonAwards.routes';
 import {operationTiming} from './middleware/operationTiming';
 import {createUzeflifeWorkerRouter} from './routes/uzeflifeWorker.routes';
 import {androidAuthRouter} from './routes/androidAuth.routes';
@@ -240,6 +241,7 @@ export function createApp() {
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/insights', seasonInsightsRouter);
+  app.use('/api/awards',seasonAwardsRouter);
   app.use('/api/discipline', disciplineRouter);
   app.use('/api/admin/image-exports', adminImageExportsRouter);
   app.use('/api/admin/cups', adminCupDrawRouter);
