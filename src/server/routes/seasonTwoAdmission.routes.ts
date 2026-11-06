@@ -6,7 +6,7 @@ import { isPrimaryOwner } from '../services/telegramAiConfigService';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
 import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../readModel/readModelStore';
 import { prepareAutomaticAdmissionAdvance, publishAdmissionStatus } from '../services/clubAdmission';
-import { autoActivateSecondSeasonWhenDue } from '../services/seasonTwoRegistrationService';
+import { activateSecondSeasonRegistration, autoActivateSecondSeasonWhenDue } from '../services/seasonTwoRegistrationService';
 
 export const seasonTwoAdmissionRouter = Router();
 const TARGET = EFL_SECOND_SEASON.id;
@@ -114,28 +114,11 @@ seasonTwoAdmissionRouter.post('/decision', requireAuth, async (req: Request, res
   } catch (error) { handle(res, error); }
 });
 
-/** Explicit owner activation. No automatic season activation from deployment. */
+/** Same Supabase-backed activation path for admin and scheduled opening. */
 seasonTwoAdmissionRouter.post('/activate', requireAuth, async (req, res) => {
   try {
     if (!isPrimaryOwner(req.user!.telegramId)) failure('OWNER_ONLY', 403);
-    const db = getFirestoreDb();
-    const result = await db.runTransaction(async tx => {
-      const seasonRef = db.collection('seasons').doc(TARGET);
-      const admissionRef = db.collection('club_admissions').doc(TARGET);
-      const [season, admission] = await Promise.all([tx.get(seasonRef), tx.get(admissionRef)]);
-      if (season.data()?.registrationOpen === true) return { alreadyActive: true };
-      if (season.exists && !['preparation', 'registration'].includes(String(season.data()?.status).toLowerCase())) failure('SEASON_STATE_CONFLICT');
-      if (admission.exists && admission.data()?.enabled === true) failure('ADMISSION_ALREADY_CONFIGURED');
-      const at = new Date().toISOString();
-      tx.set(seasonRef, { id: TARGET, name: '2027/28', status: 'registration', registrationOpen: true,
-        sourceSeasonId: SOURCE, createdAt: season.data()?.createdAt || at, updatedAt: at }, { merge: true });
-      tx.set(admissionRef, { seasonId: TARGET, enabled: true, automatic: true, stage: 0,
-        leagueOverrides: {}, updatedAt: at, revision: at, updatedBy: req.user!.id });
-      return { alreadyActive: false };
-    });
-    if (!result.alreadyActive) {
-      await publishAdmissionStatus(TARGET, { seasonId: TARGET, enabled: true, automatic: true, stage: 0, leagueOverrides: {}, updatedAt: new Date().toISOString(), revision: new Date().toISOString() });
-    }
+    const result = await activateSecondSeasonRegistration(req.user!.id);
     res.json({ success: true, ...result, phase: phase(), priorityFrom: S2_OPENS_AT, publicFrom: S2_PUBLIC_AT });
   } catch (error) { handle(res, error); }
 });
