@@ -18,7 +18,7 @@ let lastMilestoneAnnouncementCheck = 0;
 function scheduleMilestoneAnnouncementIfDue() {
   if (process.env.VERCEL_ENV !== 'production' || process.env.DATABASE_PROVIDER !== 'supabase') return;
   const now = Date.now();
-  if (now < Date.parse(S2_OPENS_AT) || now - lastMilestoneAnnouncementCheck < 30000) return;
+  if (now < Date.parse(S2_OPENS_AT) || now - lastMilestoneAnnouncementCheck < 300000) return;
   lastMilestoneAnnouncementCheck = now;
   const work = import('../services/seasonTwoTelegramAnnouncements')
     .then(({announceDueSeasonTwoMilestones}) => announceDueSeasonTwoMilestones(now))
@@ -40,9 +40,16 @@ const rosterLeague = new Map(EFL_SECOND_SEASON.leagues.flatMap(l => l.roster.clu
 /** Public read; deliberately does not infer the user's ownership from an untrusted request. */
 seasonTwoAdmissionRouter.get('/status', async (_req, res) => {
   try {
-    await autoActivateSecondSeasonWhenDue();
-    const doc = await getFirestoreDb().collection('seasons').doc(TARGET).get();
-    const enabled = doc.data()?.registrationOpen === true && String(doc.data()?.status).toLowerCase() === 'registration';
+    // A public status poll is read-only once registration has opened.
+    // Avoid repeating a serializable database transaction for every visitor.
+    const seasonRef = getFirestoreDb().collection('seasons').doc(TARGET);
+    let doc = await seasonRef.get();
+    let enabled = doc.data()?.registrationOpen === true && String(doc.data()?.status).toLowerCase() === 'registration';
+    if (!enabled && Date.now() >= Date.parse(S2_OPENS_AT)) {
+      await autoActivateSecondSeasonWhenDue();
+      doc = await seasonRef.get();
+      enabled = doc.data()?.registrationOpen === true && String(doc.data()?.status).toLowerCase() === 'registration';
+    }
     res.setHeader('Cache-Control', 'no-store');
     res.json({ seasonId: TARGET, sourceSeasonId: SOURCE, phase: enabled ? phase() : 'NOT_ACTIVATED',
       priorityFrom: S2_OPENS_AT, publicFrom: S2_PUBLIC_AT, registrationOpen: enabled });
