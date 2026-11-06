@@ -1,4 +1,5 @@
 import React from 'react';
+import { SeasonTwoRegistration } from './SeasonTwoRegistration';
 import { useI18n } from '../i18n';
 import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import './season-preparation.css';
@@ -80,6 +81,7 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
   </>;
 
   return <section className="season-preparation" aria-label={c.title}>
+    <SeasonTwoRegistration />
     <div className="season-preparation-header"><h3>{c.title}</h3><span>{c.status}</span></div>
     <p className="season-preparation-note">{c.note}</p>
     {compact ? <details><summary>{c.details}</summary><div className="season-preparation-groups">{content}</div></details> : <div className="season-preparation-groups">{content}</div>}
