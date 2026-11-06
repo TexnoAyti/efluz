@@ -182,6 +182,32 @@ export function createApp() {
     }catch{res.status(503).json({error:'ROUND_POST_WORKER_UNAVAILABLE'});}
   });
 
+  // One-time 2-mavsum Bot DM + in-app announcements, guarded by CRON_SECRET.
+  // Vercel cron fires at 20:30 and 20:45 Asia/Tashkent on 6 November 2026.
+  app.get('/api/internal/season-two-notices', async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const actual = Buffer.from(req.headers.authorization || '');
+    const expected = Buffer.from(`Bearer ${secret || ''}`);
+    if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      res.status(401).json({ error: 'UNAUTHORIZED' }); return;
+    }
+    if (process.env.VERCEL_ENV !== 'production' || process.env.DATABASE_PROVIDER !== 'supabase') {
+      res.status(403).json({ error: 'PRODUCTION_ONLY' }); return;
+    }
+    try {
+      await ensureDbReady();
+      const { announceDueSeasonTwoMilestones } = await import('./services/seasonTwoTelegramAnnouncements');
+      const { waitUntil } = await import('@vercel/functions');
+      waitUntil(announceDueSeasonTwoMilestones().catch(error => {
+        console.error('[SEASON2_BROADCAST_DEFERRED]', error?.message || error);
+      }));
+      res.status(202).json({ accepted: true });
+    } catch (error: any) {
+      console.error('[SEASON2_BROADCAST_START_FAILED]', error?.message || error);
+      res.status(503).json({ error: 'NOTIFICATION_UNAVAILABLE' });
+    }
+  });
+
   app.all('/api/internal/telegram-worker', async (req, res) => {
     const secret = process.env.CRON_SECRET;
     const actual = Buffer.from(req.headers.authorization || '');
