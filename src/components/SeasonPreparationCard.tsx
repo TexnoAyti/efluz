@@ -80,10 +80,12 @@ export function SeasonPreparationCard({ compact = false }: { compact?: boolean }
     <p className="season-preparation-pending">{c.pending}</p>
   </>;
 
-  return <section className="season-preparation" aria-label={c.title}>
+  return <div className="space-y-3">
     <SeasonTwoRegistration />
+    <section className="season-preparation" aria-label={c.title}>
     <div className="season-preparation-header"><h3>{c.title}</h3><span>{c.status}</span></div>
     <p className="season-preparation-note">{c.note}</p>
     {compact ? <details><summary>{c.details}</summary><div className="season-preparation-groups">{content}</div></details> : <div className="season-preparation-groups">{content}</div>}
-  </section>;
+    </section>
+  </div>;
 }
