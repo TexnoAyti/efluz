@@ -7,7 +7,7 @@ import { SeasonHubView } from './SeasonHubView';
 const SeasonAwardsPanel=lazy(()=>import('./SeasonAwardsPanel').then(m=>({default:m.SeasonAwardsPanel})));
 const UzeflifeView=lazy(()=>import('./uzeflife/UzeflifeView').then(m=>({default:m.UzeflifeView})));
 import { TeamLeaguePreviewView } from './teamLeaguePreview/TeamLeaguePreviewView';
-import { Trophy, Award, Globe2, Users } from 'lucide-react';
+import { Trophy, Award, Globe2, Users, ChevronRight } from 'lucide-react';
 
 interface CompetitionHubViewProps {
   onNavigateTab: (tab: any) => void;
@@ -112,7 +112,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
         })}
       </div>
 
-      <button type="button" onClick={()=>setSubTab('awards')} aria-pressed={subTab==='awards'} className={`w-full min-h-[44px] flex items-center justify-center gap-2 px-4 py-3 rounded-2xl border border-[var(--efl-border)] text-sm font-bold ${subTab==='awards'?'bg-[var(--efl-primary)] text-white':'bg-[var(--efl-surface)] text-[var(--efl-text)]'}`}><Award size={17}/>Mukofotlar · Oltin to‘p</button>
+      <button type="button" onClick={()=>setSubTab('awards')} aria-pressed={subTab==='awards'} className={`group w-full min-h-[52px] flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${subTab==='awards'?'border-[var(--efl-primary)] bg-[var(--efl-primary)] text-white shadow-md':'border-[var(--efl-border)] bg-[var(--efl-surface)] text-[var(--efl-text)] shadow-sm hover:border-[var(--efl-primary)]'}`}><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${subTab==='awards'?'bg-white/15':'bg-[var(--efl-primary-soft)] text-[var(--efl-primary)]'}`}><Award size={17}/></span><span className="min-w-0 flex-1"><b className="block text-xs font-black tracking-wide">MUKOFOTLAR</b><small className={`block truncate text-[10px] ${subTab==='awards'?'text-white/75':'text-[var(--efl-text-2)]'}`}>Oltin to‘p · Oltin butsa · Hafta o‘yinchisi</small></span><ChevronRight size={17} className="shrink-0 opacity-60"/></button>
       {/* 3. Category Content */}
       <div className="min-w-0">
         {subTab === 'awards'&&<Suspense fallback={<p role="status">Mukofotlar yuklanmoqda…</p>}><SeasonAwardsPanel/></Suspense>}
