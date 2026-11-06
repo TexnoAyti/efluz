@@ -23,7 +23,7 @@ async function readJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   return body;
 }
 export function SeasonTwoRegistration() {
-  const { setActiveSeasonId } = useAuth();
+  const { user, setActiveSeasonId } = useAuth();
   const [status, setStatus] = useState<Admission | null>(null);
   const [mine, setMine] = useState<MyClubs | null>(null);
   const [time, setTime] = useState(Date.now());
@@ -54,6 +54,12 @@ export function SeasonTwoRegistration() {
     time < Date.parse(S2_OPENS_AT) ? 'NOT_STARTED' : time < Date.parse(S2_PUBLIC_AT) ? 'PRIORITY' : 'PUBLIC';
   const remaining = Math.max(0, Math.ceil((Date.parse(phase === 'NOT_STARTED' ? S2_OPENS_AT : S2_PUBLIC_AT) - time) / 1000));
   const display = `${String(Math.floor(remaining / 60)).padStart(2,'0')}:${String(remaining % 60).padStart(2,'0')}`;
+  async function activate() {
+    setBusy('activate'); setError('');
+    try { await readJson('/api/season-two-admission/activate', { method: 'POST' }); await load(); setNotice('Qabul sozlamalari saqlandi. Ustuvor tanlov 20:00 da ochiladi.'); }
+    catch (e: any) { setError(e.message || 'Qabul faollashtirilmadi'); }
+    finally { setBusy(null); }
+  }
   async function decide(id: string, choice: Decision) {
     setConfirm(null); setBusy(id); setError(''); setNotice('');
     try {
@@ -76,7 +82,7 @@ export function SeasonTwoRegistration() {
     <p className="text-xs text-white/60">1-mavsum davom etadi. Bu qaror faqat 2-mavsumga tegishli.</p>
     {phase === 'NOT_STARTED' && <div className="text-sm font-bold">Ustuvor qabul ochilishigacha: <span className="tabular-nums text-amber-300">{display}</span></div>}
     {phase === 'PRIORITY' && <div className="text-sm font-bold">Klubni saqlash muddati: <span className="tabular-nums text-amber-300">{display}</span></div>}
-    {phase === 'NOT_ACTIVATED' && <p className="text-xs text-amber-300">2-mavsum qabuli hali administrator tomonidan faollashtirilmagan.</p>}
+    {phase === 'NOT_ACTIVATED' && <div className="space-y-2"><p className="text-xs text-amber-300">2-mavsum qabuli hali faollashtirilmagan.</p>{user?.isAdmin && <button className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs font-bold text-amber-300 disabled:opacity-50" disabled={!!busy} onClick={() => void activate()}>Qabulni 20:00 uchun faollashtirish (asosiy admin)</button>}</div>}
     {mine?.banned && <p role="alert" className="text-sm text-rose-300">Klub tanlash banningiz faol. Ushbu qabulda ishtirok eta olmaysiz.</p>}
     {!mine?.banned && phase === 'PRIORITY' && mine?.clubs.filter(c => c.eligible).map(club =>
       <div key={club.clubId} className="rounded-xl border border-white/10 bg-white/[.04] p-3">
