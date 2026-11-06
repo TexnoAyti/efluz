@@ -1,6 +1,7 @@
 import { SeasonPreparationCard } from './SeasonPreparationCard';
 import { seasonQualificationRanges } from '../lib/seasonQualificationPolicy';
 import { CURRENT_SEASON_ID } from '../lib/seasonParticipationPolicy';
+import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings} from './CompetitionContent';
 import {CompetitionBanner, CompetitionTabs, CompetitionHeading} from './CompetitionChrome';
 import { isLeagueSelectionOpen } from '../lib/clubAdmission';
@@ -610,7 +611,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                         : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)]'
                     }`}
                   >
-                    {league.totalClubs || (league.name === 'Bundesliga' || league.name === 'Ligue 1' ? 18 : 20)}
+                    {secondSeason ? (EFL_SECOND_SEASON.leagues.find(item => item.id === league.id)?.roster.clubs.length ?? 0) : (league.totalClubs || (league.name === 'Bundesliga' || league.name === 'Ligue 1' ? 18 : 20))}
                   </span>
                   {secondSeason && <span className={`w-full text-[10px] font-bold ${leagueOpen ? 'text-[var(--efl-primary)]' : 'text-[var(--efl-text-2)]'}`}>{leagueOpen ? '● Klub qabuli ochiq' : '○ Navbatda'}</span>}
                   </>}
