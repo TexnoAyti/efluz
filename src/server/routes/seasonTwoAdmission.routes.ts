@@ -1,22 +1,17 @@
 import { Router, type Request, type Response } from 'express';
+import { S2_OPENS_AT, S2_PUBLIC_AT, seasonTwoAdmissionPhase } from '../../lib/seasonTwoAdmissionWindow';
 import { requireAuth } from '../middleware/authMiddleware';
 import { getFirestoreDb } from '../firebase/admin';
-import { isClubSelectionBanned } from '../services/clubSelectionBan';
 import { isPrimaryOwner } from '../services/telegramAiConfigService';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
 import { invalidateClubReadModels, invalidateUserMembershipReadModel } from '../readModel/readModelStore';
 import { publishAdmissionStatus } from '../services/clubAdmission';
 
 export const seasonTwoAdmissionRouter = Router();
-export const S2_OPENS_AT = '2026-11-06T15:00:00.000Z'; // 20:00 Asia/Tashkent
-export const S2_PUBLIC_AT = '2026-11-06T15:15:00.000Z'; // 20:15 Asia/Tashkent
 const TARGET = EFL_SECOND_SEASON.id;
 const SOURCE = EFL_SECOND_SEASON.sourceSeasonId;
 
-function phase(now = Date.now()): 'NOT_STARTED' | 'PRIORITY' | 'PUBLIC' {
-  if (now < Date.parse(S2_OPENS_AT)) return 'NOT_STARTED';
-  return now < Date.parse(S2_PUBLIC_AT) ? 'PRIORITY' : 'PUBLIC';
-}
+const phase = seasonTwoAdmissionPhase;
 function failure(code: string, status = 409): never {
   throw Object.assign(new Error(code), { statusCode: status });
 }
