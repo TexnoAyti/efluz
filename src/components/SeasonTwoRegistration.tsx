@@ -23,7 +23,7 @@ async function readJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) throw new Error(body.code || body.message || 'So‘rov bajarilmadi');
   return body;
 }
-export function SeasonTwoRegistration() {
+export function SeasonTwoRegistration({ onOpenLeagues }: { onOpenLeagues?: () => void } = {}) {
   const { user, setActiveSeasonId } = useAuth();
   const [status, setStatus] = useState<Admission | null>(null);
   const [mine, setMine] = useState<MyClubs | null>(null);
@@ -163,7 +163,7 @@ export function SeasonTwoRegistration() {
           </div>
         </div>}
 
-        {ready && !mine?.banned && <button type="button" onClick={() => setActiveSeasonId(EFL_SECOND_SEASON.id)}
+        {ready && !mine?.banned && <button type="button" onClick={() => { setActiveSeasonId(EFL_SECOND_SEASON.id); onOpenLeagues?.(); }}
           className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[var(--efl-primary)] px-4 text-sm font-black text-white shadow-sm transition-[transform,opacity] duration-200 hover:opacity-90 active:scale-[.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--efl-primary)]">
           <Trophy size={18} /> 2-mavsum klublarini tanlash <ArrowRight size={18} />
         </button>}
