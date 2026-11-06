@@ -5,9 +5,9 @@ import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import './season-preparation.css';
 
 const copy = {
-  uz: { title: 'EFL · 2-mavsum', status: 'Tayyorgarlik', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub tanlash hali ochilmagan.', pending: 'Klub tarkiblari, liga qoidalari va EFL kubok rejasi tayyor. UEFA saralashi va mavsumni ishga tushirish hali tayyorlanmoqda.', details: 'Ligalar rejasini ko‘rish' },
-  ru: { title: 'EFL · Сезон 2', status: 'Подготовка', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Выбор клуба на сезон 2 ещё не открыт.', pending: 'Составы, правила лиг и план кубков EFL готовы. Отбор УЕФА и запуск сезона ещё готовятся.', details: 'Посмотреть план лиг' },
-  en: { title: 'EFL · Season 2', status: 'In preparation', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 is ongoing. Club selection for season 2 is not open yet.', pending: 'Club rosters, league rules and the EFL cup plan are ready. UEFA qualification and season activation are still being prepared.', details: 'View league plan' },
+  uz: { title: 'EFL · 2-mavsum', status: 'Qabul va reja', europe: 'Yevropa ligalari', asia: 'Osiyo ligalari', opening: 'Ochiladi', note: '1-mavsum davom etmoqda. 2-mavsum uchun klub qabuli holati va turnir rejasi shu yerda.', pending: 'Klub tarkiblari, liga qoidalari va EFL kubok rejasi tayyor. UEFA saralashi va mavsumni ishga tushirish hali tayyorlanmoqda.', details: 'Ligalar rejasini ko‘rish' },
+  ru: { title: 'EFL · Сезон 2', status: 'Приём и план', europe: 'Европейские лиги', asia: 'Азиатские лиги', opening: 'Откроется', note: 'Сезон 1 продолжается. Здесь отображаются приём клубов и план сезона 2.', pending: 'Составы, правила лиг и план кубков EFL готовы. Отбор УЕФА и запуск сезона ещё готовятся.', details: 'Посмотреть план лиг' },
+  en: { title: 'EFL · Season 2', status: 'Registration & plan', europe: 'European leagues', asia: 'Asian leagues', opening: 'Opening', note: 'Season 1 continues. Season 2 registration status and tournament plans are shown here.', pending: 'Club rosters, league rules and the EFL cup plan are ready. UEFA qualification and season activation are still being prepared.', details: 'View league plan' },
 };
 
 const internationalCopy = {
