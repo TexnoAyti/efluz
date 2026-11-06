@@ -1,3 +1,4 @@
+import {CURRENT_CLUB_CORRECTIONS} from '../../content/currentClubCorrections';
 import type { Club } from '../../types';
 import { SEED_CLUBS } from '../db/seed';
 
@@ -71,9 +72,10 @@ function strippedClubName(name: string): string {
 }
 function aliases(club: Club): string[] {
   const stripped = strippedClubName(club.name);
+  const correction=CURRENT_CLUB_CORRECTIONS[club.id];
   const seed = SEED_CLUBS.find(c => normalizeAiEntity(c.name) === normalizeAiEntity(club.name) || normalizeAiEntity(strippedClubName(c.name)) === normalizeAiEntity(stripped));
   const family = Object.entries(ALIASES).find(([,names]) => names.some(name => normalizeAiEntity(name) === normalizeAiEntity(club.name) || !seed && !/^(?:paris|real|manchester|borussia)$/.test(normalizeAiEntity(stripped)) && normalizeAiEntity(name) === normalizeAiEntity(stripped)))?.[1];
-  return [...new Set([club.name, stripped, ...[club.name,stripped].filter(name=>name.includes(' ')).map(name=>normalizeAiEntity(name).replace(/ /g,'')), ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || family || [])])];
+  return [...new Set([club.name, stripped, ...(correction?[correction.name,strippedClubName(correction.name),correction.canonicalId.replace(/^club-/,'').replace(/-/g,' '),club.id.replace(/^club-/,'').replace(/-/g,' ')]:[]), ...[club.name,stripped].filter(name=>name.includes(' ')).map(name=>normalizeAiEntity(name).replace(/ /g,'')), ...(ALIASES[club.id] || ALIASES[seed?.id || ''] || family || [])])];
 }
 function matchClubs(query: string, clubs: Club[]): Club[] {
   // Preserve explicit team separators so “Inter — Milan” cannot collapse into “Inter Milan”.
@@ -163,7 +165,7 @@ export function resolveAiClubs(query: string, clubs: Club[], selectedIds: string
     if (sharedOnly) return { clubs: [], clubChoices: clubNameChoices(query, matched, false), clarification: `Qaysi jamoani nazarda tutdingiz: ${matched.map(c => c.name).join(' yoki ')}?` };
   }
   // Explicitly named teams missing from the live roster must never resolve to an older team.
-  const missing = matchClubs(query, SEED_CLUBS as unknown as Club[]).filter(c => !clubs.some(live => normalizeAiEntity(strippedClubName(live.name)) === normalizeAiEntity(strippedClubName(c.name)) || (ALIASES[c.id] || []).some(alias => normalizeAiEntity(alias) === normalizeAiEntity(live.name))));
+  const missing = matchClubs(query, SEED_CLUBS as unknown as Club[]).filter(c => !clubs.some(live => (live.id === c.id && !!CURRENT_CLUB_CORRECTIONS[c.id]) || normalizeAiEntity(strippedClubName(live.name)) === normalizeAiEntity(strippedClubName(c.name)) || (ALIASES[c.id] || []).some(alias => normalizeAiEntity(alias) === normalizeAiEntity(live.name))));
   if (missing.length) return { clubs: [], clarification: `${missing.map(c => c.name).join(', ')}: joriy mavsum snapshotida klub ma’lumoti topilmadi. Oldingi jamoa ma’lumotini bunga qo‘llamayman.` };
   const suggestions = clubNameChoices(query, clubs.filter(c=>!matched.some(m=>m.id===c.id)), true);
   if(suggestions.length) return {clubs:[],clubChoices:suggestions,clarification:`Klub nomida yozuv xatosi bo‘lishi mumkin. «${suggestions[0].source}» bilan ${suggestions.map(c=>c.name).join(' yoki ')}ni nazarda tutdingizmi? ${suggestions.length === 1 ? '“Ha” yoki klub nomi bilan javob bering.' : 'Shu klublardan birining nomi yoki ro‘yxatdagi raqamini yozing.'}`};

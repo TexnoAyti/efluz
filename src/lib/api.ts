@@ -10,6 +10,7 @@ export interface ClubClaimReceipt { id: string; clubId: string; clubName: string
 export interface ClubClaimResponse { success: boolean; message: string; club: Pick<Club, 'id'|'name'>; pendingSync?: boolean; request?: ClubClaimReceipt; }
 
 export interface ClubAdmissionStatus {
+  automatic?: boolean;
   seasonId: string;
   enabled: boolean;
   stage: number;

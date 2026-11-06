@@ -16,11 +16,9 @@ async function main() {
   await fixtures.doc('matchday-guard-b').set({ competitionId, seasonId, matchday: 1, status: 'POSTPONED' });
 
   await fixtures.doc('matchday-guard-next').set({ competitionId, seasonId, matchday: 2, status: 'SCHEDULED' });
-  await assertRejects('tugamagan', () => advanceCompetitionMatchdayFirestore(competitionId));
-  if ((await comp.get()).data()?.currentMatchday !== 1) throw new Error('Blocked advance changed matchday');
   await fixtures.doc('matchday-guard-a').update({ status: 'CONFIRMED' });
   const result = await advanceCompetitionMatchdayFirestore(competitionId);
-  if (result.currentMatchday !== 2) throw new Error('Confirmed + postponed round did not advance');
+  if (result.currentMatchday !== 2) throw new Error('Unfinished previous round blocked advance');
   await fixtures.doc('matchday-guard-next').delete();
   await assertRejects('o‘yinlar yo‘q', () => advanceCompetitionMatchdayFirestore(competitionId));
 

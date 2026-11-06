@@ -1,6 +1,7 @@
-import {seasonLeagues} from './seasonCatalog';
+import {seasonClubs,seasonLeagues} from './seasonCatalog';
 import {EFL_SECOND_SEASON} from '../../lib/seasonPreparation';
 import { randomUUID } from 'node:crypto';
+import { isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { isLeagueSelectionOpen } from '../../lib/clubAdmission';
 import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
@@ -16,6 +17,7 @@ const pendingStatusReads = new Map<string, Promise<ClubAdmissionStatus>>();
 export interface ClubAdmissionStatus {
   seasonId: string;
   enabled: boolean;
+  automatic?: boolean;
   stage: number;
   activeLeagueId: string | null;
   leagues: typeof CLUB_ADMISSION_LEAGUES;
@@ -26,8 +28,8 @@ export interface ClubAdmissionStatus {
 }
 
 export class ClubAdmissionConflict extends Error {
-  constructor(public readonly code: 'ADMISSION_STAGE_CHANGED' | 'ADMISSION_FINISHED' | 'ADMISSION_STATE_CHANGED') {
-    super(code === 'ADMISSION_FINISHED' ? 'Klub qabuli yakunlangan.' : 'Qabul holati o‘zgargan. Sahifani yangilang.');
+  constructor(public readonly code: 'ADMISSION_STAGE_CHANGED' | 'ADMISSION_FINISHED' | 'ADMISSION_STATE_CHANGED' | 'ADMISSION_LEAGUE_NOT_FULL') {
+    super(code === 'ADMISSION_LEAGUE_NOT_FULL' ? 'Joriy liga hali to‘lmagan. Joriy liga to‘lgach keyingisi avtomatik ochiladi.' : code === 'ADMISSION_FINISHED' ? 'Klub qabuli yakunlangan.' : 'Qabul holati o‘zgargan. Sahifani yangilang.');
   }
 }
 
@@ -42,6 +44,7 @@ export function admissionStatus(seasonId: string, data?: Record<string, unknown>
   return {
     seasonId,
     enabled,
+    automatic: data?.automatic === true,
     stage,
     activeLeagueId: stage >= 0 ? CLUB_ADMISSION_LEAGUES[stage]?.id || null : null,
     leagues: CLUB_ADMISSION_LEAGUES,
@@ -117,12 +120,15 @@ export async function advanceClubAdmission(seasonId: string, expectedStage: numb
     }
     const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
     if (current.stage !== expectedStage) throw new ClubAdmissionConflict('ADMISSION_STAGE_CHANGED');
-    if (current.stage >= current.leagues.length) throw new ClubAdmissionConflict('ADMISSION_FINISHED');
-    const stage = current.stage + 1;
-    const updatedAt = new Date().toISOString();
-    const revision = randomUUID();
-    transaction.set(ref, { seasonId, enabled: true, stage, updatedAt, revision, updatedBy: actorId });
-    return admissionStatus(seasonId, { enabled: true, stage, updatedAt, revision });
+    if (current.automatic && current.stage >= current.leagues.length) throw new ClubAdmissionConflict('ADMISSION_FINISHED');
+    const occupied=await occupiedClubIds(transaction,db,seasonId);
+    if(current.enabled && current.automatic && !leagueFull(current.activeLeagueId,seasonId,occupied))throw new ClubAdmissionConflict('ADMISSION_LEAGUE_NOT_FULL');
+    let stage=current.automatic?current.stage+1:0;
+    const leagues=current.leagues;
+    while(stage<leagues.length && (!isSeasonLeagueEnabled(leagues[stage].id,seasonId)||leagueFull(leagues[stage].id,seasonId,occupied)))stage++;
+    const data={seasonId,enabled:true,automatic:true,stage,updatedAt:new Date().toISOString(),revision:randomUUID(),updatedBy:actorId,leagueOverrides:{}};
+    transaction.set(ref,data);
+    return admissionStatus(seasonId,data);
   });
   try {
     await redisSetRaw(ReadModelKeys.clubAdmission(seasonId), { data: status, sourceVersion: `club-admission-${status.updatedAt}` }, ADMISSION_CACHE_TTL_SECONDS);
@@ -143,8 +149,9 @@ export async function setLeagueClubSelection(seasonId: string, leagueId: string,
       if(!['registration','active'].includes(String(season.data()?.status).toLowerCase())||season.data()?.registrationOpen!==true)throw new Error('SEASON_NOT_OPEN');
     }
     const current = admissionStatus(seasonId, (await transaction.get(ref)).data());
+    if(open&&current.automatic&&current.activeLeagueId!==leagueId)throw new ClubAdmissionConflict('ADMISSION_STATE_CHANGED');
     if (current.revision !== expectedRevision) throw new ClubAdmissionConflict('ADMISSION_STATE_CHANGED');
-    const data = { seasonId, enabled: current.enabled, stage: current.stage, leagueOverrides: { ...current.leagueOverrides, [leagueId]: open }, updatedAt: new Date().toISOString(), revision: randomUUID(), updatedBy: actorId };
+    const data = { seasonId, enabled: current.enabled, automatic:current.automatic, stage: current.stage, leagueOverrides: { ...current.leagueOverrides, [leagueId]: open }, updatedAt: new Date().toISOString(), revision: randomUUID(), updatedBy: actorId };
     transaction.set(ref, data);
     return admissionStatus(seasonId, data);
   });
@@ -164,4 +171,40 @@ export function assertClubAdmissionOpen(status: ClubAdmissionStatus, leagueId: s
 
 export class ClubAdmissionConflictError extends Error {
   readonly code = 'CLUB_ADMISSION_CLOSED';
+}
+
+
+async function occupiedClubIds(transaction:any,db:any,seasonId:string):Promise<Set<string>>{
+  const rows=await transaction.get(db.collection('club_occupancies').where('seasonId','==',seasonId));
+  return new Set<string>(rows.docs.filter((d:any)=>d.data().userId&&!['released','inactive'].includes(d.data().status)).map((d:any)=>String(d.data().clubId)));
+}
+function leagueFull(leagueId:string|null,seasonId:string,occupied:Set<string>){
+  const clubs=seasonClubs(seasonId).filter(c=>c.leagueId===leagueId);
+  return clubs.length>0&&clubs.every(c=>occupied.has(c.id));
+}
+/** Called before claim writes, in the same transaction as the last club assignment. */
+export async function prepareAutomaticAdmissionAdvance(transaction:any,db:any,seasonId:string,data:any,incomingClubId?:string){
+  const current=admissionStatus(seasonId,data);
+  if(!current.enabled||!current.automatic||!current.activeLeagueId)return null;
+  const occupied=await occupiedClubIds(transaction,db,seasonId);
+  if(incomingClubId)occupied.add(incomingClubId);
+  let stage=current.stage;
+  while(stage<current.leagues.length&&(!isSeasonLeagueEnabled(current.leagues[stage].id,seasonId)||leagueFull(current.leagues[stage].id,seasonId,occupied)))stage++;
+  if(stage===current.stage)return null;
+  return {seasonId,enabled:true,automatic:true,stage,leagueOverrides:{},revision:randomUUID(),updatedAt:new Date().toISOString(),updatedBy:'AUTO_LEAGUE_FILLED'};
+}
+export async function publishAdmissionStatus(seasonId:string,data:any){
+  try{await redisSetRaw(ReadModelKeys.clubAdmission(seasonId),{data:admissionStatus(seasonId,data),sourceVersion:'club-admission-'+data.revision},ADMISSION_CACHE_TTL_SECONDS);}
+  catch(error){console.warn('[CLUB_ADMISSION] Committed automatic stage cache will retry',error);}
+}
+
+export async function reconcileAutomaticClubAdmission(seasonId:string){
+  const db=getFirestoreDb(),ref=db.collection(COLLECTION).doc(seasonId);
+  const updated=await db.runTransaction(async tx=>{
+    const doc=await tx.get(ref);
+    const next=await prepareAutomaticAdmissionAdvance(tx,db,seasonId,doc.data());
+    if(next)tx.set(ref,next);
+    return next;
+  });
+  if(updated)await publishAdmissionStatus(seasonId,updated);
 }

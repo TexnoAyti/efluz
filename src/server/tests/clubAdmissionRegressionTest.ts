@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { once } from 'node:events';
 import { initDatabase } from '../db';
-import { seedDatabase } from '../db/seed';
+import { SEED_CLUBS, seedDatabase } from '../db/seed';
 import { claimClubAtomicFirestore } from '../firebase/firestoreStore';
 import { getFirestoreDb } from '../firebase/admin';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
@@ -71,28 +71,25 @@ async function run() {
   );
   await claimClubAtomicFirestore('user-admission-pl', 'club-arsenal', seasonId, { authoritativeOnly: true });
 
-  status = await setLeagueClubSelection(seasonId, 'league-la-liga', true, status.revision, 'admin-test');
-  assert.equal(isLeagueSelectionOpen(status, 'league-la-liga'), true, 'An admin can open an additional league during staged admission');
-  assert.equal(isLeagueSelectionOpen(status, 'league-premier-league'), true);
-  status = await setLeagueClubSelection(seasonId, 'league-la-liga', false, status.revision, 'admin-test');
-  status = await advanceClubAdmission(seasonId, 0, 'admin-test');
-  assert.equal(status.activeLeagueId, 'league-la-liga');
-  await claimClubAtomicFirestore('user-admission-pl', 'club-arsenal', seasonId, { authoritativeOnly: true }); // existing owner stays valid
-  await assert.rejects(
-    () => claimClubAtomicFirestore('user-admission-rejected', 'club-chelsea', seasonId, { authoritativeOnly: true }),
-    (err: any) => err.code === 'CLUB_ADMISSION_CLOSED',
-  );
-  await claimClubAtomicFirestore('user-admission-la-liga', 'club-real-madrid', seasonId, { authoritativeOnly: true });
-
-  for (let stage = 1; stage < status.leagues.length; stage++) status = await advanceClubAdmission(seasonId, stage, 'admin-test');
-  assert.equal(status.activeLeagueId, null);
-  await assert.rejects(() => claimClubAtomicFirestore('user-admission-final', 'club-barcelona', seasonId, { authoritativeOnly: true }), (err: any) => err.code === 'CLUB_ADMISSION_CLOSED');
-
-  status = await setLeagueClubSelection(seasonId, 'league-la-liga', true, status.revision, 'admin-test');
-  await claimClubAtomicFirestore('user-manual-reopened', 'club-barcelona', seasonId, { authoritativeOnly: true });
-  status = await setLeagueClubSelection(seasonId, 'league-la-liga', false, status.revision, 'admin-test');
-  await claimClubAtomicFirestore('user-manual-reopened', 'club-barcelona', seasonId, { authoritativeOnly: true });
-  assert.equal(status.stage, CLUB_ADMISSION_LEAGUES.length, 'Reopening a league does not restart the queue');
+  await assert.rejects(()=>advanceClubAdmission(seasonId,0,'admin-test'),(err:any)=>err.code==='ADMISSION_LEAGUE_NOT_FULL');
+  await assert.rejects(()=>setLeagueClubSelection(seasonId,'league-la-liga',true,status.revision,'admin-test'),(err:any)=>err.code==='ADMISSION_STATE_CHANGED');
+  const dbFill=getFirestoreDb();
+  for(const leagueId of ['league-premier-league','league-la-liga','league-serie-a','league-bundesliga']){
+    assert.equal(status.activeLeagueId,leagueId);
+    const clubs=SEED_CLUBS.filter(c=>c.leagueId===leagueId);
+    const last=clubs.at(-1)!;
+    for(const club of clubs.slice(0,-1)){
+      const ref=dbFill.collection('club_occupancies').doc(seasonId+'_'+club.id);
+      if(!(await ref.get()).exists)await ref.set({clubId:club.id,seasonId,userId:'existing-'+club.id,status:'active'});
+    }
+    const outcomes=await Promise.allSettled([claimClubAtomicFirestore('final-'+leagueId,last.id,seasonId,{authoritativeOnly:true}),claimClubAtomicFirestore('concurrent-'+leagueId,last.id,seasonId,{authoritativeOnly:true})]);
+    assert.equal(outcomes.filter(item=>item.status==='fulfilled').length,1,'Exactly one claimant gets the last club');
+    status=await getClubAdmissionStatus(seasonId);
+    assert.equal(isLeagueSelectionOpen(status,leagueId),false);
+  }
+  assert.equal(status.activeLeagueId,null,'Withdrawn season-one Ligue 1 is skipped');
+  assert.equal(status.stage,CLUB_ADMISSION_LEAGUES.length);
+  await assert.rejects(()=>claimClubAtomicFirestore('after-all-filled','club-barcelona',seasonId,{authoritativeOnly:true}),(err:any)=>['CLUB_ADMISSION_CLOSED','CLUB_OCCUPIED'].includes(err.code));
 
   // The last committed stage remains visible during Firestore outages; unknown seasons fail closed.
   const db = getFirestoreDb();
@@ -109,7 +106,7 @@ async function run() {
     const cached = await getClubAdmissionStatus(seasonId);
     assert.equal(cached.stage, CLUB_ADMISSION_LEAGUES.length);
     assert.equal(cached.stale, true);
-    assert.equal(isLeagueSelectionOpen(cached, 'league-la-liga'), false, 'Cached degraded status retains the manual closure');
+    assert.equal(isLeagueSelectionOpen(cached, 'league-la-liga'), false, 'Cached degraded status retains the completed queue');
     await assert.rejects(() => getClubAdmissionStatus('season-admission-uncached'), (err: any) => err.errorCode === 'READ_MODEL_NOT_WARMED');
     const app = express();
     app.use('/api/clubs', clubsRouter);

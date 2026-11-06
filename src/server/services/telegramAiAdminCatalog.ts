@@ -115,7 +115,7 @@ export const AI_ADMIN_ACTIONS: Record<string, AdminAction> = {
   season_control: action('GET', '/season-ops/control', 'seasonId?'),
   season_preparation_package: action('GET','/season-ops/preparation/package'),
   season_preparation_stage: action('POST','/season-ops/preparation/package','expectedRevision, expectedDraftRevision from season_preparation; isolated staging only'),
-  season_preparation_european_draw: action('POST','/season-ops/preparation/european-draw-preview','code:UCL|UEL|UECL, seed, entries:36 verified clubs with association, pot and qualification provenance; simulation only, never invent entries'),
+  season_preparation_european_draw: action('POST','/season-ops/preparation/european-draw-preview','code:UCL|UEL, seed, entries:36 verified clubs with association, pot and qualification provenance; simulation only, never invent entries'),
   season_preparation_super_cup: action('POST','/season-ops/preparation/super-cup-preview','leagueId, fixtures:complete verified season-two results, cupFinal:verified confirmed final, europeanFinalistClubIds?; read-only'),
   season_preparation: action('GET','/season-ops/preparation'),
   season_preparation_save: action('POST','/season-ops/preparation/draft','startDate:YYYY-MM-DD or null, expectedRevision:from season_preparation only; saves a draft, never activates a season'),

@@ -126,7 +126,7 @@ for (const admin of [false, true]) {
   assert.match(preparation,/2026-11-05/);
   assert.match(preparation,/Elche CF/);
   assert.doesNotMatch(preparation,/Girona FC|VfL Wolfsburg|Hellas Verona|Montpellier HSC/);
-  assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,21);
+  assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,20);
   assert.ok(preparation.includes('Superkuboklar'),'Super cup plans are visible');
   assert.ok(preparation.includes('EFL formati'),'Cups show the custom EFL policy');
   assert.ok(preparation.includes('Barcha 16 klub 1/8 finaldan'),'16-team leagues skip play-ins');
