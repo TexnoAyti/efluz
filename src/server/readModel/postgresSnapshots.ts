@@ -54,6 +54,12 @@ async function snapshotDocuments(ids:string[]):Promise<Map<string,any>> {
 
 async function fixtureOverrides(key: string): Promise<Map<string, any>> {
   if (!key.endsWith(':fixtures')) return new Map();
+  // Supabase deployments serve the validated snapshot as the read path. The
+  // per-fixture override collection is an optional enrichment and currently
+  // shares the overloaded runtime query path, so never hold a page open for it.
+  // Authoritative matchday/competition permission reads still happen through
+  // refreshFixtureMatchdayRules on action-sensitive routes.
+  if (process.env.DATABASE_PROVIDER === 'supabase') return new Map();
   const seasonId = key.match(/:season:([^:]+):/)?.[1];
   if (!seasonId) return new Map();
   let query = getFirestoreDb().collection('durable_fixture_overrides').where('seasonId', '==', seasonId);
