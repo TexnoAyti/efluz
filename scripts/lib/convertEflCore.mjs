@@ -43,9 +43,11 @@ export function convertEflCore(collections){
  const participants=source(collections,'competition_participants');
  const submissions=source(collections,'result_submissions');
  const disputes=source(collections,'disputes');
+ const notifications=source(collections,'notifications');
+ const auditLogs=source(collections,'audit_logs');
  const output={users:[],seasons:[],leagues:[],clubs:[],competitions:[],
    clubOccupancies:[],fixtures:[],participants:[],resultSubmissions:[],
-   disputes:[],matchAccess:[]};
+   disputes:[],matchAccess:[],notifications:[],auditLogs:[]};
  const userById=new Map();
  const uniqueTelegram=new Set();
  for(const [id,d] of users){
@@ -195,8 +197,24 @@ export function convertEflCore(collections){
    resolution_notes:d.resolutionNotes??null,
    created_at:time(d.createdAt),resolved_at:time(d.resolvedAt)||null});
  }
+ for(const [id,d] of notifications){
+  if(!users.has(d.userId))fail('NOTIFICATION_USER_MISSING');
+  output.notifications.push({id,user_id:d.userId,
+   type:required(d.type,'NOTIFICATION_WITHOUT_TYPE'),
+   title:str(d.title),message:str(d.message),data:d.data??null,
+   is_read:bool(d.isRead),created_at:time(d.createdAt)});
+ }
+ for(const [id,d] of auditLogs){
+  // System jobs have no actor; preserve without attributing to an admin.
+  output.auditLogs.push({id,actor_user_id:str(d.actorUserId,'SYSTEM'),
+   actor_username:str(d.actorUsername),action:required(d.action,'AUDIT_WITHOUT_ACTION'),
+   entity_type:str(d.entityType,'SYSTEM'),entity_id:str(d.entityId,id),
+   old_value:d.oldValueJson??null,new_value:d.newValueJson??null,
+   created_at:time(d.createdAt,time(d.timestamp))});
+ }
  return {rows:output,report:{mappedTables:Object.keys(output),
    scopedLeagueCopies:output.leagues.length,scopedClubCopies:output.clubs.length,
-   sourceFixtures:fixtures.size,stagingMatchAccessWritable:false,
+   sourceFixtures:fixtures.size,notificationsPreserved:output.notifications.length,
+   auditLogsPreserved:output.auditLogs.length,stagingMatchAccessWritable:false,
    requiresLegacyArchive:true,cutoverReady:false}};
 }
