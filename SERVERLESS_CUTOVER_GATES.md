@@ -469,3 +469,9 @@ and verified operational rollback remain prerequisites for cutover.
 - The module remains **not connected** to `sdk/api` in any active bot handler or endpoint. No message was sent by this migration and no production switch was flipped.
 
 - Additional fail-closed policy: an **expired LEASED** delivery is marked `REVIEW` with `LEASE_EXPIRED_UNCERTAIN` when next inspected for claiming; it is **never automatically reclaimed**. The old sender cannot acknowledge after expiry. This prevents an unconfirmed Telegram send from being repeated by a second worker without human reconciliation.
+
+## Strict normalized snapshot parity (2026-11-08)
+
+- `scripts/verifyServerlessSnapshot.mjs` rejects **unexpected normalized tables and columns** on either side. Previously, a normalized snapshot could carry an unrecognized field/table that would silently be excluded from the SHA-256 comparison, creating false confidence. Newly discovered source collections/fields must be mapped, explicitly archived or reviewed before any cutover.
+- `scripts/serverlessParity.test.mjs` includes unknown-table and dropped-field regression cases. The verifier is still **offline only**; passing synthetic parity tests does not prove that a fresh production snapshot was exported or that all 26,111+ live records were migrated.
+- The source collection inventory, original/source generation, final delta export, independent target export, per-table counts and checksums must be reconciled before anyone can mark the migration complete. No production data has been imported in this step.
