@@ -57,6 +57,9 @@ on:
       - 'tgcloud/lib/uzeflifeRead.js'
       - 'tgcloud/lib/uzeflifeResultAdmin.js'
       - 'tgcloud/lib/uzeflifeRoundAudit.js'
+      - 'tgcloud/lib/myFixturesRead.js'
+      - 'tgcloud/endpoints/myFixtures.js'
+      - 'scripts/serverlessMyFixtures.test.mjs'
       - 'tgcloud/endpoints/uzeflifeRoundAudit.js'
       - 'scripts/serverlessUzeflifeRoundAudit.test.mjs'
       - 'tgcloud/lib/teamsJoinWorkflow.js'
@@ -112,7 +115,7 @@ jobs:
       - name: Check Telegram runtime module imports
         run: node scripts/checkTgcloudModules.mjs
       - name: Validate replay, conflicts and bounded batches
-        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs scripts/serverlessStreamingPackets.test.mjs scripts/serverlessRawBatchVerify.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessResultProposal.test.mjs scripts/serverlessClubClaim.test.mjs scripts/serverlessJsonReplay.test.mjs scripts/serverlessSqliteIntegration.test.mjs scripts/serverlessMatchChatSqlite.test.mjs scripts/serverlessConfirmResultSqlite.test.mjs scripts/serverlessBotReadOnly.test.mjs scripts/serverlessCallbacks.test.mjs scripts/serverlessAdminOverview.test.mjs scripts/serverlessStagingGate.test.mjs scripts/serverlessCompetitionDetail.test.mjs scripts/serverlessSourceInventory.test.mjs scripts/serverlessDomainGraph.test.mjs scripts/serverlessArchiveBinding.test.mjs scripts/serverlessMutationGate.test.mjs scripts/serverlessCoreConverter.test.mjs scripts/serverlessLargeArchive.test.mjs scripts/serverlessUzeflifeProjection.test.mjs scripts/serverlessUzeflifeResultAdmin.test.mjs scripts/serverlessUzeflifeRoundAudit.test.mjs scripts/serverlessTeamsJoinWorkflow.test.mjs scripts/serverlessTeamsJoinQueue.test.mjs scripts/serverlessTeamsPrivateRoster.test.mjs scripts/serverlessTeamsCatalog.test.mjs
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs scripts/serverlessStreamingPackets.test.mjs scripts/serverlessRawBatchVerify.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessResultProposal.test.mjs scripts/serverlessClubClaim.test.mjs scripts/serverlessJsonReplay.test.mjs scripts/serverlessSqliteIntegration.test.mjs scripts/serverlessMatchChatSqlite.test.mjs scripts/serverlessConfirmResultSqlite.test.mjs scripts/serverlessBotReadOnly.test.mjs scripts/serverlessCallbacks.test.mjs scripts/serverlessAdminOverview.test.mjs scripts/serverlessStagingGate.test.mjs scripts/serverlessCompetitionDetail.test.mjs scripts/serverlessSourceInventory.test.mjs scripts/serverlessDomainGraph.test.mjs scripts/serverlessArchiveBinding.test.mjs scripts/serverlessMutationGate.test.mjs scripts/serverlessCoreConverter.test.mjs scripts/serverlessLargeArchive.test.mjs scripts/serverlessUzeflifeProjection.test.mjs scripts/serverlessUzeflifeResultAdmin.test.mjs scripts/serverlessUzeflifeRoundAudit.test.mjs scripts/serverlessMyFixtures.test.mjs scripts/serverlessTeamsJoinWorkflow.test.mjs scripts/serverlessTeamsJoinQueue.test.mjs scripts/serverlessTeamsPrivateRoster.test.mjs scripts/serverlessTeamsCatalog.test.mjs
   frontend-static:
     runs-on: ubuntu-latest
     timeout-minutes: 12
