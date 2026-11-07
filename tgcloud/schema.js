@@ -47,7 +47,8 @@ export const clubOccupancies = table('efl_club_occupancies', {
 export const fixtures = table('efl_fixtures', {
   id: text('id').primaryKey(), seasonId: text('season_id').notNull(), competitionId: text('competition_id').notNull(),
   leagueId: text('league_id'), round: integer('round').notNull().default(1),
-  homeClubId: text('home_club_id').notNull(), awayClubId: text('away_club_id').notNull(),
+  // Cup brackets may contain TBD slots; do not coerce pending opponents into a fake club.
+  homeClubId: text('home_club_id'), awayClubId: text('away_club_id'),
   homeTelegramId: text('home_telegram_id'), awayTelegramId: text('away_telegram_id'),
   homeScore: integer('home_score'), awayScore: integer('away_score'),
   status: text('status').notNull().default('SCHEDULED'),
