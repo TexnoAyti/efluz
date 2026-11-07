@@ -20,7 +20,7 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 | Core import to isolated Telegram database | NOT RUN | No conflicts, counts+SHA-256 parity |
 | Extra domain data | NOT IMPLEMENTED | Schema now includes participants, submissions, disputes, notifications and audit; their source conversion and parity remain unverified. Standings snapshots, payments, TEAMS, UZEFLIFE, cups and awards still need coverage |
 | Club claim / release | STAGING CLAIM ENGINE (DISABLED) | The new claim endpoint checks user, season, admission and uniqueness; full ban/admission policy parity, release flows and Telegram-hosted race tests are still missing |
-| Fixtures / score submission / confirmation | STAGING PROPOSAL ENGINE (DISABLED) | The proposal endpoint checks signed owner, score, lock and idempotency; full result consensus, dispute and admin confirmation workflow remains missing |
+| Fixtures / score submission / confirmation | STAGING PROPOSAL + OPPONENT CONFIRMATION (DISABLED) | Guarded, opponent-only confirmation checks active ownership, open round, duplicate/conflicting submissions and disputes in SQLite; admin override, audit, notification, real Telegram SDK and official policy parity remain missing |
 | Admin tools | NOT IMPLEMENTED | Auth/role checks, side-effect audit, all required actions |
 | Chat | STAGING SQL ENGINE TESTED | SDK-independent persisted write confirmation, ACL/replay/read-only SQLite tests pass; actual Telegram-hosted SDK and owner-release parity still needed |
 | Telegram updates | PROBE ONLY | message, callback_query, channel posts, payment events |
@@ -118,3 +118,19 @@ for every client ID; no unsupported SDK `rowsAffected` check remains.
 signed-user access, retries, revoked write permissions and cross-match ID
 conflicts. Passing these tests **does not** make the endpoint ready for real
 users without Telegram Serverless staging and club-release lifecycle tests.
+
+## Opponent result confirmation (shadow only)
+
+The `tgcloud/endpoints/confirmResult.js` endpoint is guarded by
+`MUTATION_CONTROL.enabled=false`. The pure engine in
+`tgcloud/lib/confirmResult.js` accepts only a submission ID from the
+verified Telegram user, rejects self-confirmation, and uses a conditional SQL
+UPDATE so released, banned or unrelated users and closed rounds cannot confirm.
+It refuses to confirm when the responding owner has submitted a conflicting
+score or the fixture has a pending/open dispute. The SQLite regression suite
+`scripts/serverlessConfirmResultSqlite.test.mjs` exercises these paths.
+
+Still required before enabling: official matchday policy mapping, first/second
+season rules, exactly-once audit and notification side effects, dispute
+resolution, admin overrides, live Telegram SDK smoke tests and source/target
+fixture parity. **Never enable all shadow mutations merely to pass a demo.**
