@@ -9,15 +9,26 @@ export const IMPORT_TABLES = Object.freeze({
   fixtures: ['id','season_id','competition_id','league_id','round','home_club_id','away_club_id','home_telegram_id','away_telegram_id','home_score','away_score','status','confirmation_status','scheduled_at','played_at','updated_at'],
   matchAccess: ['match_id','home_telegram_id','away_telegram_id','writable','updated_at'],
   matchMessages: ['id','match_id','sender_telegram_id','client_id','body','created_at'],
+  competitions: ['id','season_id','league_id','name','type','schedule_mode','status','format_config','current_matchday','is_matchday_open','created_at','updated_at'],
+  participants: ['id','competition_id','season_id','club_id','owner_user_id','seed_number','source_competition_id','source_position','qualification_reason','created_at'],
+  resultSubmissions: ['id','fixture_id','submitted_by_user_id','club_id','home_score','away_score','home_extra_time_score','away_extra_time_score','home_penalty_score','away_penalty_score','proof_url','created_at'],
+  disputes: ['id','fixture_id','season_id','home_submission_id','away_submission_id','status','resolved_by_user_id','resolution_notes','created_at','resolved_at'],
+  notifications: ['id','user_id','type','title','message','data','is_read','created_at'],
+  auditLogs: ['id','actor_user_id','actor_username','action','entity_type','entity_id','old_value','new_value','created_at'],
 });
 export const SQL_TABLES = Object.freeze({
   users:'efl_users',seasons:'efl_seasons',leagues:'efl_leagues',clubs:'efl_clubs',
   clubOccupancies:'efl_club_occupancies',fixtures:'efl_fixtures',
-  matchAccess:'efl_match_access',matchMessages:'efl_match_messages'
+  matchAccess:'efl_match_access',matchMessages:'efl_match_messages',
+  competitions:'efl_competitions',participants:'efl_competition_participants',
+  resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
+  notifications:'efl_notifications',auditLogs:'efl_audit_logs'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
-  clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id'
+  clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
+  competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
+  notifications:'id',auditLogs:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
