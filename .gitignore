@@ -30,3 +30,6 @@ android/.gradle/
 
 # Telegram CLI project credentials and local deployment state
 /.tgcloud/
+
+# Raw production JSONL snapshots can contain private Telegram/user records
+*.jsonl
