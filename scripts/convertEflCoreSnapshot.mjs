@@ -10,9 +10,10 @@ import {convertEflCore} from './lib/convertEflCore.mjs';
 import {convertUzeflife} from './lib/convertUzeflife.mjs';
 import {convertTeamsCatalog} from './lib/convertTeamsCatalog.mjs';
 import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
+import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
 if(!src||!dest){
- console.error('Usage: node scripts/convertEflCoreSnapshot.mjs private-source.jsonl private-normalized.json [--quarantine-historical]');
+ console.error('Usage: node scripts/convertEflCoreSnapshot.mjs private-source.jsonl private-normalized.json [--quarantine-historical --verified-archive private-archive-directory]');
  process.exit(2);
 }
 try{await stat(resolve(dest));throw Error('DESTINATION_ALREADY_EXISTS');}
@@ -29,6 +30,12 @@ for await(const line of createInterface({input:createReadStream(resolve(src),{en
  if(scope.has(collection))collections[collection].push(doc);
 }
 const quarantineHistoricalOrphans=process.argv.includes('--quarantine-historical');
+if(quarantineHistoricalOrphans){
+ const option=process.argv.indexOf('--verified-archive');
+ const dir=option>=0?process.argv[option+1]:null;
+ if(!dir||dir.startsWith('--'))throw Error('VERIFIED_ARCHIVE_REQUIRED');
+ await verifyArchiveBinding(src,dir);
+}
 const result=convertEflCore(collections,{quarantineHistoricalOrphans});
 if(collections.uzeflife.length>1)throw Error('MULTIPLE_UZEFLIFE_ROOTS');
 if(collections.uzeflife.length===1){
