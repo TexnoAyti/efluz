@@ -10,7 +10,7 @@ import {convertEflCore} from './lib/convertEflCore.mjs';
 import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
 const [src,dest]=process.argv.slice(2);
 if(!src||!dest){
- console.error('Usage: node scripts/convertEflCoreSnapshot.mjs private-source.jsonl private-normalized.json');
+ console.error('Usage: node scripts/convertEflCoreSnapshot.mjs private-source.jsonl private-normalized.json [--quarantine-historical]');
  process.exit(2);
 }
 try{await stat(resolve(dest));throw Error('DESTINATION_ALREADY_EXISTS');}
@@ -26,7 +26,8 @@ for await(const line of createInterface({input:createReadStream(resolve(src),{en
  const collection=doc.collection_path?.split('/')[0];
  if(scope.has(collection))collections[collection].push(doc);
 }
-const result=convertEflCore(collections);
+const quarantineHistoricalOrphans=process.argv.includes('--quarantine-historical');
+const result=convertEflCore(collections,{quarantineHistoricalOrphans});
 for(const [table,rows] of Object.entries(result.rows)){
  for(let index=0;index<rows.length;index+=100)
   validateImportBatch({table,batchId:table+':'+String(index/100).padStart(8,'0'),rows:rows.slice(index,index+100)});
