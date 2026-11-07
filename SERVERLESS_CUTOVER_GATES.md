@@ -363,3 +363,20 @@ The roster and admission features remain **SHADOW ONLY**. The remaining
 identity reconciliation, group memberships, ticket checks, captain lineup
 management, match counts, TEAMS cups and webhook notifications must be
 implemented and verified before any live join request may be approved.
+
+## Preserve the actual UZEFLIFE tournament format
+
+**Do not implement or deploy an invented UZEFLIFE playoff.** The current
+source has scheduled round numbers and an internal `bracket` ordering
+field; that field is not authorization to change the public tournament
+format, create an extra knockout phase or auto-advance a winner.
+
+`uzeflifeRoundAudit` is a read-only admin diagnostic. It counts the
+matches, confirmed winners, unresolved results and incomplete opponent
+slots **inside the existing current round**. The staging Mini App now
+shows the turn audit, TEAMS queue, private notifications, admin totals,
+competition catalog and the signed owner's own fixtures, without sending
+messages or modifying production. Real auto-round logic requires an
+explicit comparison with the current legacy tournament engine and
+player-facing rules; until then results remain under the default-off
+shadow mutation gate.
