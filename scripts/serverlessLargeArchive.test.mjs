@@ -12,7 +12,7 @@ function large(){
   encoded:{path:'uzeflife/settings'},data:{
    name:'UZEFLIFE',status:'active',
    participants:Array.from({length:1800},(_,i)=>({id:i,
-    note:'O‘zbekiston 🇺🇿 UZEFLIFE '+i+' — '.repeat(8)}))
+    note:'O‘zbekiston 🇺🇿 UZEFLIFE '+i+' — '.repeat(80)}))
   }};
 }
 test('multipart archive round-trips large UTF-8 records without dropping a byte',()=>{
