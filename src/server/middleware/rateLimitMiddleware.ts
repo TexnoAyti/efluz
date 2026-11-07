@@ -64,7 +64,16 @@ export function rateLimit(name: string, limit: number, windowSeconds: number, op
     let count = 0;
 
     try {
-      const client = options.distributed === false ? null : getRuntimeStateStore();
+      // Supabase is the authoritative data store, but it is not a suitable
+      // high-frequency counter backend: every runtime-state mutation shares a
+      // single generation row and can serialize unrelated API requests. Keep
+      // the limiter bounded per instance in that deployment so rate limiting
+      // cannot take the whole application down when the optional state layer is
+      // slow. A dedicated Redis deployment can still opt into distributed
+      // counters by using the non-Supabase provider.
+      const client = options.distributed === false || process.env.DATABASE_PROVIDER === 'supabase'
+        ? null
+        : getRuntimeStateStore();
       if (client) {
         count = Number(await client.eval(
           "-- EFL_RATE_LIMIT_V1\nlocal n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n",
