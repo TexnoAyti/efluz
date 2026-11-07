@@ -6,6 +6,27 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 const script=new URL('./auditEflDomainGraph.mjs',import.meta.url).pathname;
 const doc=(collection_path,document_id,data)=>({space:'production',collection_path,document_id,encoded:{},data});
+test('source audit quarantines only resolved historical dispute, never an open one',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'efl-dispute-'));
+ try{
+  const input=join(dir,'private.jsonl');
+  const fixture=doc('disputes','historical-dispute',{fixtureId:'deleted-fixture',
+   status:'RESOLVED'});
+  await writeFile(input,JSON.stringify(fixture)+'\n');
+  const strict=spawnSync(process.execPath,[script,input],{encoding:'utf8'});
+  assert.notEqual(strict.status,0);
+  assert.equal(JSON.parse(strict.stdout).errorsByType.DISPUTE_WITHOUT_FIXTURE,1);
+  const archived=spawnSync(process.execPath,[script,input,'--quarantine-historical'],
+   {encoding:'utf8'});
+  assert.equal(archived.status,0,archived.stderr);
+  assert.equal(JSON.parse(archived.stdout).quarantinedHistorical.resolvedDisputes,1);
+  fixture.data.status='OPEN';
+  await writeFile(input,JSON.stringify(fixture)+'\n');
+  const open=spawnSync(process.execPath,[script,input,'--quarantine-historical'],
+   {encoding:'utf8'});
+  assert.notEqual(open.status,0);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('legacy source graph verifies reference integrity without exposing IDs',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'efl-domain-'));
  try{
