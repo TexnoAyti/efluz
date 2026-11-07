@@ -1,14 +1,13 @@
 import { EndpointError } from 'sdk';
 import { db } from 'sdk';
 import { verifiedTelegramId } from '../lib/auth.js';
+import { IMPORT_CONTROL } from '../lib/importControl.js';
 import { applyImportBatch } from '../lib/importEngine.js';
 
 // Disabled by default. Owner ID and explicit switch must be server-side.
 export function assertMigrationOwner(ctx) {
   const telegramId = verifiedTelegramId(ctx);
-  const owner = typeof process !== 'undefined' ? process.env.EFL_MIGRATION_OWNER_TELEGRAM_ID : '';
-  const enabled = typeof process !== 'undefined' ? process.env.EFL_MIGRATION_IMPORT_ENABLED : '';
-  if (!owner || enabled !== 'true' || telegramId !== owner)
+  if (!IMPORT_CONTROL.enabled || !IMPORT_CONTROL.ownerTelegramId || telegramId !== IMPORT_CONTROL.ownerTelegramId)
     throw new EndpointError('Import yopiq.', {code:'IMPORT_DISABLED'});
 }
 export default async function(input={},ctx) {
