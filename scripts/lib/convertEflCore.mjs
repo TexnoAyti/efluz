@@ -41,11 +41,24 @@ export function convertEflCore(collections){
  const competitions=source(collections,'competitions');
  const occupancies=source(collections,'club_occupancies');
  const fixtures=source(collections,'fixtures');
+ const overrides=source(collections,'durable_fixture_overrides');
  const participants=source(collections,'competition_participants');
  const submissions=source(collections,'result_submissions');
  const disputes=source(collections,'disputes');
  const notifications=source(collections,'notifications');
  const auditLogs=source(collections,'audit_logs');
+ // The base fixture is not safe to migrate if a durable correction diverges.
+ // Production currently contains matching overrides, but verify every export
+ // independently because source rows can change before the cutover snapshot.
+ for(const [fixtureId,patch] of overrides){
+  const fixture=fixtures.get(fixtureId);
+  if(!fixture)fail('OVERRIDE_WITHOUT_FIXTURE');
+  for(const key of ['status','homeScore','awayScore','homeClubId','awayClubId']){
+   if(Object.hasOwn(patch,key)&&patch[key]!==fixture[key])
+    fail('FIXTURE_OVERRIDE_MISMATCH');
+  }
+ }
+
  const output={users:[],seasons:[],leagues:[],clubs:[],competitions:[],
    clubOccupancies:[],fixtures:[],participants:[],resultSubmissions:[],
    disputes:[],matchAccess:[],notifications:[],auditLogs:[]};
@@ -215,7 +228,7 @@ export function convertEflCore(collections){
  }
  return {rows:output,report:{mappedTables:Object.keys(output),
    scopedLeagueCopies:output.leagues.length,scopedClubCopies:output.clubs.length,
-   sourceFixtures:fixtures.size,notificationsPreserved:output.notifications.length,
+   sourceFixtures:fixtures.size,reconciledFixtureOverrides:overrides.size,notificationsPreserved:output.notifications.length,
    auditLogsPreserved:output.auditLogs.length,stagingMatchAccessWritable:false,
    requiresLegacyArchive:true,cutoverReady:false}};
 }
