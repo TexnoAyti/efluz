@@ -30,7 +30,7 @@ test('unaffiliated user is forbidden; linked member sees only linked names',asyn
   const result=await readPrivateTeamRoster(db,123,{teamId:'team1'});
   assert.equal(result.members.length,1);
   assert.equal(result.members[0].name,'Known player');
-  assert.doesNotMatch(JSON.stringify(result),/Unmatched|unresolvedMembers|m1|m2/);
+  assert.doesNotMatch(JSON.stringify(result),/Unmatched|unresolvedMembers|"id":|"userId":/);
   assert.doesNotMatch(JSON.stringify(result),/ownerId|managerId|memberId|userId/);
  }finally{sql.close();}
 });
