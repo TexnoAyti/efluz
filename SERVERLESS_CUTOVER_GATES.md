@@ -443,3 +443,10 @@ and verified operational rollback remain prerequisites for cutover.
 - `rejectTeamJoin` adds an idempotent, captain/manager/global-admin authorized `PENDING → REJECTED` transition, with SQL write-time permission checks and no membership/roster deletion.
 - `tgcloud/endpoints/rejectTeamJoin.js` remains guarded by the global disabled mutation switch. The SQLite workflow test covers authorization, replay, approved-request protection, bad inputs, and team scoping.
 - Still missing before production: confirmation of team/group membership, tickets/payment parity, actual captain policy, automatic notifications, audit/outbox side effects, and real Telegram SDK staging tests.
+
+## League dual-counter round engine (shadow-only, 2026-11-08)
+
+- `tgcloud/lib/advanceLeagueRound.js` implements a transaction-required admin-only progression for existing league matchdays. It advances `efl_leagues.current_round` **and** `efl_competitions.current_matchday` in the same caller-provided database transaction; absent a verified transaction provider it fails closed before touching state.
+- Current/past fixture scores are not rewritten. Unresolved prior matches are preserved (admin-controlled historical result windows are handled separately); open disputes or a missing next round block advancement. Each update repeats authorization, competition/league status, current round, fixture and dispute constraints. State is read back before commit, and replay is idempotent.
+- `scripts/serverlessAdvanceLeagueRound.test.mjs` exercises actual SQLite transactions and rollback on the second failed write, rights, idempotency and competition/league counter mismatches.
+- This is an **isolated engine, not a deployed endpoint**: the Telegram Serverless SDK's actual transactional interface and connection semantics are not yet verified. Do not implement a two-`db.run` endpoint outside one atomic transaction. Durable event audit, notifications and production source parity are still gates.
