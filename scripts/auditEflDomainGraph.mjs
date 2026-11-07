@@ -37,12 +37,12 @@ for(const d of s('competitions').values()){
 }
 const activeByClub=new Set(),activeByUserLeague=new Set();
 for(const d of s('club_occupancies').values()){
- if(!owns('users',d.userId)){
+ if(!d.userId||!owns('users',d.userId)){
    if(quarantine&&String(d.status).toUpperCase()==='RELEASED')quarantined.releasedOccupancies++;
    else defect('OCCUPANCY_WITHOUT_USER');
  }
- if(!owns('seasons',d.seasonId))defect('OCCUPANCY_WITHOUT_SEASON');
- if(!owns('clubs',d.clubId))defect('OCCUPANCY_WITHOUT_CLUB');
+ if(!d.seasonId||!owns('seasons',d.seasonId))defect('OCCUPANCY_WITHOUT_SEASON');
+ if(!d.clubId||!owns('clubs',d.clubId))defect('OCCUPANCY_WITHOUT_CLUB');
  if(String(d.status).toUpperCase()!=='ACTIVE')continue;
  const clubKey=String(d.seasonId)+':'+String(d.clubId);
  if(activeByClub.has(clubKey))defect('DUPLICATE_ACTIVE_CLUB');
@@ -55,8 +55,8 @@ for(const d of s('club_occupancies').values()){
 }
 let pendingOpponentCount=0,confirmedCount=0;
 for(const d of s('fixtures').values()){
- if(!owns('seasons',d.seasonId))defect('FIXTURE_WITHOUT_SEASON');
- if(!owns('competitions',d.competitionId))defect('FIXTURE_WITHOUT_COMPETITION');
+ if(!d.seasonId||!owns('seasons',d.seasonId))defect('FIXTURE_WITHOUT_SEASON');
+ if(!d.competitionId||!owns('competitions',d.competitionId))defect('FIXTURE_WITHOUT_COMPETITION');
  for(const side of ['homeClubId','awayClubId']){
   if(d[side]===null||d[side]===undefined||d[side]===''){pendingOpponentCount++;continue;}
   if(!owns('clubs',d[side]))defect('FIXTURE_WITHOUT_CLUB');
@@ -69,9 +69,9 @@ for(const d of s('fixtures').values()){
  }
 }
 for(const d of s('competition_participants').values()){
- if(!owns('seasons',d.seasonId))defect('PARTICIPANT_WITHOUT_SEASON');
- if(!owns('clubs',d.clubId))defect('PARTICIPANT_WITHOUT_CLUB');
- if(!owns('competitions',d.competitionId)){
+ if(!d.seasonId||!owns('seasons',d.seasonId))defect('PARTICIPANT_WITHOUT_SEASON');
+ if(!d.clubId||!owns('clubs',d.clubId))defect('PARTICIPANT_WITHOUT_CLUB');
+ if(!d.competitionId||!owns('competitions',d.competitionId)){
    if(quarantine)quarantined.participants++;
    else defect('PARTICIPANT_WITHOUT_COMPETITION');
  }
