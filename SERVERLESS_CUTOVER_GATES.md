@@ -336,3 +336,30 @@ Actual Telegram Serverless-hosted runtime remains unverified.
 
 **Do not enable these endpoints or merge this branch to production to
 experiment with live players.**
+
+## TEAMS private membership reconciliation (partial)
+
+The source TEAMS roster audit found 4 legacy teams and 5 embedded member
+records. Exactly 2 member records had a `userId` matching an existing EFLUZ
+user; the other 3 do not have a verified EFLUZ user mapping. No private
+identities were exported to the repository.
+
+The offline TEAMS converter now requires the authoritative source user-ID
+set and preserves each embedded member in `efl_team_members` as either
+`LINKED` or `UNRESOLVED`. It enforces one linked team per EFLUZ user and
+stores an `unresolved_member_count` privately on the team catalog row.
+Missing user links are **not guessed or silently dropped**. The original
+source object remains in the private verified raw archive.
+
+The TEAMS join-request engine checks the verified imported membership table,
+rejects duplicate membership, and rejects applications to teams whose
+legacy member mapping remains unresolved. A private roster endpoint
+`teamRoster` shows only linked member display names to authenticated
+team members; unresolved member names are limited to the team owner,
+assigned manager or global administrator. Public `teamsCatalog` responses
+continue to omit user IDs and roster details.
+
+The roster and admission features remain **SHADOW ONLY**. The remaining
+identity reconciliation, group memberships, ticket checks, captain lineup
+management, match counts, TEAMS cups and webhook notifications must be
+implemented and verified before any live join request may be approved.
