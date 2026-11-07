@@ -9,6 +9,8 @@ const expectedGated=new Map([
  ['proposeResult.js','MUTATION_CONTROL.enabled'],
  ['confirmResult.js','MUTATION_CONTROL.enabled'],
  ['finalizeUzeflifeResult.js','MUTATION_CONTROL.enabled'],
+ ['requestTeamJoin.js','MUTATION_CONTROL.enabled'],
+ ['approveTeamJoin.js','MUTATION_CONTROL.enabled'],
  ['matchChat.js','MUTATION_CONTROL.enabled'],
  ['markNotificationRead.js','MUTATION_CONTROL.enabled'],
  ['importBatch.js','IMPORT_CONTROL.enabled']
