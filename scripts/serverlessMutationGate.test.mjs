@@ -15,6 +15,7 @@ const expectedGated=new Map([
  ['markNotificationRead.js','MUTATION_CONTROL.enabled'],
  ['advanceCupRound.js','MUTATION_CONTROL.enabled'],
  ['setLateScoreWindow.js','MUTATION_CONTROL.enabled'],
+ ['queueNotificationDelivery.js','MUTATION_CONTROL.enabled'],
  ['importBatch.js','IMPORT_CONTROL.enabled']
 ]);
 test('all staging mutation endpoints remain fail-closed before production parity',async()=>{
