@@ -196,3 +196,13 @@ export const uzeflifeFixtures=table('efl_uzeflife_fixtures',{
  penaltyHome:integer('penalty_home'),penaltyAway:integer('penalty_away'),
  deadlineAt:integer('deadline_at'),
 },(t)=>({roundIndex:index('efl_uzeflife_fixtures_round_idx').on(t.round,t.bracket)}));
+
+
+// Public TEAMS catalog projection. Private membership, invitation, payment
+// and embedded base64 logos stay in the private source archive.
+export const teamsCatalog=table('efl_teams_catalog',{
+ id:text('id').primaryKey(),name:text('name').notNull(),
+ logoUrl:text('logo_url'),memberCount:integer('member_count').notNull(),
+ membershipRequired:boolean('membership_required').notNull().default(false),
+ updatedAt:integer('updated_at').notNull().default(0),
+},(t)=>({nameIndex:index('efl_teams_catalog_name_idx').on(t.name)}));
