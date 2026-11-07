@@ -148,3 +148,23 @@ export const rawDocuments=table('efl_raw_documents',{
   sourceKey:uniqueIndex('efl_raw_doc_source_key').on(t.sourceSpace,t.collectionPath,t.documentId),
   collectionIdx:index('efl_raw_doc_collection_idx').on(t.sourceSpace,t.collectionPath)
 }));
+
+
+// Oversized legacy documents (UZEFLIFE, proof archives) are stored as
+// deterministic, individually checksummed base64 chunks. Never expose this
+// table to a public endpoint; it can include private source data.
+export const rawDocumentParts=table('efl_raw_document_parts',{
+  id:text('id').primaryKey(),
+  sourceDocumentId:text('source_document_id').notNull(),
+  sourceSpace:text('source_space').notNull(),
+  collectionPath:text('collection_path').notNull(),
+  documentId:text('document_id').notNull(),
+  partIndex:integer('part_index').notNull(),
+  partCount:integer('part_count').notNull(),
+  partData:text('part_data').notNull(),
+  sourceChecksum:text('source_checksum').notNull(),
+  partChecksum:text('part_checksum').notNull(),
+},(t)=>({
+  sourcePart:uniqueIndex('efl_raw_parts_source_index_uidx').on(t.sourceDocumentId,t.partIndex),
+  sourceLookup:index('efl_raw_parts_source_idx').on(t.sourceSpace,t.collectionPath,t.documentId)
+}));
