@@ -1,8 +1,8 @@
 {
-  "asOf": "2026-11-07",
+  "asOf": "2026-11-08",
   "source": "efl_runtime.documents:production read-only inventory",
-  "note": "Historical counts only; all decisions must be reviewed before live migration. Do not copy operational secrets or reuse sessions.",
-  "observedTotal": 26305,
+  "note": "Read-only live production inventory, observed at generation 258600. Counts are NOT a consistent exported snapshot or cutover authorization. Review collections and runtime sessions must never be blindly imported.",
+  "observedTotal": 26556,
   "collections": [
     {
       "collection": "ai_community_sources",
@@ -21,7 +21,7 @@
     },
     {
       "collection": "audit_logs",
-      "observedDocuments": 1259,
+      "observedDocuments": 1263,
       "handling": "preserve"
     },
     {
@@ -31,12 +31,12 @@
     },
     {
       "collection": "club_memberships",
-      "observedDocuments": 150,
+      "observedDocuments": 156,
       "handling": "preserve"
     },
     {
       "collection": "club_occupancies",
-      "observedDocuments": 150,
+      "observedDocuments": 156,
       "handling": "preserve"
     },
     {
@@ -116,12 +116,12 @@
     },
     {
       "collection": "durable_fixture_overrides",
-      "observedDocuments": 446,
+      "observedDocuments": 453,
       "handling": "preserve"
     },
     {
       "collection": "durable_read_snapshots",
-      "observedDocuments": 841,
+      "observedDocuments": 859,
       "handling": "rebuild"
     },
     {
@@ -156,7 +156,7 @@
     },
     {
       "collection": "match_chat_rooms",
-      "observedDocuments": 12,
+      "observedDocuments": 15,
       "handling": "preserve"
     },
     {
@@ -186,7 +186,7 @@
     },
     {
       "collection": "notifications",
-      "observedDocuments": 3053,
+      "observedDocuments": 3055,
       "handling": "preserve"
     },
     {
@@ -206,7 +206,7 @@
     },
     {
       "collection": "result_submissions",
-      "observedDocuments": 42,
+      "observedDocuments": 45,
       "handling": "preserve"
     },
     {
@@ -216,7 +216,7 @@
     },
     {
       "collection": "runtime_state",
-      "observedDocuments": 282,
+      "observedDocuments": 292,
       "handling": "review"
     },
     {
@@ -271,7 +271,7 @@
     },
     {
       "collection": "telegram_ai_state",
-      "observedDocuments": 6557,
+      "observedDocuments": 6615,
       "handling": "review"
     },
     {
@@ -286,12 +286,12 @@
     },
     {
       "collection": "telegram_webhook_leases",
-      "observedDocuments": 9722,
+      "observedDocuments": 9832,
       "handling": "rebuild"
     },
     {
       "collection": "ticket_transactions",
-      "observedDocuments": 356,
+      "observedDocuments": 362,
       "handling": "preserve"
     },
     {
@@ -301,17 +301,17 @@
     },
     {
       "collection": "user_memberships",
-      "observedDocuments": 200,
+      "observedDocuments": 206,
       "handling": "preserve"
     },
     {
       "collection": "user_tickets",
-      "observedDocuments": 351,
+      "observedDocuments": 357,
       "handling": "preserve"
     },
     {
       "collection": "users",
-      "observedDocuments": 361,
+      "observedDocuments": 367,
       "handling": "preserve"
     },
     {
@@ -359,5 +359,8 @@
       "observedDocuments": 1,
       "handling": "review"
     }
-  ]
+  ],
+  "observedGeneration": 258600,
+  "observedCollectionPaths": 73,
+  "observedRootCollections": 71
 }
