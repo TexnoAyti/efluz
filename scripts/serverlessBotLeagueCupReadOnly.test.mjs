@@ -56,6 +56,6 @@ test('callbacks are private and cannot select a different user or season',async(
   assert.equal(await handleReadOnlyBotCommand(db,msg(123,'/cups','supergroup')),null);
   const banned=await handleReadOnlyBotCommand(db,msg(456,'/leagues'));
   assert.match(banned.text,/cheklangan/);
-  assert.equal(await handleReadOnlyBotCommand(db,msg(123,'/cups s1')).text.includes('Legacy cup'),false);
+  assert.equal((await handleReadOnlyBotCommand(db,msg(123,'/cups s1'))).text.includes('Legacy cup'),false);
  }finally{sql.close();}
 });
