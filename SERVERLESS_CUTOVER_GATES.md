@@ -21,9 +21,9 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 | Extra domain data | NOT IMPLEMENTED | Schema now includes participants, submissions, disputes, notifications and audit; their source conversion and parity remain unverified. Standings snapshots, payments, TEAMS, UZEFLIFE, cups and awards still need coverage |
 | Club claim / release | STAGING CLAIM ENGINE (DISABLED) | The new claim endpoint checks user, season, admission and uniqueness; full ban/admission policy parity, release flows and Telegram-hosted race tests are still missing |
 | Fixtures / score submission / confirmation | STAGING PROPOSAL + OPPONENT CONFIRMATION (DISABLED) | Guarded, opponent-only confirmation checks active ownership, open round, duplicate/conflicting submissions and disputes in SQLite; admin override, audit, notification, real Telegram SDK and official policy parity remain missing |
-| Admin tools | NOT IMPLEMENTED | Auth/role checks, side-effect audit, all required actions |
+| Admin tools | READ-ONLY STAGING OVERVIEW | Admin role enforced using signed Telegram user, summary counts only; mutation controls, audit trails, payments and complete UI not migrated |
 | Chat | STAGING SQL ENGINE TESTED | SDK-independent persisted write confirmation, ACL/replay/read-only SQLite tests pass; actual Telegram-hosted SDK and owner-release parity still needed |
-| Telegram updates | PROBE ONLY | message, callback_query, channel posts, payment events |
+| Telegram updates | PRIVATE READ-ONLY COMMANDS AND CALLBACKS | Staging /start, /help, /myclub, /serverless-check, callback status/club; group posts, payments, full bot flows not migrated |
 | AI assistant | NOT IMPLEMENTED | Authorization, quotas, no unsafe mutations, parity |
 | Notifications and scheduled work | NOT IMPLEMENTED | Delivery deduplication, timers/cron replacement, replay proof |
 | Frontend | SHADOW ONLY | Every authenticated API call migrated with parity and UI E2E; new writes intentionally not routed live |
@@ -134,3 +134,25 @@ Still required before enabling: official matchday policy mapping, first/second
 season rules, exactly-once audit and notification side effects, dispute
 resolution, admin overrides, live Telegram SDK smoke tests and source/target
 fixture parity. **Never enable all shadow mutations merely to pass a demo.**
+
+## Staging bot and staff overview (this branch)
+
+- `tgcloud/handlers/message.js` now supports read-only `/start`,
+  `/help`, `/myclub` and `/serverless-check` in private chat only.
+  The user's Telegram ID is obtained from the platform-signed message,
+  not from command arguments. Private club ownership never appears in
+  group responses.
+- `tgcloud/handlers/callback_query.js` accepts only `efl:status`
+  and `efl:myclub`; it ignores other callbacks and groups, leaving
+  production tournament controls disabled.
+- `tgcloud/endpoints/adminOverview.js` is a read-only authenticated,
+  non-banned-admin endpoint returning aggregate counts. It never
+  returns raw player records and does not mutate any data.
+- SQLite tests cover unauthorized users, banned admins, mixed chat
+  identities and safe callback handling.
+
+**Reminder:** this is not a functional replacement for the current
+Telegram bot, web app or admin panel. The existing production webhook
+must not be switched until the missing handlers and operational workflows
+have been implemented, tested on a separate Telegram bot, and validated
+against a fresh production snapshot.
