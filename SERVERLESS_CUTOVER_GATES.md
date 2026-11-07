@@ -241,14 +241,24 @@ The current source graph was inspected without exporting identifiable rows:
 - No orphan result submissions or fixture-to-competition references were
   observed in this read-only check.
 
-The strict default normalized conversion rejects the orphan rows. For
-**staging only**, the explicit `--quarantine-historical` option may exclude
+The strict source graph audit and normalized conversion reject the orphan rows by default. For
+**staging only**, the explicit `--quarantine-historical` option on both
+`auditEflDomainGraph.mjs` and `convertEflCoreSnapshot.mjs` may exclude
 only released occupancies, undeliverable historical notifications and
 participants of removed competitions from operational tables. It reports
 counts in `quarantinedHistorical`; it **never** skips active ownership.
 Every excluded source document must first be retained and independently
 verified in the private raw-document archive. No fake users or competitions
 are generated. Excluded data does **not** get deleted from Supabase.
+
+Required safe sequence for historical quarantine: first produce and verify
+the complete private raw-document archive using
+`prepareEflRawDocumentBatches.mjs` and `verifyEflRawBatches.mjs`;
+then run the graph audit and core converter with the same explicit
+`--quarantine-historical` flag. Compare the three quarantine counters
+(`releasedOccupancies`, `notifications`, `participants`) with the
+source snapshot before staging import. Never use this flag to bypass an
+active ownership or fixture correction mismatch.
 
 These counts are a point-in-time diagnostic, **not** a clean cutover
 certificate or an authorization to delete historical records.
