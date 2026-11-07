@@ -93,7 +93,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     setSelectedFixtureForSubmit(null);
     setError(null);
     try {
-      const res = await api.getCompetitionFixtures(selectedCupId);
+      const res = await api.getCompetitionFixtures(selectedCupId, undefined, undefined, false, activeSeasonId);
       if (requestId !== fixtureRequest.current || currentFixtureScope.current !== fixtureScope) return;
       setCupFixtures(res.fixtures || []);
     } catch (err) {

@@ -1,6 +1,5 @@
 import { isSeasonCompetitionEnabled } from './seasonParticipationPolicy';
 import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
-import type {AdminTaskPage,AdminTaskPriority,AdminTaskGroup} from '../types/adminTasks';
 import type { CupTieBreakScores } from './cupResult';
 import type { MatchdayControlAction, MatchdayControlOverview } from './matchdayState';
 import type { AdminPermissions } from '../types';
@@ -10,7 +9,6 @@ export interface ClubClaimReceipt { id: string; clubId: string; clubName: string
 export interface ClubClaimResponse { success: boolean; message: string; club: Pick<Club, 'id'|'name'>; pendingSync?: boolean; request?: ClubClaimReceipt; }
 
 export interface ClubAdmissionStatus {
-  automatic?: boolean;
   seasonId: string;
   enabled: boolean;
   stage: number;
@@ -182,7 +180,6 @@ interface RequestOptions extends RequestInit {
   retries?: number;
   timeoutMs?: number;
   skipAuthentication?: boolean;
-  allowStaleOnError?: boolean;
   dedupeKey?: string;
 }
 
@@ -286,7 +283,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         // Stale cache preservation: If we have existing cached data for this GET request,
         // preserve and return it on network timeout or quota exhaustion rather than crashing the view
         const transient = !err.httpStatus || err.httpStatus >= 500 || err.httpStatus === 429 || err.name === 'AbortError';
-        if (isGet && transient && options.allowStaleOnError !== false) {
+        if (isGet && transient) {
           const staleCached = memoryCache.get(cacheKey);
           if (staleCached && staleCached.data && Date.now() - staleCached.timestamp < 5 * 60 * 1000) {
             console.warn(`[API CACHE PRESERVED] Returning cached data for ${endpoint} due to error:`, err.message);
@@ -508,10 +505,11 @@ export const api = {
     return request(`/api/competitions/${competitionId}/participants`, { cacheTtlMs: 1800000, skipCache });
   },
 
-  async getCompetitionFixtures(competitionId: string, matchday?: number, status?: string, skipCache = false): Promise<{ fixtures: Fixture[] }> {
+  async getCompetitionFixtures(competitionId: string, matchday?: number, status?: string, skipCache = false, seasonId?: string): Promise<{ fixtures: Fixture[] }> {
     let url = `/api/competitions/${competitionId}/fixtures?`;
     if (matchday) url += `matchday=${matchday}&`;
     if (status) url += `status=${status}&`;
+    if (seasonId) url += `seasonId=${encodeURIComponent(seasonId)}&`;
     return request(url, { cacheTtlMs: 60000, skipCache });
   },
 
@@ -1366,13 +1364,8 @@ export const api = {
     });
   },
 
-  async getTelegramAiTasks(filters:{priority?:AdminTaskPriority;group?:AdminTaskGroup;offset?:number}={}):Promise<AdminTaskPage>{
-    const query=new URLSearchParams();for(const [key,value] of Object.entries(filters))if(value!==undefined)query.set(key,String(value));
-    return request('/api/admin/telegram-ai/tasks?'+query,{skipCache:true,timeoutMs:25000,retries:0,allowStaleOnError:false});
-  },
-
   async getTelegramAiDailyReport(): Promise<{success:boolean;text:string;complete:boolean;stale:boolean}> {
-    return request('/api/admin/telegram-ai/daily-report', {skipCache:true,timeoutMs:25000,retries:0,allowStaleOnError:false});
+    return request('/api/admin/telegram-ai/daily-report', {skipCache:true,timeoutMs:15000});
   },
 
   async getTelegramAiDiagnostics(): Promise<{

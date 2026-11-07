@@ -56,7 +56,7 @@ export const AdminTournamentImageExport: React.FC<{ competition?: Pick<Competiti
         model=standingsImageModel(competition.name,activeSeasonId,data.standings,language,clubs);
         model.cached=ownersCached||Boolean((data as any).degraded||(data as any).stale);
       }else{
-        const data=await api.getCompetitionFixtures(competition.id,selectedRound,undefined,true);
+        const data=await api.getCompetitionFixtures(competition.id,selectedRound,undefined,true,activeSeasonId);
         model=matchdayImageModel(competition.name,activeSeasonId,data.fixtures,selectedRound,language,clubs);
         model.cached=ownersCached||Boolean((data as any).degraded||(data as any).stale);
       }

@@ -1,7 +1,5 @@
-import { SeasonPreparationCard } from './SeasonPreparationCard';
 import { seasonQualificationRanges } from '../lib/seasonQualificationPolicy';
 import { CURRENT_SEASON_ID } from '../lib/seasonParticipationPolicy';
-import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import {CompetitionRounds, CompetitionFixtureCard, CompetitionStandings} from './CompetitionContent';
 import {CompetitionBanner, CompetitionTabs, CompetitionHeading} from './CompetitionChrome';
 import { isLeagueSelectionOpen } from '../lib/clubAdmission';
@@ -47,25 +45,12 @@ const welcomeLeagueIcons: Record<string, string> = {
   'league-ligue-1': 'ligue-1',
 };
 
-const secondSeasonLeagueLogos: Record<string, string> = {
-  'league-premier-league': '/welcome/premier-league.svg',
-  'league-la-liga': '/welcome/la-liga.svg',
-  'league-serie-a': '/welcome/serie-a.svg',
-  'league-bundesliga': '/welcome/bundesliga.svg',
-  'league-ligue-1': '/welcome/ligue-1.svg',
-  // Bundled transparent SVGs prevent failed external CDNs in Telegram WebView.
-  'league-uzbekistan-superliga': '/welcome/uzbekistan-superliga.svg',
-  'league-saudi-pro-league': '/welcome/saudi-pro-league.svg',
-  'league-j1': '/welcome/j1-league.svg',
-  'league-turkey-super-lig': '/welcome/turkey-super-lig.svg',
-}
-
 interface ClubsViewProps {
   onNavigateTab?: (tab: any) => void;
 }
 
 export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
-  const { user, currentClub, ownedClubs, activeSeasonId, setActiveSeasonId, refreshUserData, showToast } = useAuth();
+  const { user, currentClub, ownedClubs, activeSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
   const fixtureStatusText: Record<string, string> = {
@@ -86,19 +71,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   }[language] || { unavailable: 'Klub qabuli holatini yuklab bo‘lmadi.', checking: 'Klub qabuli tekshirilmoqda…', open: 'Klub tanlash ochiq.', leagueOpen: 'Bu ligada klub qabuli ochiq.', otherLeague: (name: string) => `Hozir ${name} klublari qabul qilinmoqda. Bu liga navbatda yoki yopilgan.`, finished: 'Klub qabuli yakunlangan.', retry: 'Qayta urinish', closed: 'Qabul yopiq' };
 
   // League & Data states
-  // Render the prepared second-season navigation immediately; never briefly
-  // display the previous season while waiting for the API response.
-  const [continent, setContinent] = useState<'EUROPE' | 'ASIA'>('EUROPE');
-  const [leagues, setLeagues] = useState<League[]>(() =>
-    activeSeasonId === EFL_SECOND_SEASON.id
-      ? EFL_SECOND_SEASON.leagues.map(league => ({
-          id: league.id, name: league.name, country: league.country,
-          tier: 1, logoUrl: '', totalClubs: league.roster.clubs.length, createdAt: '',
-        }))
-      : []
-  );
+  const [leagues, setLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>(() => {
-    if (activeSeasonId === EFL_SECOND_SEASON.id) return 'league-premier-league';
     try { return EFL_2_DESIGN_ENABLED && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
   });
   const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>(() => {
@@ -228,29 +202,35 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   } | null>(null);
 
   // 1. Load clubs for selected league
-  const clubRequestVersion = useRef(0);
   const loadClubsForLeague = useCallback(async (leagueId: string, forceRefresh = false) => {
     if (!leagueId) return;
-    const version = ++clubRequestVersion.current;
-    // Don't leave old-season or old-league club cards visible during a switch.
-    setClubs([]);
     setIsLoadingClubs(true);
     setError(null);
     try {
       const res = await api.getLeagueClubs(leagueId, activeSeasonId, forceRefresh);
-      if (version !== clubRequestVersion.current) return;
-      setClubs(res.clubs || []);
+      if (res.clubs && res.clubs.length > 0) {
+        setClubs(res.clubs);
+      } else if (clubs.length === 0) {
+        setClubs([]);
+      }
     } catch (err: any) {
-      if (version !== clubRequestVersion.current) return;
       console.error('Failed to load clubs:', err);
-      const isQuota = err?.httpStatus === 429 ||
-        err?.data?.error === 'RESOURCE_EXHAUSTED' || err?.isQuota ||
-        err?.message?.includes('quota') || err?.message?.includes('RESOURCE_EXHAUSTED');
-      setError({ message: "Couldn't load data. Please try again.", isQuota });
+      const isQuota =
+        err?.httpStatus === 429 ||
+        err?.data?.error === 'RESOURCE_EXHAUSTED' ||
+        err?.isQuota ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('RESOURCE_EXHAUSTED');
+
+      setError({
+        message: "Couldn't load data. Please try again.",
+        isQuota,
+      });
+      // Do not wipe out existing clubs if we have them cached
     } finally {
-      if (version === clubRequestVersion.current) setIsLoadingClubs(false);
+      setIsLoadingClubs(false);
     }
-  }, [activeSeasonId]);
+  }, [activeSeasonId, clubs.length]);
 
   // 2. Load fixtures & standings for selected league on demand
   const loadLeagueStandings = useCallback(async (leagueId: string, compsList?: Competition[]) => {
@@ -277,7 +257,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     setIsLoadingFixtures(true);
     try {
       const targetMd = matchday ?? selectedMatchday;
-      const fixRes = await api.getCompetitionFixtures(matchingComp.id, targetMd);
+      const fixRes = await api.getCompetitionFixtures(matchingComp.id, targetMd, undefined, false, activeSeasonId);
       if (fixRes.fixtures) {
         setLeagueFixtures(fixRes.fixtures);
       }
@@ -309,7 +289,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         setSelectedLeagueId((prev) => {
           const exists = domesticLeagues.some((l) => l.id === prev);
           const target = exists ? prev : domesticLeagues[0].id;
-          if (activeSeasonId !== EFL_SECOND_SEASON.id) void loadClubsForLeague(target);
+          loadClubsForLeague(target);
           return target;
         });
       }
@@ -330,13 +310,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   }, [activeSeasonId, loadClubsForLeague]);
 
   useEffect(() => {
-    if (activeSeasonId === EFL_SECOND_SEASON.id) {
-      // Fetch prepared-season club availability without waiting for the
-      // competitions endpoint, which can be considerably slower.
-      void loadClubsForLeague('league-premier-league');
-    }
-    void loadLeaguesAndComps();
-  }, [activeSeasonId, loadClubsForLeague, loadLeaguesAndComps]);
+    loadLeaguesAndComps();
+  }, [loadLeaguesAndComps]);
 
   // Load tab-specific data when tab or league changes
   useEffect(() => {
@@ -375,7 +350,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
       setClubToClaim(null);
       return;
     }
-    if (ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (activeSeasonId === EFL_SECOND_SEASON.id ? 1 : premiumActive ? 2 : 1) || !premiumStatusReady) {
+    if (ownedClubs.some((owned) => owned.leagueId === club.leagueId) || ownedClubs.length >= (premiumActive ? 2 : 1) || !premiumStatusReady) {
       showToast(ownedClubs.some((owned) => owned.leagueId === club.leagueId) ? 'Bitta ligadan faqat bitta klub tanlash mumkin.' : t.alreadyHaveClubMessage, 'error');
       setClubToClaim(null);
       return;
@@ -466,28 +441,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
   const availableCount = clubs.filter((c) => !isClubTaken(c)).length;
   const claimedCount = clubs.filter((c) => isClubTaken(c)).length;
 
-  const openSeasonTwoLeagues = () => {
-    setActiveLeagueTab('CLUBS');
-    setSelectedLeagueId('league-premier-league');
-  };
-
-  useEffect(() => {
-    if (activeSeasonId !== 'season-2027-28' || leagues.length === 0) return;
-    const target = document.getElementById('efl-season-two-league-picker');
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [activeSeasonId, leagues.length]);
-
-  const isSecondSeason = activeSeasonId === EFL_SECOND_SEASON.id;
-  const visibleLeagues = isSecondSeason
-    ? leagues.filter(league => EFL_SECOND_SEASON.leagues.some(item => item.id === league.id && item.group === continent))
-    : leagues;
-  const changeContinent = (next: 'EUROPE' | 'ASIA') => {
-    if (continent === next) return;
-    setContinent(next);
-    const first = EFL_SECOND_SEASON.leagues.find(item => item.group === next);
-    if (first) handleSelectLeague(first.id);
-  };
-
   const currentLeague = leagues.find((l) => l.id === selectedLeagueId) || leagues[0];
 
   // Group fixtures by matchday
@@ -534,8 +487,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
 
 
   return (
-    <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${activeSeasonId === EFL_SECOND_SEASON.id ? 'efl-season-two-page' : ''} ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
-      {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3.5 text-[var(--efl-text)] shadow-sm dark:shadow-black/20"><div className="min-w-0"><strong className="text-sm font-black text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="mt-1 text-xs text-[var(--efl-text-2)]">Klub qabuli shu yerda. Davom etayotgan uchrashuvlar 1-mavsumda.</p></div><button type="button" className="min-h-[40px] shrink-0 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-2 text-xs font-bold text-[var(--efl-text)] transition-colors hover:border-[var(--efl-primary)] hover:text-[var(--efl-primary)] dark:shadow-black/20" onClick={() => setActiveSeasonId(CURRENT_SEASON_ID)}>1-mavsumga qaytish</button></div>}
+    <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!EFL_2_DESIGN_ENABLED && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -571,7 +523,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         <div className="efl-league-section-heading flex items-center justify-between">
           <div className="text-[11px] font-black text-[var(--efl-text-2)] uppercase tracking-wider flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-[var(--efl-primary)]" />
-            <span>{EFL_2_DESIGN_ENABLED ? previewText.domestic : 'Domestic Leagues'} ({activeSeasonId === EFL_SECOND_SEASON.id ? '2027/28' : '2026/27'})</span>
+            <span>{EFL_2_DESIGN_ENABLED ? previewText.domestic : 'Domestic Leagues'} (2026/27)</span>
           </div>
           <button
             id="btn-refresh-clubs-view"
@@ -591,33 +543,11 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           </button>
         </div>
 
-        {isSecondSeason && (
-          <div role="group" aria-label="Qitani tanlash" className="efl-season-two-tabs grid grid-cols-2 gap-2 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-1.5 text-[var(--efl-text)] dark:shadow-inner dark:shadow-black/15">
-            {([
-              { id: 'EUROPE' as const, label: 'Yevropa', count: 5 },
-              { id: 'ASIA' as const, label: 'Osiyo', count: 4 },
-            ]).map(item => (
-              <button type="button" key={item.id} aria-pressed={continent === item.id}
-                onClick={() => changeContinent(item.id)}
-                className={`flex min-h-[45px] items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-extrabold transition-colors ${continent === item.id
-                  ? 'border border-[var(--efl-primary)]/30 bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] shadow-sm dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-300'
-                  : 'border border-transparent text-[var(--efl-text-2)] hover:bg-[var(--efl-surface)] hover:text-[var(--efl-text)]'}`}>
-                {item.label}<span className="text-[10px] tabular-nums opacity-60">{item.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
         {leagues.length > 0 && (
-          <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={activeSeasonId === EFL_SECOND_SEASON.id && EFL_2_DESIGN_ENABLED
-            ? 'flex w-full min-w-0 max-w-full items-center justify-start gap-3 overflow-x-auto overscroll-x-contain px-1 pb-3 pt-2 scrollbar-none scroll-mt-24 efl-league-icon-selector'
-            : `flex w-full min-w-0 max-w-full items-center gap-3 overflow-x-auto overscroll-x-contain pb-3 pt-1 scrollbar-none scroll-mt-24 ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
-            {visibleLeagues.map((league) => {
+          <div className={`flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none ${EFL_2_DESIGN_ENABLED ? 'efl-league-icon-selector' : ''}`}>
+            {leagues.map((league) => {
               const isSelected = selectedLeagueId === league.id;
               const welcomeIcon = EFL_2_DESIGN_ENABLED ? welcomeLeagueIcons[league.id] : undefined;
-              const secondSeason = activeSeasonId === EFL_SECOND_SEASON.id;
-              const logoOnly = secondSeason && EFL_2_DESIGN_ENABLED;
-              const logoUrl = logoOnly ? secondSeasonLeagueLogos[league.id] : welcomeIcon ? `/welcome/${welcomeIcon}.svg` : league.logoUrl;
               const flag =
                 league.country === 'England'
                   ? '🏴󠁧󠁢󠁥󠁮󠁧󠁿'
@@ -627,11 +557,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   ? '🇮🇹'
                   : league.country === 'Germany'
                   ? '🇩🇪'
-                  : league.country === 'France' ? '🇫🇷'
-                  : league.country === 'Uzbekistan' ? '🇺🇿'
-                  : league.country === 'Saudi Arabia' ? '🇸🇦'
-                  : league.country === 'Japan' ? '🇯🇵'
-                  : league.country === 'Turkey' ? '🇹🇷' : '🏆';
+                  : '🇫🇷';
 
               return (
                 <button
@@ -639,26 +565,23 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   id={`btn-league-${league.id}`}
                   aria-label={league.name}
                   aria-pressed={isSelected}
-                  title={`${league.name} — ${isLeagueSelectionOpen(admission, league.id) ? 'Qabul ochiq' : 'Navbatda'}`}
+                  title={league.name}
                   onClick={() => handleSelectLeague(league.id)}
-                  className={`flex items-center justify-center gap-2 rounded-xl font-bold text-xs transition-all shrink-0 ${logoOnly ? 'efl-season-two-league-tile' : ''} ${logoOnly ? 'relative h-[76px] w-[72px] min-w-[72px] p-2 border-0 bg-transparent hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--efl-primary)]' : 'min-h-[48px] px-4 py-3 border whitespace-nowrap'} ${
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 transition-all min-h-[42px] border ${
                     isSelected
-                      ? (logoOnly ? 'opacity-100 after:absolute after:bottom-0 after:left-1/4 after:right-1/4 after:h-[3px] after:rounded-full after:bg-[var(--efl-primary)]' : 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/40 text-[var(--efl-primary)] font-black shadow-xs')
-                      : (logoOnly ? 'opacity-70 hover:opacity-100' : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]')
+                      ? 'bg-[var(--efl-primary-soft)] border-[var(--efl-primary)]/40 text-[var(--efl-primary)] font-black shadow-xs'
+                      : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]'
                   }`}
                 >
-                  {Boolean(logoUrl) && <img
-                    src={logoUrl}
+                  <img
+                    src={welcomeIcon ? `/welcome/${welcomeIcon}.svg` : league.logoUrl}
                     alt={league.name}
-                    loading="lazy"
-                    className={logoOnly
-                      ? `block h-[60px] w-[60px] shrink-0 object-contain drop-shadow-sm dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.08)] ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'dark:brightness-0 dark:invert' : ''}`
-                      : `w-4 h-4 object-contain shrink-0 ${welcomeIcon ? `efl-league-icon ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'efl-league-icon-monochrome' : ''}` : 'efl-theme-league-logo'}`}
+                    className={`w-4 h-4 object-contain shrink-0 ${welcomeIcon ? `efl-league-icon ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'efl-league-icon-monochrome' : ''}` : 'efl-theme-league-logo'}`}
                     onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                      (e.target as HTMLElement).style.display = 'none';
                     }}
-                  />}
-                  {!logoOnly && !EFL_2_DESIGN_ENABLED && <>
+                  />
+                  {!EFL_2_DESIGN_ENABLED && <>
                   <span>{flag}</span>
                   <span>{league.name}</span>
                   <span
@@ -668,9 +591,8 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                         : 'bg-[var(--efl-surface-2)] text-[var(--efl-text-2)]'
                     }`}
                   >
-                    {secondSeason ? (EFL_SECOND_SEASON.leagues.find(item => item.id === league.id)?.roster.clubs.length ?? 0) : (league.totalClubs || (league.name === 'Bundesliga' || league.name === 'Ligue 1' ? 18 : 20))}
+                    {league.totalClubs || (league.name === 'Bundesliga' || league.name === 'Ligue 1' ? 18 : 20)}
                   </span>
-
                   </>}
                 </button>
               );
@@ -679,7 +601,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         )}
       </div>
 
-      {activeSeasonId === CURRENT_SEASON_ID && <SeasonPreparationCard compact onOpenLeagues={openSeasonTwoLeagues} />}
+      {activeSeasonId === CURRENT_SEASON_ID && (
+        <div className="efl-upcoming-league">
+          <img src="/welcome/ligue-1.svg" alt="" aria-hidden="true" className="efl-league-icon-monochrome" />
+          <span>Ligue 1</span><span className="efl-upcoming-league-season">{language === 'uz' ? 'Keyingi mavsum' : language === 'ru' ? 'Следующий сезон' : 'Next season'} · 2027/28</span>
+        </div>
+      )}
 
       {/* 2. Dedicated Selected League Header Banner */}
       {currentLeague && (
@@ -687,7 +614,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <CompetitionHeading
               emblem={<img
-                src={isSecondSeason ? secondSeasonLeagueLogos[currentLeague.id] : EFL_2_DESIGN_ENABLED && welcomeLeagueIcons[currentLeague.id] ? `/welcome/${welcomeLeagueIcons[currentLeague.id]}.svg` : currentLeague.logoUrl}
+                src={EFL_2_DESIGN_ENABLED && welcomeLeagueIcons[currentLeague.id] ? `/welcome/${welcomeLeagueIcons[currentLeague.id]}.svg` : currentLeague.logoUrl}
                 alt={currentLeague.name}
                 className="w-10 h-10 object-contain"
                 onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
@@ -697,7 +624,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                   {currentLeague.country} • {EFL_2_DESIGN_ENABLED ? previewText.tier : 'Tier'} {currentLeague.tier}
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] border border-[var(--efl-primary)]/20">
-                  {isSecondSeason ? '2027/28 · QABUL' : '2026/27'} {EFL_2_DESIGN_ENABLED && !isSecondSeason ? previewText.active : !isSecondSeason ? 'Active' : ''}
+                  2026/27 {EFL_2_DESIGN_ENABLED ? previewText.active : 'Active'}
                 </span>
               </>}
               title={currentLeague.name}
