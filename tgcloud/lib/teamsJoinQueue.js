@@ -1,5 +1,5 @@
 // The only TEAMS application queries are the signed user's queue and
-// a narrow pending queue for a verified, non-banned global administrator.
+// a narrow pending queue for the verified team owner, manager or administrator.
 export async function readTeamJoinQueue(db,telegramId,input={}){
  if(!/^[1-9][0-9]{0,19}$/.test(String(telegramId??'')))throw Error('TEAMS_AUTH_REQUIRED');
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('INVALID_TEAMS_QUEUE');
@@ -13,10 +13,16 @@ export async function readTeamJoinQueue(db,telegramId,input={}){
  const user=await db.get('SELECT id,is_admin AS admin,is_banned AS banned FROM efl_users WHERE telegram_id=:telegram',
   {':telegram':String(telegramId)});
  if(!user||user.banned)throw Error('TEAMS_QUEUE_FORBIDDEN');
- if(scope==='admin'&&!user.admin)throw Error('TEAMS_ADMIN_FORBIDDEN');
- const extra=scope==='admin'?"WHERE r.status='PENDING'":"WHERE r.user_id=:user";
- const params={':limit':limit+1,':offset':cursor};
- if(scope==='mine')params[':user']=user.id;
+ if(scope==='admin'&&!user.admin){
+  const manages=await db.get('SELECT id FROM efl_teams_catalog WHERE owner_user_id=:user OR admin_user_id=:user LIMIT 1',
+    {':user':user.id});
+  if(!manages)throw Error('TEAMS_ADMIN_FORBIDDEN');
+ }
+ const extra=scope==='admin'
+  ?"WHERE r.status='PENDING' AND (:globalAdmin=1 OR t.owner_user_id=:user OR t.admin_user_id=:user)"
+  :"WHERE r.user_id=:user";
+ const params={':limit':limit+1,':offset':cursor,':user':user.id};
+ if(scope==='admin')params[':globalAdmin']=user.admin?1:0;
  const rows=await db.all(`SELECT r.id AS requestId,r.team_id AS teamId,
    t.name AS teamName,r.status,r.created_at AS createdAt
    ${scope==='admin'?',r.user_id AS userId':''}
