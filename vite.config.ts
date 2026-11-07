@@ -4,11 +4,15 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  // Until feature parity, Telegram must host ONLY the isolated read-only
+  // smoke app. The legacy React UI still calls Vercel for key operations.
+  const staging = process.env.EFL_TGCLOUD_STATIC === '1';
   return {
-    plugins: [react(), tailwindcss()],
-    // Keep the Telegram-hosted static bundle separate from the Vercel/Node
-    // output directory. Never upload dist/server.cjs or backend source maps.
-    build: { manifest: true, ...(process.env.EFL_TGCLOUD_STATIC === '1' ? { outDir: 'dist-tgcloud' } : {}) },
+    ...(staging ? { root: path.resolve(__dirname, 'tgcloud-staging'), publicDir: false } : {}),
+    plugins: staging ? [] : [react(), tailwindcss()],
+    build: staging
+      ? { outDir: path.resolve(__dirname, 'dist-tgcloud'), emptyOutDir: true, sourcemap: false }
+      : { manifest: true },
     // A static design walkthrough is available only in local dev and Vercel Preview builds.
     define: { __EFL_DESIGN_PREVIEW_BUILD__: JSON.stringify(process.env.VERCEL_ENV === 'preview') },
     resolve: {
