@@ -8,7 +8,8 @@ function setup(){
  sql.exec(`
  CREATE TABLE efl_users(id TEXT PRIMARY KEY,telegram_id TEXT UNIQUE,
    is_admin INTEGER NOT NULL,is_banned INTEGER NOT NULL);
- CREATE TABLE efl_teams_catalog(id TEXT PRIMARY KEY,membership_required INTEGER NOT NULL,owner_user_id TEXT,admin_user_id TEXT);
+ CREATE TABLE efl_teams_catalog(id TEXT PRIMARY KEY,membership_required INTEGER NOT NULL,owner_user_id TEXT,admin_user_id TEXT,unresolved_member_count INTEGER NOT NULL);
+ CREATE TABLE efl_team_members(id TEXT PRIMARY KEY,user_id TEXT,status TEXT);
  CREATE TABLE efl_team_join_requests(id TEXT PRIMARY KEY,team_id TEXT NOT NULL,
    user_id TEXT NOT NULL,telegram_id TEXT NOT NULL,status TEXT NOT NULL,
    created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
@@ -17,7 +18,7 @@ function setup(){
    WHERE status='APPROVED';
  INSERT INTO efl_users VALUES ('u1','123',0,0),('u2','456',0,0),
    ('admin','999',1,0),('banned','789',0,1),('captain','777',0,0),('manager','888',0,0);
- INSERT INTO efl_teams_catalog VALUES('team1',0,'captain','manager'),('team2',0,'admin',NULL),('restricted',1,'captain',NULL);
+ INSERT INTO efl_teams_catalog VALUES('team1',0,'captain','manager',0),('team2',0,'admin',NULL,0),('restricted',1,'captain',NULL,0),('unresolved',0,'captain',NULL,3);
  `);
  return {sql,db:{
   async get(q,p={}){return sql.prepare(q).get(p)??null;},
@@ -77,6 +78,22 @@ test('verified captain and assigned team manager may approve only their team',as
   const approved=await approveTeamJoin(db,{telegramId:'888'},
    {requestId:'request-0003'});
   assert.equal(approved.status,'APPROVED');
+ }finally{sql.close();}
+});
+test('cannot grant a second membership while legacy member identity is unresolved',async()=>{
+ const {sql,db}=setup();
+ try{
+  await assert.rejects(submitTeamJoin(db,{id:'u1',telegramId:'123'},
+   {teamId:'unresolved',requestId:'request-0001'}),/TEAMS_LEGACY_MEMBERS_UNRESOLVED/);
+  sql.exec("INSERT INTO efl_team_members VALUES('m1','u1','LINKED')");
+  await assert.rejects(submitTeamJoin(db,{id:'u1',telegramId:'123'},
+   {teamId:'team1',requestId:'request-0001'}),/TEAMS_ALREADY_MEMBER/);
+  sql.exec("DELETE FROM efl_team_members");
+  await submitTeamJoin(db,{id:'u1',telegramId:'123'},
+   {teamId:'team1',requestId:'request-0001'});
+  sql.exec("INSERT INTO efl_team_members VALUES('m2','u1','LINKED')");
+  await assert.rejects(approveTeamJoin(db,{telegramId:'999'},
+   {requestId:'request-0001'}),/TEAMS_JOIN_APPROVAL_CONFLICT/);
  }finally{sql.close();}
 });
 test('mandatory group membership and bans remain fail closed',async()=>{
