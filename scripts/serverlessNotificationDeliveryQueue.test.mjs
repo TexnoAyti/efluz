@@ -39,7 +39,7 @@ test('only admin enqueues an existing recipient notification, replay is idempote
   assert.equal(sql.prepare('SELECT COUNT(*) AS total FROM efl_notification_deliveries').get().total,1);
   assert.equal(sql.prepare('SELECT user_id AS userId FROM efl_notification_deliveries').get().userId,'member');
   const audit=await readNotificationDeliveryAudit(db,'999');
-  assert.deepEqual(audit.stats,{total:1,pending:1,leased:0,sent:0,failed:0});
+  assert.deepEqual(audit.stats,{total:1,pending:1,leased:0,sent:0,failed:0,review:0});
   assert.doesNotMatch(JSON.stringify(audit),/Sensitive content|123|member/);
  }finally{sql.close();}
 });
