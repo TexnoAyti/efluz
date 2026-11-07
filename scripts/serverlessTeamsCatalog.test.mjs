@@ -20,7 +20,8 @@ test('projection keeps public fields, drops embedded base64 and private roster',
  assert.equal(rows.teamsCatalog[0].logo_url,null);
  assert.equal(rows.teamsCatalog[1].logo_url,'https://example.org/club.png');
  assert.equal(rows.teamsCatalog[2].logo_url,null);
- assert.doesNotMatch(JSON.stringify(rows),/secret-owner|private-member|private-id|data:image/);
+ assert.equal(rows.teamsCatalog[0].owner_user_id,'private-id');
+ assert.doesNotMatch(JSON.stringify(rows),/secret-owner|private-member|data:image/);
  assert.ok(validateImportBatch({table:'teamsCatalog',batchId:'teamsCatalog:00000000',
    rows:rows.teamsCatalog}));
  const invalid=[...source,{...source[0]}];
@@ -31,14 +32,14 @@ test('TEAMS list is strictly paginated and never exposes private fields',async()
  const sql=new DatabaseSync(':memory:');
  try{
   sql.exec(`CREATE TABLE efl_teams_catalog(
-    id TEXT PRIMARY KEY,name TEXT NOT NULL,logo_url TEXT,
+    id TEXT PRIMARY KEY,name TEXT NOT NULL,owner_user_id TEXT,admin_user_id TEXT,logo_url TEXT,
     member_count INTEGER NOT NULL,membership_required INTEGER NOT NULL,
     updated_at INTEGER NOT NULL);`);
   const insert=sql.prepare(`INSERT INTO efl_teams_catalog
-   (id,name,logo_url,member_count,membership_required,updated_at)
-   VALUES (:id,:name,:logo,:members,:required,:updated)`);
+   (id,name,owner_user_id,admin_user_id,logo_url,member_count,membership_required,updated_at)
+   VALUES (:id,:name,:owner,:manager,:logo,:members,:required,:updated)`);
   for(const item of rows.teamsCatalog)insert.run({
-   ':id':item.id,':name':item.name,':logo':item.logo_url,
+   ':id':item.id,':name':item.name,':owner':item.owner_user_id,':manager':item.admin_user_id,':logo':item.logo_url,
    ':members':item.member_count,':required':Number(item.membership_required),
    ':updated':item.updated_at});
   const db={async all(q,p){return sql.prepare(q).all(p);}};
