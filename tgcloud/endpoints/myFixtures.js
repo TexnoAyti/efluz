@@ -5,7 +5,7 @@ import {verifiedTelegramId} from '../lib/auth.js';
 export default async function(input={},ctx){
   const telegramId=verifiedTelegramId(ctx);
   const seasonId=typeof input.seasonId==='string'?input.seasonId.trim():'';
-  if(!/^season-[a-zA-Z0-9-]{1,90}$/.test(seasonId))
+  if(!/^[a-zA-Z0-9_:-]{1,100}$/.test(seasonId))
     throw new EndpointError('Mavsum noto‘g‘ri.',{code:'INVALID_SEASON'});
   const limit=input.limit===undefined?50:input.limit;
   const cursor=input.cursor===undefined?0:input.cursor;
