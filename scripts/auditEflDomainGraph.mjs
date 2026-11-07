@@ -6,7 +6,7 @@ import {createInterface} from 'node:readline';
 
 const path=process.argv[2];
 const quarantine=process.argv.includes('--quarantine-historical');
-const quarantined={releasedOccupancies:0,notifications:0,participants:0};
+const quarantined={releasedOccupancies:0,notifications:0,participants:0,resolvedDisputes:0};
 if(!path){console.error('Usage: node scripts/auditEflDomainGraph.mjs private-source.jsonl');process.exit(2);}
 const interesting=new Set(['users','seasons','leagues','clubs','club_occupancies',
   'competitions','competition_participants','fixtures','result_submissions',
@@ -91,7 +91,11 @@ for(const d of s('notifications').values()){
  }
 }
 for(const d of s('disputes').values()){
- if(!owns('fixtures',d.fixtureId))defect('DISPUTE_WITHOUT_FIXTURE');
+ if(!owns('fixtures',d.fixtureId)){
+  if(quarantine&&['RESOLVED','CLOSED','DISMISSED'].includes(String(d.status).toUpperCase()))
+    quarantined.resolvedDisputes++;
+  else defect('DISPUTE_WITHOUT_FIXTURE');
+ }
 }
 // Legacy durable overrides are part of the authoritative fixture state.
 // Refuse a migration snapshot where the base fixture and override disagree:
