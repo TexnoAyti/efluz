@@ -3,13 +3,13 @@
 Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on Vercel.
 
 ## What exists on the migration branch
-- Telegram runtime schema for 8 core entities; owner-locked import endpoint and
+- Telegram runtime schema for 15 logical entities; owner-locked import endpoint and
   retry-safe batch importer; offline packet builder; source/target parity checker.
 - Read endpoints: health, bootstrap, leagues, clubProfile, fixtures, standings
   (standings is explicitly provisional and not an authoritative competition table).
 - Match chat read/send endpoint (SDK integration and concurrency tests pending).
 - Vercel-first frontend adapter, explicit Serverless health probe, diagnostics.
-- Isolated Node tests and CI workflow; no proof of passing hosted SDK tests.
+- Isolated Node tests, real SQLite SQL integration tests and CI workflow. Telegram-hosted SDK tests are still required.
 
 ## Mandatory gates before any cutover
 
@@ -19,14 +19,14 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 | Legacy domain conversion | NOT IMPLEMENTED | Per-field lossless conversions, including timestamps/status/IDs |
 | Core import to isolated Telegram database | NOT RUN | No conflicts, counts+SHA-256 parity |
 | Extra domain data | NOT IMPLEMENTED | Schema now includes participants, submissions, disputes, notifications and audit; their source conversion and parity remain unverified. Standings snapshots, payments, TEAMS, UZEFLIFE, cups and awards still need coverage |
-| Club claim / release | NOT IMPLEMENTED | Single-club ownership, bans, admission windows, concurrent users |
-| Fixtures / score submission / confirmation | READ ONLY (fixtures endpoint added) | Replay- and race-safe writes, matchday rules, dispute outcomes |
+| Club claim / release | STAGING CLAIM ENGINE (DISABLED) | The new claim endpoint checks user, season, admission and uniqueness; full ban/admission policy parity, release flows and Telegram-hosted race tests are still missing |
+| Fixtures / score submission / confirmation | STAGING PROPOSAL ENGINE (DISABLED) | The proposal endpoint checks signed owner, score, lock and idempotency; full result consensus, dispute and admin confirmation workflow remains missing |
 | Admin tools | NOT IMPLEMENTED | Auth/role checks, side-effect audit, all required actions |
 | Chat | PARTIAL | SDK-integrated persistence, read-only gating, retries under race |
 | Telegram updates | PROBE ONLY | message, callback_query, channel posts, payment events |
 | AI assistant | NOT IMPLEMENTED | Authorization, quotas, no unsafe mutations, parity |
 | Notifications and scheduled work | NOT IMPLEMENTED | Delivery deduplication, timers/cron replacement, replay proof |
-| Frontend | SHADOW ONLY | Every authenticated API call migrated with parity and UI E2E |
+| Frontend | SHADOW ONLY | Every authenticated API call migrated with parity and UI E2E; new writes intentionally not routed live |
 | Static Mini App hosting | NOT CONFIGURED | Build output configured for tgcloud, signed launch smoke test |
 | Performance and errors | NOT MEASURED | Load, retries, timeout, rollback monitoring |
 | Rollback | NOT PREPARED | Restore exact prior webhook and legacy frontend routing |
@@ -79,3 +79,22 @@ club selection and admin workflows remains mandatory.
 
 No production SQL modifications, migrations, webhook changes or
 Telegram Serverless CLI pushes were performed in this audit.
+
+## New shadow write checks
+
+- `tgcloud/endpoints/claimClub.js` and `tgcloud/endpoints/proposeResult.js`
+  have an explicit **disabled-by-default** `MUTATION_CONTROL` gate.
+  They must not be enabled as a shortcut to production cutover.
+- `scripts/serverlessSqliteIntegration.test.mjs` exercises real SQLite
+  partial unique indexes, duplicate/replay cases and score proposal eligibility.
+- `scripts/checkTgcloudModules.mjs` verifies that the Telegram runtime imports
+  only the SDK and local .js modules (no Node packages in deployed modules).
+- The import engine validates every persisted row, reports `verified` and
+  `previouslyPresent`, and does not claim unsupported `rowsAffected` counts.
+- The provisional standings query only includes confirmed fixtures belonging
+  to competitions typed `LEAGUE`, not cup fixtures.
+
+**Next gate:** run the exact branch under `tgcloud run` using an isolated bot
+and migrated staging schema, then compare EFLUZ production domain behavior.
+Passing offline SQL tests does not prove the platform-specific SDK contract,
+Telegram handler parity or current production data parity.
