@@ -206,3 +206,18 @@ export const teamsCatalog=table('efl_teams_catalog',{
  membershipRequired:boolean('membership_required').notNull().default(false),
  updatedAt:integer('updated_at').notNull().default(0),
 },(t)=>({nameIndex:index('efl_teams_catalog_name_idx').on(t.name)}));
+
+
+// Isolated TEAMS join workflow. No production writes until source membership,
+// payment ticket and captain approval rules are fully reconciled.
+export const teamJoinRequests=table('efl_team_join_requests',{
+ id:text('id').primaryKey(),
+ teamId:text('team_id').notNull(),userId:text('user_id').notNull(),
+ telegramId:text('telegram_id').notNull(),status:text('status').notNull().default('PENDING'),
+ createdAt:integer('created_at').notNull(),updatedAt:integer('updated_at').notNull(),
+},t=>({
+ oneRequestPerTeam:uniqueIndex('efl_team_request_unique').on(t.teamId,t.userId),
+ oneApprovedTeam:uniqueIndex('efl_team_approved_user_unique').on(t.userId)
+   .where(sql`status = 'APPROVED'`),
+ statusIndex:index('efl_team_requests_status_idx').on(t.teamId,t.status)
+}));
