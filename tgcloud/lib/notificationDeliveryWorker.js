@@ -47,7 +47,8 @@ export async function claimNotificationForWorker(db,input){
  JOIN efl_notifications n ON n.id=d.notification_id AND n.user_id=d.user_id
  JOIN efl_users u ON u.id=d.user_id AND u.is_banned=0
  WHERE d.notification_id=:id AND d.status='LEASED'
-  AND d.lease_token=:token AND d.lease_until=:until`,params);
+  AND d.lease_token=:token AND d.lease_until=:until`,
+  {':id':notificationId,':token':leaseToken,':until':params[':until']});
  if(!row)throw Error('DELIVERY_NOT_CLAIMED');
  return {notificationId:row.notificationId,leaseToken,attempt:row.attempts,
   leaseUntil:row.leaseUntil,telegramId:String(row.telegramId),
