@@ -6,7 +6,9 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
-    build: { manifest: true },
+    // Keep the Telegram-hosted static bundle separate from the Vercel/Node
+    // output directory. Never upload dist/server.cjs or backend source maps.
+    build: { manifest: true, ...(process.env.EFL_TGCLOUD_STATIC === '1' ? { outDir: 'dist-tgcloud' } : {}) },
     // A static design walkthrough is available only in local dev and Vercel Preview builds.
     define: { __EFL_DESIGN_PREVIEW_BUILD__: JSON.stringify(process.env.VERCEL_ENV === 'preview') },
     resolve: {

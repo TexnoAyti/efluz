@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/@tgcloud/cli/schema/tgcloud.json",
+  // Staging-only frontend output. Build with npm run build:tgcloud.
+  // This folder excludes dist/server.cjs and the Vercel API bundle.
+  "static": {
+    "source": "dist-tgcloud",
+    "spa": true,
+    "immutable": ["/assets/*"],
+    "headers": [{ "path": "/*", "set": { "Referrer-Policy": "no-referrer" } }]
+  }
+}

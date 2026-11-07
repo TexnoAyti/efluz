@@ -1,0 +1,69 @@
+name: Serverless migration shadow tests
+on:
+  pull_request:
+    paths:
+      - 'tgcloud/lib/importBatch.js'
+      - 'tgcloud/lib/importEngine.js'
+      - 'tgcloud/lib/resultProposal.js'
+      - 'tgcloud/lib/clubClaim.js'
+      - 'tgcloud/endpoints/claimClub.js'
+      - 'tgcloud/endpoints/proposeResult.js'
+      - 'tgcloud/lib/mutationControl.js'
+      - 'scripts/serverlessMigration*.test.mjs'
+      - 'scripts/serverlessImportPacket.test.mjs'
+      - 'scripts/prepareServerlessImport.mjs'
+      - 'scripts/verifyServerlessSnapshot.mjs'
+      - 'scripts/serverlessParity.test.mjs'
+      - 'scripts/serverlessReferences.test.mjs'
+      - 'scripts/validateServerlessReferences.mjs'
+      - 'scripts/prepareSupabaseDocumentArchive.mjs'
+      - 'scripts/serverlessRawArchive.test.mjs'
+      - 'scripts/serverlessStreamingPackets.test.mjs'
+      - 'scripts/prepareEflRawDocumentBatches.mjs'
+      - 'scripts/exportEflSupabaseRuntime.sh'
+      - 'scripts/verifyEflRawBatches.mjs'
+      - 'scripts/serverlessRawBatchVerify.test.mjs'
+      - 'scripts/serverlessImportBoundaries.test.mjs'
+      - 'scripts/serverlessResultProposal.test.mjs'
+      - 'scripts/serverlessClubClaim.test.mjs'
+      - 'scripts/serverlessJsonReplay.test.mjs'
+      - 'scripts/serverlessSqliteIntegration.test.mjs'
+      - 'scripts/checkTgcloudModules.mjs'
+      - 'tgcloud/endpoints/standings.js'
+      - 'tgcloud.jsonc'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'scripts/build-tgcloud.mjs'
+      - 'scripts/verifyTgcloudStatic.mjs'
+      - '.github/workflows/serverless-migration-shadow.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replay-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Telegram runtime module imports
+        run: node scripts/checkTgcloudModules.mjs
+      - name: Validate replay, conflicts and bounded batches
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs scripts/serverlessStreamingPackets.test.mjs scripts/serverlessRawBatchVerify.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessResultProposal.test.mjs scripts/serverlessClubClaim.test.mjs scripts/serverlessJsonReplay.test.mjs scripts/serverlessSqliteIntegration.test.mjs
+  frontend-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+      - name: Build isolated Telegram Mini App frontend
+        run: bun run build:tgcloud
+      - name: Verify no Node server or private assets enter Telegram CDN
+        run: node scripts/verifyTgcloudStatic.mjs

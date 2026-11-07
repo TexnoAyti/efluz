@@ -691,13 +691,17 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   // main club/leagues screens on every revisit.
   const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
   if (!cleanKey.endsWith(':fixtures') && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < Math.min(ttlSeconds * 1000, PROCESS_MEMORY_TTL_MS)) {
+    // A still-fresh L1 value is safe to serve, but must be explicitly marked
+    // stale/degraded when the authoritative source circuit is open.
+    const fastCircuit = firestoreCircuitBreaker.getStatus();
+    const sourceUnavailable = fastCircuit.state !== 'CLOSED' || fastCircuit.softLimitExceeded;
     return {
       data: memoryHit.data,
-      source: 'memory',
+      source: sourceUnavailable ? 'memory_stale' : 'memory',
       generatedAt: memoryHit.generatedAt,
       sourceVersion: memoryHit.sourceVersion,
-      stale: Boolean(memoryHit.stale),
-      degraded: Boolean(memoryHit.degraded),
+      stale: sourceUnavailable || Boolean(memoryHit.stale),
+      degraded: sourceUnavailable || Boolean(memoryHit.degraded),
     };
   }
 

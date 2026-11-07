@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { api } from '../lib/api';
+import { telegramServerlessAvailable } from '../lib/serverlessTransport';
 import { useAuth, APP_BUILD_ID } from '../context/AuthContext';
 import { Shield, Smartphone, Terminal, CheckCircle2, XCircle, AlertTriangle, ExternalLink, RefreshCw, X, Server, Layers, Cpu } from 'lucide-react';
 
@@ -14,6 +16,20 @@ export const TelegramDiagnosticsModal: React.FC<TelegramDiagnosticsModalProps> =
   currentRoute,
 }) => {
   const { user, authStatus, authError, telegramDiagnostics, refreshUserData } = useAuth();
+
+  const [migrationProbe, setMigrationProbe] = useState<'idle'|'testing'|'ready'|'unavailable'>('idle');
+  const [migrationProbeNote, setMigrationProbeNote] = useState('');
+  const checkShadow = async () => {
+    setMigrationProbe('testing'); setMigrationProbeNote('');
+    try {
+      const response = await api.probeMigrationTransport('telegram-serverless');
+      if (!response?.ok || response.migrationMode !== 'shadow') throw new Error('SHADOW_CONTRACT_MISMATCH');
+      setMigrationProbe('ready'); setMigrationProbeNote('Shadow endpoint javob berdi. Production o‘zgarmadi.');
+    } catch (error) {
+      setMigrationProbe('unavailable');
+      setMigrationProbeNote(error instanceof Error ? error.message : 'Serverless endpoint javob bermadi.');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -172,6 +188,20 @@ export const TelegramDiagnosticsModal: React.FC<TelegramDiagnosticsModalProps> =
               </div>
             </div>
           </div>
+
+          {user?.isAdmin && (
+            <div className="rounded-xl border border-slate-800 p-3.5 space-y-2 bg-slate-950/60">
+              <div className="text-slate-200 font-semibold">Serverless shadow diagnostikasi</div>
+              <p className="text-slate-400">Faqat o‘qish testi. Production API va webhook o‘zgarmaydi.</p>
+              <button type="button" onClick={checkShadow}
+                disabled={!telegramServerlessAvailable() || migrationProbe === 'testing'}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-slate-100 disabled:opacity-50">
+                {migrationProbe === 'testing' ? 'Tekshirilmoqda…' : 'Serverless ulanishini tekshirish'}
+              </button>
+              {!telegramServerlessAvailable() && <p className="text-amber-300">Telegram Serverless SDK topilmadi.</p>}
+              {migrationProbeNote && <p className={migrationProbe === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>{migrationProbeNote}</p>}
+            </div>
+          )}
 
           {/* Origin & Routing Verification */}
           <div className="bg-slate-950/60 rounded-xl border border-slate-800/80 p-3.5 space-y-2">

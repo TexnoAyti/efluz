@@ -22,7 +22,27 @@ export function createAiSnapshotReader(signal?:AbortSignal) {
     const [,seasonId,dataset] = match;
     let result;
     if (dataset === 'admin:fixtures' || /^competition:[^:]+:fixtures$/.test(dataset)) {
-      result = await getPostgresFixtureReadModel(seasonId, dataset === 'admin:fixtures' ? undefined : dataset.split(':')[1]);
+      const competitionId=dataset === 'admin:fixtures' ? undefined : dataset.split(':')[1];
+      result = await getPostgresFixtureReadModel(seasonId, competitionId);
+      // General Mini App reads may omit the optional override query to protect
+      // page latency. The AI must never reason from a corrected result that is
+      // missing in its cache: query only this isolated AI read scope.
+      const {getFirestoreDb}=await import('../firebase/admin');
+      let query=getFirestoreDb().collection('durable_fixture_overrides').where('seasonId','==',seasonId);
+      if(competitionId)query=query.where('competitionId','==',competitionId);
+      const overrides=await query.get();
+      const deltas=new Map(overrides.docs.map(doc=>[doc.id,{...doc.data(),id:doc.id}]));
+      let missed=false;
+      const known=new Set(result.data.map((row:any)=>row.id));
+      for(const id of deltas.keys())if(!known.has(id))missed=true;
+      result={...result,
+        data:result.data.map((row:any)=>{
+          const patch=deltas.get(row.id) as any;
+          return patch&&(!row.updatedAt||!patch.updatedAt||patch.updatedAt>=row.updatedAt)
+            ? {...row,...patch}:row;
+        }),
+        stale:result.stale||missed,degraded:result.degraded||missed
+      };
     } else {
       const build = dataset === 'competitions' ? () => buildCompetitionsSnapshot(seasonId)
         : dataset === 'clubs-with-owners' ? () => buildClubsSnapshot(seasonId)
@@ -45,11 +65,19 @@ export function createAiSnapshotReader(signal?:AbortSignal) {
           const snapshot=fresh&&!bundle.dirty?fresh:lkg;
           const cached = snapshot?{data:snapshot.data,stale:Boolean(bundle.dirty?.data||!fresh||snapshot.stale||snapshot.degraded),available:true,snapshotAt:snapshot.generatedAt||''}:missing();
           memo.set(key,cached);
-          if (cached.stale || !cached.available) {
+          // Fixture corrections may be stored as newer durable deltas even while
+          // the cached base snapshot is considered fresh. Never supply the base
+          // snapshot to AI without checking those committed overrides.
+          const isFixtureFeed=/^season:[^:]+:(?:admin:fixtures|competition:[^:]+:fixtures)$/.test(getRawDatasetKey(key));
+          if (cached.stale || !cached.available || isFixtureFeed) {
             try {
               const refreshed = await withinAiDeadline(signal, () => refreshPostgres(key));
               if (refreshed && !signal?.aborted) memo.set(key,refreshed);
-            } catch { failed.add(key); } // Preserve the honest stale fallback on outage/deadline.
+              else if (isFixtureFeed) memo.set(key,{...cached,stale:true});
+            } catch {
+              failed.add(key);
+              if (isFixtureFeed) memo.set(key,{...cached,stale:true});
+            } // Preserve the cached data but honestly mark uncertain fixture freshness.
           }
         }catch{memo.set(key,missing());failed.add(key);}
       }));
