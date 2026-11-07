@@ -39,6 +39,15 @@ test('only admin can finalize once and identical replay is safe',async()=>{
   assert.equal(row.away_score,1);
  }finally{sql.close();}
 });
+test('real production PLAYING state permits current-round match decisions',async()=>{
+ const {sql,db}=setup();
+ try{
+  sql.exec("UPDATE efl_uzeflife_state SET status='PLAYING'");
+  const result=await finalizeUzeflifeResult(db,'123',
+    {fixtureId:'m1',homeScore:0,awayScore:1});
+  assert.equal(result.winner,'Chelsea FC');
+ }finally{sql.close();}
+});
 test('a draw requires an explicit winner; closed round never changes',async()=>{
  const {sql,db}=setup();
  try{
