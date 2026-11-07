@@ -17,7 +17,7 @@ try{await stat(resolve(dest));throw Error('DESTINATION_ALREADY_EXISTS');}
 catch(err){if(err.code!=='ENOENT')throw err;}
 const scope=new Set(['users','seasons','leagues','clubs','club_occupancies',
  'competitions','competition_participants','fixtures','result_submissions','disputes',
- 'notifications','audit_logs']);
+ 'notifications','audit_logs','durable_fixture_overrides']);
 const collections=Object.fromEntries([...scope].map(x=>[x,[]]));
 for await(const line of createInterface({input:createReadStream(resolve(src),{encoding:'utf8'}),crlfDelay:Infinity})){
  if(!line.trim())continue;
