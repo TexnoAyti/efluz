@@ -20,6 +20,7 @@ export const IMPORT_TABLES = Object.freeze({
   uzeflifeState: ['id','name','status','format','current_round','total_rounds','round_hours','participants_count','matches_count','source_revision'],
   uzeflifeEntrants: ['id','name','status'],
   uzeflifeFixtures: ['id','round','bracket','home','away','winner','home_score','away_score','penalty_home','penalty_away','deadline_at'],
+  teamsCatalog: ['id','name','logo_url','member_count','membership_required','updated_at'],
 });
 export const SQL_TABLES = Object.freeze({
   users:'efl_users',seasons:'efl_seasons',leagues:'efl_leagues',clubs:'efl_clubs',
@@ -27,13 +28,13 @@ export const SQL_TABLES = Object.freeze({
   matchAccess:'efl_match_access',matchMessages:'efl_match_messages',
   competitions:'efl_competitions',participants:'efl_competition_participants',
   resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
-  notifications:'efl_notifications',auditLogs:'efl_audit_logs',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures'
+  notifications:'efl_notifications',auditLogs:'efl_audit_logs',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
   clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
   competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
-  notifications:'id',auditLogs:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id'
+  notifications:'id',auditLogs:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
