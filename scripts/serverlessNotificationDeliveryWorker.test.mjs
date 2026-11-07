@@ -52,7 +52,7 @@ test('failed delivery backs off and exhausts retries without resending automatic
    const claimed=await claimNotificationForWorker(db,lease(tokenA,now));
    assert.equal(claimed.attempt,attempt);
    const result=await finishNotificationForWorker(db,{
-    notificationId:'n1',leaseToken:tokenA,now:now+100,success:false,errorCode:'TELEGRAM_TIMEOUT'});
+    notificationId:'n1',leaseToken:tokenA,now:now+100,success:false,errorCode:'API_RETRYABLE'});
    assert.equal(result.status,attempt===5?'FAILED':'PENDING');
    if(attempt<5){
     await assert.rejects(claimNotificationForWorker(db,lease(tokenB,now+200)),
@@ -116,5 +116,20 @@ test('expired worker cannot acknowledge a delivery even before another claim',as
    notificationId:'n1',leaseToken:tokenB,now:140100,success:true
   });
   assert.equal(ack.status,'SENT');
+ }finally{sql.close();}
+});
+
+test('ambiguous Telegram response is quarantined, not automatically retried',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  await claimNotificationForWorker(db,lease(tokenA,100000));
+  const ack=await finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenA,now:100200,
+   success:false,errorCode:'TELEGRAM_TIMEOUT'});
+  assert.equal(ack.status,'REVIEW');
+  assert.equal((await readNotificationDeliveryAudit(db,'999')).stats.review,1);
+  await assert.rejects(claimNotificationForWorker(db,lease(tokenB,200000)),
+    /DELIVERY_NOT_CLAIMED/);
  }finally{sql.close();}
 });
