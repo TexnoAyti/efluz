@@ -98,7 +98,7 @@ test('historical orphan quarantine is explicit and never grants an active owner'
  assert.throws(()=>convertEflCore(d),/OCCUPANCY_REFERENCE_MISSING/);
  const {rows,report}=convertEflCore(d,{quarantineHistoricalOrphans:true});
  assert.deepEqual(report.quarantinedHistorical,{
-   releasedOccupancies:1,notifications:1,participants:1
+   releasedOccupancies:1,notifications:1,participants:1,resolvedDisputes:0
  });
  assert.equal(rows.clubOccupancies.length,2);
  assert.equal(rows.notifications.length,1);
@@ -106,6 +106,20 @@ test('historical orphan quarantine is explicit and never grants an active owner'
  d.club_occupancies[d.club_occupancies.length-1].data.status='active';
  assert.throws(()=>convertEflCore(d,{quarantineHistoricalOrphans:true}),
    /OCCUPANCY_REFERENCE_MISSING/);
+});
+test('resolved orphan disputes are explicitly archived, live disputes are never dropped',()=>{
+ const original=sample();
+ original.disputes=[
+   doc('old-dispute',{fixtureId:'deleted-fixture',seasonId:'s1',
+     status:'RESOLVED',createdAt:'2026-01-01T00:00:00Z'})
+ ];
+ assert.throws(()=>convertEflCore(original),/DISPUTE_FIXTURE_MISSING/);
+ const result=convertEflCore(original,{quarantineHistoricalOrphans:true});
+ assert.equal(result.report.quarantinedHistorical.resolvedDisputes,1);
+ assert.equal(result.rows.disputes.length,0);
+ original.disputes[0].data.status='OPEN';
+ assert.throws(()=>convertEflCore(original,{quarantineHistoricalOrphans:true}),
+   /DISPUTE_FIXTURE_MISSING/);
 });
 test('CLI creates normalized file and refuses overwrite',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'efl-core-'));
