@@ -38,6 +38,11 @@ for(const [index,item] of manifest.batches.entries()){
     count++;
   }
 }
+if(!Number.isSafeInteger(manifest.sourceDocuments)||
+   !Number.isSafeInteger(manifest.rebuildExcluded)||
+   manifest.rebuildExcluded<0||manifest.sourceDocuments!==count+manifest.rebuildExcluded)
+  throw new Error('SOURCE_CLASSIFICATION_MISMATCH');
 if(count!==manifest.count||count===0||sourceDigest.digest('hex')!==manifest.sourceSha256)
   throw new Error('SOURCE_MANIFEST_MISMATCH');
-console.log(JSON.stringify({verified:true,documents:count,batches:manifest.batches.length}));
+console.log(JSON.stringify({verified:true,documents:count,
+  rebuildExcluded:manifest.rebuildExcluded,batches:manifest.batches.length}));
