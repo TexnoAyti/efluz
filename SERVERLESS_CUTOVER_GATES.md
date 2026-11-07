@@ -405,3 +405,10 @@ sender privacy and prohibit accidental group disclosure.
 **Do not remove the default-off mutation gates.** A live Telegram bot
 deployment, complete source-to-target parity, legacy write workflows
 and verified operational rollback remain prerequisites for cutover.
+
+## Staging competition round audit (2026-11-07)
+
+- `tgcloud/endpoints/competitionRoundPlan.js` previews an existing LEAGUE or CUP competition's current/future fixture rounds for a Telegram-signed, non-banned admin.
+- It identifies unresolved historical fixtures, pending/open disputes, incomplete opponents, mismatched league/competition round counters and missing next-round fixtures. It **does not** create knockout brackets or coerce pending results to 0:0.
+- Unlike the old production "all previous results must be complete" constraint, unfinished fixtures are **reported for explicit operator review**, not treated as a reason to fabricate winners. Advancement itself remains unimplemented: reliable dual-counter updates, durable notifications, concurrency controls, operational source parity and Telegram-hosted tests must precede enabling writes.
+- `scripts/serverlessCompetitionRoundPlan.test.mjs` provides offline SQLite cases. The feature remains staging-only and read-only.
