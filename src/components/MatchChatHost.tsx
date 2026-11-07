@@ -3,6 +3,7 @@ import {AlertTriangle,ArrowLeft,Check,Flag,LoaderCircle,Lock,MessageCircle,MoreV
 import {matchChatApi,onMatchChatOpen,readMatchChatLaunch,type MatchChatTarget} from '../lib/matchChat';
 import type {MatchChatView} from '../types/matchChat';
 import {useAuth} from '../context/AuthContext';
+import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
 
 export function MatchChatHost(){
  const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState('');
@@ -23,6 +24,7 @@ export function MatchChatHost(){
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
     <div className="match-chat-avatar"><MessageCircle size={20}/><span/></div>
     <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p></div>
+    {chat&&isValidTelegramUsername(chat.opponentUsername)&&<button className="match-chat-icon" onClick={()=>openTelegramChat(chat.opponentUsername)} aria-label="Telegram profilini ochish" title="Telegram profilini ochish"><Send size={17}/></button>}
     <button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>
     <button className="match-chat-icon match-chat-close" onClick={close} aria-label="Yopish"><X size={20}/></button>
     {menu&&chat&&<div className="match-chat-menu">
