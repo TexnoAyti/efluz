@@ -22,7 +22,8 @@ export async function proposeFixtureResult(db,uid,input){
      c.current_matchday,c.is_matchday_open,
      EXISTS(SELECT 1 FROM efl_fixture_score_windows w
        WHERE w.fixture_id=f.id AND w.season_id=f.season_id
-         AND w.competition_id=f.competition_id AND w.is_open=1) AS late_access
+         AND w.competition_id=f.competition_id AND w.is_open=1
+         AND f.round<c.current_matchday) AS late_access
      FROM efl_fixtures f JOIN efl_competitions c
        ON c.id=f.competition_id AND c.season_id=f.season_id
      WHERE f.id=:fixture`,{':fixture':proposal.fixtureId});
@@ -58,7 +59,8 @@ export async function proposeFixtureResult(db,uid,input){
       AND ((c.is_matchday_open=1 AND f.round=c.current_matchday)
        OR EXISTS(SELECT 1 FROM efl_fixture_score_windows w
          WHERE w.fixture_id=f.id AND w.season_id=f.season_id
-          AND w.competition_id=f.competition_id AND w.is_open=1))
+          AND w.competition_id=f.competition_id AND w.is_open=1
+          AND f.round<c.current_matchday))
       AND u.is_banned=0
       AND (o.club_id=f.home_club_id OR o.club_id=f.away_club_id)
       AND f.home_club_id IS NOT NULL AND f.away_club_id IS NOT NULL
