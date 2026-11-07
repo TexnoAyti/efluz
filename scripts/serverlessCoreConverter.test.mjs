@@ -66,6 +66,21 @@ test('cannot import duplicate owner, unknown user or cross-season fixtures',()=>
  const mismatch=sample();mismatch.fixtures[0].data.seasonId='s2';
  assert.throws(()=>convertEflCore(mismatch),/FIXTURE_COMPETITION_SEASON_MISMATCH/);
 });
+test('core converter checks durable fixture corrections without replacing authoritative scores',()=>{
+ const fixture=sample();
+ fixture.fixtures[0].data={...fixture.fixtures[0].data,
+   status:'CONFIRMED',homeScore:2,awayScore:1};
+ fixture.durable_fixture_overrides=[doc('f1',{
+   status:'CONFIRMED',homeScore:2,awayScore:1
+ })];
+ const converted=convertEflCore(fixture);
+ assert.equal(converted.report.reconciledFixtureOverrides,1);
+ assert.equal(converted.rows.fixtures[0].home_score,2);
+ fixture.durable_fixture_overrides[0].data.homeScore=9;
+ assert.throws(()=>convertEflCore(fixture),/FIXTURE_OVERRIDE_MISMATCH/);
+ fixture.durable_fixture_overrides=[doc('missing',{status:'SCHEDULED'})];
+ assert.throws(()=>convertEflCore(fixture),/OVERRIDE_WITHOUT_FIXTURE/);
+});
 test('CLI creates normalized file and refuses overwrite',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'efl-core-'));
  try{
