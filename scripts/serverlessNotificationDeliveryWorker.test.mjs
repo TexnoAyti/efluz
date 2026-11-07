@@ -67,16 +67,20 @@ test('failed delivery backs off and exhausts retries without resending automatic
    /DELIVERY_NOT_CLAIMED/);
  }finally{sql.close();}
 });
-test('expired lease is fenced: old worker cannot complete a newly claimed delivery',async()=>{
+test('expired lease is quarantined; no worker can resend until review',async()=>{
  const {sql,db}=setup();
  try{
   await queueNotificationDelivery(db,'999',{notificationId:'n1'});
   await claimNotificationForWorker(db,lease(tokenA,100000));
-  await claimNotificationForWorker(db,lease(tokenB,140000));
+  await assert.rejects(claimNotificationForWorker(db,lease(tokenB,140000)),
+   /DELIVERY_NOT_CLAIMED/);
   await assert.rejects(finishNotificationForWorker(db,{
-   notificationId:'n1',leaseToken:tokenA,now:140100,success:true}),/DELIVERY_ACK_CONFLICT/);
-  assert.equal((await finishNotificationForWorker(db,{
-   notificationId:'n1',leaseToken:tokenB,now:140200,success:true})).status,'SENT');
+   notificationId:'n1',leaseToken:tokenA,now:140100,success:true
+  }),/DELIVERY_ACK_CONFLICT/);
+  assert.equal((await readNotificationDeliveryAudit(db,'999')).stats.review,1);
+  const row=sql.prepare("SELECT status,last_error AS error FROM efl_notification_deliveries WHERE notification_id='n1'").get();
+  assert.equal(row.status,'REVIEW');
+  assert.equal(row.error,'LEASE_EXPIRED_UNCERTAIN');
  }finally{sql.close();}
 });
 test('recipient ban between queue and claim suppresses delivery',async()=>{
@@ -101,7 +105,7 @@ test('invalid worker arguments and tokens cannot acquire a lease',async()=>{
  }finally{sql.close();}
 });
 
-test('expired worker cannot acknowledge a delivery even before another claim',async()=>{
+test('expired worker cannot acknowledge before or after review transition',async()=>{
  const {sql,db}=setup();
  try{
   await queueNotificationDelivery(db,'999',{notificationId:'n1'});
@@ -110,12 +114,9 @@ test('expired worker cannot acknowledge a delivery even before another claim',as
    notificationId:'n1',leaseToken:tokenA,now:130001,success:true
   }),/DELIVERY_ACK_CONFLICT/);
   assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'LEASED');
-  const retry=await claimNotificationForWorker(db,lease(tokenB,140000));
-  assert.equal(retry.attempt,2);
-  const ack=await finishNotificationForWorker(db,{
-   notificationId:'n1',leaseToken:tokenB,now:140100,success:true
-  });
-  assert.equal(ack.status,'SENT');
+  await assert.rejects(claimNotificationForWorker(db,lease(tokenB,140000)),
+   /DELIVERY_NOT_CLAIMED/);
+  assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'REVIEW');
  }finally{sql.close();}
 });
 
