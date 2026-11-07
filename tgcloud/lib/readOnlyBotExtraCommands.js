@@ -16,9 +16,9 @@ export async function readOnlyBotExtra(db,command,{id,telegramId}){
      FROM efl_leagues WHERE season_id=:season
      ORDER BY sort_order ASC,id ASC LIMIT 20`,{':season':season.id});
    return rows.length
-    ?'Ligalar (sinov) — '+String(season.name).slice(0,60)+'\\n'+
+    ?'Ligalar (sinov) — '+String(season.name).slice(0,60)+'\n'+
       rows.map(l=>String(l.name).slice(0,55)+' — '+
-       String(l.status).slice(0,24)+' (tur '+Number(l.currentRound??0)+')').join('\\n')
+       String(l.status).slice(0,24)+' (tur '+Number(l.currentRound??0)+')').join('\n')
     :'Sinov bazasida ligalar topilmadi.';
   }
   const rows=await db.all(`SELECT name,type,status FROM efl_competitions
@@ -26,8 +26,8 @@ export async function readOnlyBotExtra(db,command,{id,telegramId}){
     'DOMESTIC_SUPER_CUP','INTERNATIONAL_CUP','KNOCKOUT')
     ORDER BY name ASC,id ASC LIMIT 20`,{':season':season.id});
   return rows.length
-   ?'Kuboklar (sinov) — '+String(season.name).slice(0,60)+'\\n'+
-    rows.map(c=>String(c.name).slice(0,55)+' — '+String(c.status).slice(0,24)).join('\\n')
+   ?'Kuboklar (sinov) — '+String(season.name).slice(0,60)+'\n'+
+    rows.map(c=>String(c.name).slice(0,55)+' — '+String(c.status).slice(0,24)).join('\n')
    :'Sinov bazasida kuboklar topilmadi.';
  }
  if(command==='/uzeflife'){
