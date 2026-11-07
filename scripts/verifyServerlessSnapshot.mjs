@@ -13,6 +13,12 @@ if(!sourceFile||!targetFile){
 async function load(file){
   const data=JSON.parse(await readFile(file,'utf8'));
   if(!data||Array.isArray(data)||typeof data!=='object') throw new Error('INVALID_SNAPSHOT');
+  // Imported snapshot parity must be exact, including table and column sets.
+  // Otherwise unknown collections or fields can be silently dropped while
+  // this check falsely reports a successful cutover.
+  const extraTables=Object.keys(data).filter(table=>
+    !Object.prototype.hasOwnProperty.call(IMPORT_TABLES,table));
+  if(extraTables.length)throw new Error('UNKNOWN_SNAPSHOT_TABLES:'+extraTables.length);
   const result={};
   for(const [table,columns] of Object.entries(IMPORT_TABLES)){
     if(!Object.prototype.hasOwnProperty.call(data,table)||!Array.isArray(data[table])) throw new Error('MISSING_TABLE:'+table);
@@ -24,6 +30,7 @@ async function load(file){
       if(seen.has(String(pk)))throw new Error('DUPLICATE_PRIMARY_KEY:'+table+':'+String(pk));
       seen.add(String(pk));
       if(columns.some(c=>!Object.prototype.hasOwnProperty.call(row,c)))throw new Error('MISSING_COLUMN:'+table);
+      if(Object.keys(row).some(c=>!columns.includes(c)))throw new Error('UNKNOWN_COLUMN:'+table);
     }
     const ordered=[...data[table]].sort((a,b)=>String(a[PRIMARY_KEYS[table]]).localeCompare(String(b[PRIMARY_KEYS[table]]),'en',{numeric:true}));
     const digest=createHash('sha256');
