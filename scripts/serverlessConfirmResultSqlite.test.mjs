@@ -16,6 +16,7 @@ function setup(){
     home_score INTEGER,away_score INTEGER,confirmation_status TEXT,played_at INTEGER,updated_at INTEGER);
   CREATE TABLE efl_result_submissions(id TEXT PRIMARY KEY,fixture_id TEXT,
     submitted_by_user_id TEXT,club_id TEXT,home_score INTEGER,away_score INTEGER);
+  CREATE TABLE efl_disputes(id TEXT PRIMARY KEY,fixture_id TEXT,status TEXT);
   INSERT INTO efl_users VALUES('u1','123',0),('u2','456',0),('u3','789',0);
   INSERT INTO efl_club_occupancies VALUES('o1','season1','home','u1','123','ACTIVE'),
     ('o2','season1','away','u2','456','ACTIVE');
@@ -58,6 +59,22 @@ test('closed round, released club and banned opponent cannot confirm',async()=>{
    action(sql);
    await assert.rejects(confirmFixtureResult(db,'u2',{submissionId:'p1'}),new RegExp(code));
    assert.equal(sql.prepare("SELECT status FROM efl_fixtures WHERE id='f1'").get().status,'SCHEDULED');
+  }finally{sql.close();}
+ }
+});
+
+test('mismatching opponent submission or unresolved dispute prevents confirmation',async()=>{
+ for(const setupConflict of [
+  sql=>sql.exec("INSERT INTO efl_result_submissions VALUES('p2','f1','u2','away',1,2)"),
+  sql=>sql.exec("INSERT INTO efl_disputes VALUES('d1','f1','OPEN')")
+ ]){
+  const {sql,db}=setup();
+  try{
+   setupConflict(sql);
+   await assert.rejects(confirmFixtureResult(db,'u2',{submissionId:'p1'}),/CONFIRM_CONFLICT_OR_LOCKED/);
+   const row=sql.prepare("SELECT status,home_score FROM efl_fixtures WHERE id='f1'").get();
+   assert.equal(row.status,'SCHEDULED');
+   assert.equal(row.home_score,null);
   }finally{sql.close();}
  }
 });
