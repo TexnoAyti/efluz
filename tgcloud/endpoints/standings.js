@@ -14,9 +14,12 @@ export default async function(input={},ctx) {
     WHERE l.id=:league AND l.season_id=:season ORDER BY c.sort_order,c.id`,
     {':league':leagueId,':season':seasonId});
   const fixtures=await db.all(`SELECT home_club_id AS homeClubId,away_club_id AS awayClubId,
-    home_score AS homeScore,away_score AS awayScore FROM efl_fixtures
-    WHERE league_id=:league AND season_id=:season AND
-    status='CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL`,
+    f.home_score AS homeScore,f.away_score AS awayScore
+    FROM efl_fixtures f
+    JOIN efl_competitions comp ON comp.id=f.competition_id
+      AND comp.season_id=f.season_id AND comp.type='LEAGUE'
+    WHERE f.league_id=:league AND f.season_id=:season AND
+    f.status='CONFIRMED' AND f.home_score IS NOT NULL AND f.away_score IS NOT NULL`,
     {':league':leagueId,':season':seasonId});
   const rows=clubs.map(c=>({...c,played:0,wins:0,draws:0,losses:0,goalsFor:0,goalsAgainst:0,goalDifference:0,points:0}));
   const byId=new Map(rows.map(r=>[r.id,r]));
