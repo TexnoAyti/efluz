@@ -1654,24 +1654,45 @@ export async function getClubByIdFromReadModel(
   seasonId = 'season-2026-27',
   currentUserId?: string
 ): Promise<{ club: Club | null; source: string; stale: boolean; degraded: boolean }> {
-  const result = await readThroughReadModel<OwnerNeutralClub[]>({
-    key: ReadModelKeys.clubsWithOwners(seasonId),
-    seasonId,
-    expectedCount: seasonClubs(seasonId).length,
-    firestoreFetcher: async () => {
-      const snap = await getClubsSnapshotForRead(seasonId);
-      return snap.data;
-    },
-    validateData: (data) => Array.isArray(data) && data.length > 0,
-  });
+  try {
+    const result = await readThroughReadModel<OwnerNeutralClub[]>({
+      key: ReadModelKeys.clubsWithOwners(seasonId),
+      seasonId,
+      expectedCount: seasonClubs(seasonId).length,
+      firestoreFetcher: async () => {
+        const snap = await getClubsSnapshotForRead(seasonId);
+        return snap.data;
+      },
+      validateData: (data) => Array.isArray(data) && data.length > 0,
+    });
 
-  const neutral = result.data.find((c) => c.id === clubId);
-  if (!neutral) {
-    return { club: null, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
+    const neutral = result.data.find((c) => c.id === clubId);
+    if (!neutral) {
+      return { club: null, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
+    }
+
+    const club = enrichClubForUser(neutral, currentUserId);
+    return { club, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
+  } catch (error: any) {
+    // The profile shell should remain usable during a temporary Supabase outage.
+    // Static catalog metadata is safe; ownership, fixtures and standings remain
+    // unavailable and are explicitly marked degraded rather than guessed.
+    const fallback = seasonClubs(seasonId).find((club) => club.id === clubId);
+    if (!fallback) throw error;
+    const neutral = {
+      ...fallback,
+      ownerUserId: undefined,
+      ownerUsername: undefined,
+      isOccupied: false,
+      isTaken: false,
+    } as OwnerNeutralClub;
+    return {
+      club: enrichClubForUser(neutral, currentUserId),
+      source: 'static-fallback',
+      stale: true,
+      degraded: true,
+    };
   }
-
-  const club = enrichClubForUser(neutral, currentUserId);
-  return { club, source: result.source, stale: Boolean(result.stale), degraded: Boolean(result.degraded) };
 }
 
 /**
