@@ -252,7 +252,8 @@ export function createApp() {
   app.use('/api/health/probe', rateLimit('health-probe', 3, 600));
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
-  app.use('/api/match-chat', rateLimit('match-chat', 45, 60));
+  // Keep chat responsive when the optional Redis limiter is unavailable on the free tier.
+  app.use('/api/match-chat', rateLimit('match-chat', 45, 60, { distributed: false }));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
   app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
