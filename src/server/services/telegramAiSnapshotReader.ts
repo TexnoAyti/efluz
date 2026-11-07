@@ -22,7 +22,27 @@ export function createAiSnapshotReader(signal?:AbortSignal) {
     const [,seasonId,dataset] = match;
     let result;
     if (dataset === 'admin:fixtures' || /^competition:[^:]+:fixtures$/.test(dataset)) {
-      result = await getPostgresFixtureReadModel(seasonId, dataset === 'admin:fixtures' ? undefined : dataset.split(':')[1]);
+      const competitionId=dataset === 'admin:fixtures' ? undefined : dataset.split(':')[1];
+      result = await getPostgresFixtureReadModel(seasonId, competitionId);
+      // General Mini App reads may omit the optional override query to protect
+      // page latency. The AI must never reason from a corrected result that is
+      // missing in its cache: query only this isolated AI read scope.
+      const {getFirestoreDb}=await import('../firebase/admin');
+      let query=getFirestoreDb().collection('durable_fixture_overrides').where('seasonId','==',seasonId);
+      if(competitionId)query=query.where('competitionId','==',competitionId);
+      const overrides=await query.get();
+      const deltas=new Map(overrides.docs.map(doc=>[doc.id,{...doc.data(),id:doc.id}]));
+      let missed=false;
+      const known=new Set(result.data.map((row:any)=>row.id));
+      for(const id of deltas.keys())if(!known.has(id))missed=true;
+      result={...result,
+        data:result.data.map((row:any)=>{
+          const patch=deltas.get(row.id) as any;
+          return patch&&(!row.updatedAt||!patch.updatedAt||patch.updatedAt>=row.updatedAt)
+            ? {...row,...patch}:row;
+        }),
+        stale:result.stale||missed,degraded:result.degraded||missed
+      };
     } else {
       const build = dataset === 'competitions' ? () => buildCompetitionsSnapshot(seasonId)
         : dataset === 'clubs-with-owners' ? () => buildClubsSnapshot(seasonId)
