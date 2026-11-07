@@ -11,6 +11,8 @@ on:
       - 'scripts/serverlessParity.test.mjs'
       - 'scripts/serverlessReferences.test.mjs'
       - 'scripts/validateServerlessReferences.mjs'
+      - 'scripts/prepareSupabaseDocumentArchive.mjs'
+      - 'scripts/serverlessRawArchive.test.mjs'
       - '.github/workflows/serverless-migration-shadow.yml'
   workflow_dispatch:
 permissions:
@@ -25,4 +27,4 @@ jobs:
         with:
           node-version: '22'
       - name: Validate replay, conflicts and bounded batches
-        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs
