@@ -149,6 +149,7 @@ export const notificationDeliveries=table('efl_notification_deliveries',{
   userId:text('user_id').notNull(),status:text('status').notNull().default('PENDING'),
   attempts:integer('attempts').notNull().default(0),
   leaseToken:text('lease_token'),leaseUntil:integer('lease_until'),
+  retryAfter:integer('retry_after').notNull().default(0),
   createdAt:integer('created_at').notNull(),sentAt:integer('sent_at'),
   lastError:text('last_error'),
 },t=>({
