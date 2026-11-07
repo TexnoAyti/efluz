@@ -32,7 +32,12 @@ function sample(){
   updatedAt:'2026-01-02T00:00:00Z'})],
  competition_participants:[doc('p1',{seasonId:'s1',competitionId:'comp1',
   clubId:'c1',seedNumber:1,createdAt:'2026-01-02T00:00:00Z'})],
- result_submissions:[],disputes:[]
+ result_submissions:[],disputes:[],
+ notifications:[doc('n1',{userId:'user-1',type:'MATCH',title:'New match',
+    message:'Fixture scheduled',isRead:false,createdAt:'2026-01-02T00:00:00Z'})],
+ audit_logs:[doc('a1',{action:'SYSTEM_RECONCILE',entityType:'fixture',
+    entityId:'f1',newValueJson:'{"status":"SCHEDULED"}',
+    createdAt:'2026-01-02T00:00:00Z'})]
  };
 }
 test('global leagues and clubs create unique copies for each season',()=>{
@@ -43,6 +48,10 @@ test('global leagues and clubs create unique copies for each season',()=>{
  assert.equal(rows.clubOccupancies[0].club_id,rows.clubs[0].id);
  assert.equal(rows.fixtures[0].home_club_id,rows.clubs[0].id);
  assert.equal(rows.matchAccess.length,1);
+ assert.equal(rows.notifications.length,1);
+ assert.equal(rows.auditLogs.length,1);
+ assert.equal(rows.auditLogs[0].actor_user_id,'SYSTEM');
+ assert.deepEqual(rows.auditLogs[0].new_value,{status:'SCHEDULED'});
  assert.equal(rows.matchAccess[0].writable,false);
  assert.equal(report.cutoverReady,false);
  for(const [table,records] of Object.entries(rows))
