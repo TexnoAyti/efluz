@@ -49,7 +49,7 @@ export async function confirmFixtureResult(db,userId,input) {
             WHERE w.fixture_id=efl_fixtures.id
              AND w.season_id=efl_fixtures.season_id
              AND w.competition_id=efl_fixtures.competition_id
-             AND w.is_open=1)))
+             AND w.is_open=1 AND efl_fixtures.round<c.current_matchday)))
       AND EXISTS (SELECT 1 FROM efl_users u JOIN efl_club_occupancies o
         ON o.user_id=u.id AND o.telegram_id=u.telegram_id
         WHERE u.id=:user AND u.telegram_id=:telegram AND u.is_banned=0
