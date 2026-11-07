@@ -6,7 +6,7 @@ import {resolve,join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {validateImportBatch,IMPORT_TABLES,PRIMARY_KEYS,stableRow} from '../tgcloud/lib/importBatch.js';
 
-const order=['users','seasons','leagues','clubs','competitions','participants','clubOccupancies','fixtures','resultSubmissions','disputes','notifications','auditLogs','matchAccess','matchMessages','rawDocuments'];
+const order=['users','seasons','leagues','clubs','competitions','participants','clubOccupancies','fixtures','resultSubmissions','disputes','notifications','auditLogs','matchAccess','matchMessages','rawDocuments','rawDocumentParts'];
 const input=process.argv[2], directory=process.argv[3];
 if(!input || !directory) {
   console.error('Usage: node scripts/prepareServerlessImport.mjs normalized-snapshot.json output-folder');
