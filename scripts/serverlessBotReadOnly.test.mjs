@@ -46,5 +46,11 @@ test('private bot fetches only signed sender club, never another user data',asyn
   assert.match(banned.text,/cheklangan/);
   const start=await handleReadOnlyBotCommand(db,msg(123,'/start'));
   assert.match(start.text,/sinov boti/);
+  assert.ok(Array.isArray(start.reply_markup.inline_keyboard));
+  const buttons=start.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
+  assert.ok(buttons.includes('efl:uzeflife'));
+  assert.ok(buttons.includes('efl:teams'));
+  assert.ok(buttons.includes('efl:myfixtures'));
+  assert.ok(buttons.includes('efl:inbox'));
  }finally{sql.close();}
 });
