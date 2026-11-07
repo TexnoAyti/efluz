@@ -29,10 +29,14 @@ export async function claimClub(db,uid,input){
   const id='claim:'+seasonId+':'+clubId+':'+uid+':'+requestId;
   const params={':id':id,':season':seasonId,':club':clubId,':user':uid,
     ':telegram':user.telegram_id,':now':Date.now()};
+  const previous=await db.get(`SELECT id,club_id AS clubId,league_id AS leagueId,
+    user_id AS userId FROM efl_club_occupancies WHERE season_id=:season
+    AND club_id=:club AND status='ACTIVE' LIMIT 1`,
+    {':season':seasonId,':club':clubId});
   // Re-check all write conditions within the INSERT. Unique indexes on
   // (season,club) and (season,league,user), partial on status=ACTIVE, prevent
   // two-player races and multi-club selection in the same league.
-  const inserted=await db.run(`INSERT INTO efl_club_occupancies
+  await db.run(`INSERT INTO efl_club_occupancies
     (id,season_id,league_id,club_id,user_id,telegram_id,status,joined_at,updated_at)
     SELECT :id,l.season_id,l.id,c.id,u.id,u.telegram_id,'ACTIVE',:now,:now
     FROM efl_clubs c JOIN efl_leagues l ON l.id=c.league_id
@@ -49,5 +53,5 @@ export async function claimClub(db,uid,input){
     {':season':seasonId,':club':clubId});
   if(!own||own.userId!==uid||own.leagueId!==candidate.leagueId)throw Error('CLUB_CLAIM_CONFLICT');
   return {ok:true,clubId,seasonId,leagueId:own.leagueId,
-    alreadyClaimed:!(inserted?.rowsAffected>0),source:'telegram-serverless'};
+    alreadyClaimed:Boolean(previous),source:'telegram-serverless'};
 }
