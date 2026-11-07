@@ -27,12 +27,18 @@ export async function claimNotificationForWorker(db,input){
  const params={':id':notificationId,':token':leaseToken,':now':now,
   ':until':now+leaseMs};
  if(!Number.isSafeInteger(params[':until']))throw Error('INVALID_DELIVERY_LEASE');
+ // An expired lease may already have sent a Telegram message before the
+ // worker crashed. Quarantine rather than blindly resending it.
+ await db.run(`UPDATE efl_notification_deliveries
+ SET status='REVIEW',lease_token=NULL,lease_until=NULL,
+     last_error='LEASE_EXPIRED_UNCERTAIN'
+ WHERE notification_id=:id AND status='LEASED' AND lease_until<:now`,
+ {':id':notificationId,':now':now});
  await db.run(`UPDATE efl_notification_deliveries
  SET status='LEASED',lease_token=:token,lease_until=:until,
      attempts=attempts+1
  WHERE notification_id=:id AND attempts<5 AND
- ((status='PENDING' AND retry_after<=:now) OR
-  (status='LEASED' AND lease_until<:now))
+ status='PENDING' AND retry_after<=:now
  AND EXISTS(SELECT 1 FROM efl_notifications n
    JOIN efl_users u ON u.id=n.user_id
    WHERE n.id=efl_notification_deliveries.notification_id
