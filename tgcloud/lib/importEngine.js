@@ -40,19 +40,25 @@ export async function applyImportBatch(db, input) {
 
   const names = columns.map(c => '"'+c+'"').join(',');
   const params = columns.map(c => ':'+c).join(',');
-  let inserted = 0, skipped = 0;
+  let previouslyPresent = 0;
   for (const row of rows) {
+    const lookup = {':pk':row[pk]};
+    const existing = await db.get(
+      `SELECT ${names} FROM ${sqlTable} WHERE "${pk}"=:pk`,lookup
+    );
+    if (existing) {
+      if (!rowsEquivalent(existing,row,columns)) throw new Error('ROW_CONFLICT');
+      previouslyPresent++;
+    }
     const values = Object.fromEntries(columns.map(c => [':'+c, comparableValue(row[c],c)]));
-    const result = await db.run(
+    await db.run(
       `INSERT INTO ${sqlTable} (${names}) VALUES (${params}) ON CONFLICT DO NOTHING`,
       values
     );
     const persisted = await db.get(
-      `SELECT ${names} FROM ${sqlTable} WHERE "${pk}"=:pk`,
-      {':pk':row[pk]}
+      `SELECT ${names} FROM ${sqlTable} WHERE "${pk}"=:pk`,lookup
     );
     if (!persisted || !rowsEquivalent(persisted,row,columns)) throw new Error('ROW_CONFLICT');
-    if (result?.rowsAffected > 0) inserted++; else skipped++;
   }
   const stateWrite = await db.run(
     `INSERT INTO efl_migration_state (key,cursor,status,checksum,details,updated_at)
@@ -72,5 +78,8 @@ export async function applyImportBatch(db, input) {
   );
   if (!complete || complete.checksum !== signature || complete.status !== 'COMPLETE')
     throw new Error('BATCH_CONFLICT');
-  return {ok:true,table,batchId,inserted,skipped,total:rows.length,status:'COMPLETE'};
+  // Raw SDK db.run does not guarantee a rowsAffected counter. Report
+  // independently verified rows and preexisting rows, never invented inserts.
+  return {ok:true,table,batchId,verified:rows.length,previouslyPresent,
+    total:rows.length,status:'COMPLETE'};
 }
