@@ -5,6 +5,7 @@ on:
       - 'tgcloud/lib/importBatch.js'
       - 'tgcloud/lib/importEngine.js'
       - 'scripts/serverlessMigration*.test.mjs'
+      - 'scripts/serverlessImportPacket.test.mjs'
       - 'scripts/prepareServerlessImport.mjs'
       - '.github/workflows/serverless-migration-shadow.yml'
   workflow_dispatch:
@@ -20,4 +21,4 @@ jobs:
         with:
           node-version: '22'
       - name: Validate replay, conflicts and bounded batches
-        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs
