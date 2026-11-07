@@ -9,6 +9,14 @@ const uzeflifeButton=document.getElementById('uzeflife');
 const teamsButton=document.getElementById('teams');
 const uzeflifeResult=document.getElementById('uzeflifeResult');
 const teamsResult=document.getElementById('teamsResult');
+const inboxButton=document.getElementById('inbox');
+const inboxResult=document.getElementById('inboxResult');
+const requestsButton=document.getElementById('teamRequests');
+const requestsResult=document.getElementById('teamRequestsResult');
+const staffPanel=document.getElementById('staffPanel');
+const overviewButton=document.getElementById('staffOverview');
+const auditButton=document.getElementById('roundAudit');
+const staffResult=document.getElementById('staffResult');
 const webApp=window.Telegram?.WebApp;
 const sdk=webApp?.Serverless;
 webApp?.ready?.();
@@ -40,6 +48,8 @@ connect.addEventListener('click',async()=>{
     profileButton.disabled=!result.telegramUserId;
     uzeflifeButton.disabled=!result.telegramUserId;
     teamsButton.disabled=!result.telegramUserId;
+    inboxButton.disabled=!result.telegramUserId;
+    requestsButton.disabled=!result.telegramUserId;
   }catch(error){status('Ulanish tekshiruvdan o‘tmadi');health.textContent='Xato: '+readable(error);}
   finally{connect.disabled=false;}
 });
@@ -50,6 +60,15 @@ profileButton.addEventListener('click',async()=>{
     if(result?.ok!==true)throw Error('UNEXPECTED_PROFILE');
     const clubCount=Array.isArray(result.ownerships)?result.ownerships.length:0;
     const leagueCount=Array.isArray(result.leagues)?result.leagues.length:0;
+    if(result.user?.isAdmin===true){
+      staffPanel.hidden=false;
+      overviewButton.disabled=false;
+      auditButton.disabled=false;
+    }else{
+      staffPanel.hidden=true;
+      overviewButton.disabled=true;
+      auditButton.disabled=true;
+    }
     profile.textContent='Foydalanuvchi: '+(result.user?'topildi':'sinov bazasida yo‘q')+
       '\nFaol klublar: '+clubCount+'\nLigalar: '+leagueCount+
       '\nManba: '+String(result.source||'noma’lum');
@@ -90,4 +109,56 @@ teamsButton.addEventListener('click',async()=>{
     :'Staging bazasida TEAMS katalogi hali import qilinmagan.';
  }catch(error){teamsResult.textContent='Xato: '+readable(error);}
  finally{teamsButton.disabled=false;}
+});
+
+inboxButton.addEventListener('click',async()=>{
+ inboxButton.disabled=true;inboxResult.textContent='Bildirishnomalar olinmoqda…';
+ try{
+  const result=await call('notifications',{limit:10});
+  if(result?.ok!==true||!Array.isArray(result.notifications))throw Error('INVALID_INBOX');
+  inboxResult.textContent=result.notifications.length
+   ?result.notifications.map(n=>String(n.title??'Xabar').slice(0,90)+
+      ' — '+(n.isRead?'o‘qilgan':'yangi')).join('\n')
+   :'Staging bazasida bildirishnoma yo‘q.';
+ }catch(error){inboxResult.textContent='Xato: '+readable(error);}
+ finally{inboxButton.disabled=false;}
+});
+requestsButton.addEventListener('click',async()=>{
+ requestsButton.disabled=true;requestsResult.textContent='TEAMS arizalari olinmoqda…';
+ try{
+  const result=await call('teamJoinQueue',{scope:'mine',limit:20});
+  if(result?.ok!==true||!Array.isArray(result.requests))throw Error('INVALID_TEAM_REQUESTS');
+  requestsResult.textContent=result.requests.length
+   ?result.requests.map(r=>String(r.teamName??'Jamoa').slice(0,70)+
+      ' — '+String(r.status??'').slice(0,20)).join('\n')
+   :'Staging bazasida ariza topilmadi.';
+ }catch(error){requestsResult.textContent='Xato: '+readable(error);}
+ finally{requestsButton.disabled=false;}
+});
+overviewButton.addEventListener('click',async()=>{
+ overviewButton.disabled=true;staffResult.textContent='Admin statistikasi olinmoqda…';
+ try{
+  const result=await call('adminOverview');
+  if(result?.ok!==true||!result.stats||typeof result.stats!=='object')
+    throw Error('INVALID_ADMIN_OVERVIEW');
+  const permitted=['users','seasons','leagues','clubs','occupancies','competitions',
+    'fixtures','resultSubmissions','disputes','notifications'];
+  staffResult.textContent=permitted.map(k=>k+': '+Number(result.stats[k]??0)).join('\n');
+ }catch(error){staffResult.textContent='Xato: '+readable(error);}
+ finally{overviewButton.disabled=false;}
+});
+auditButton.addEventListener('click',async()=>{
+ auditButton.disabled=true;staffResult.textContent='UZEFLIFE joriy tur tekshirilmoqda…';
+ try{
+  const result=await call('uzeflifeRoundAudit',{limit:10});
+  if(result?.ok!==true)throw Error('INVALID_ROUND_AUDIT');
+  if(!result.available){staffResult.textContent='Sinov bazasida UZEFLIFE yo‘q.';return;}
+  staffResult.textContent='Joriy tur: '+String(result.round)+
+    '\nJami uchrashuvlar: '+Number(result.stats?.total??0)+
+    '\nYakunlangan: '+Number(result.stats?.completed??0)+
+    '\nJavobsiz: '+Number(result.stats?.unresolved??0)+
+    '\nRaqib ma’lumoti to‘liq emas: '+Number(result.stats?.incompleteOpponents??0)+
+    '\nRejim: faqat o‘qish, tur o‘zgarmaydi.';
+ }catch(error){staffResult.textContent='Xato: '+readable(error);}
+ finally{auditButton.disabled=false;}
 });
