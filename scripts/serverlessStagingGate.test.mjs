@@ -17,3 +17,17 @@ test('only matching isolated staging credentials pass',()=>{
   assert.throws(()=>verifyStagingGate({...good,...delta}),error);
  }
 });
+
+import {spawnSync} from 'node:child_process';
+test('staging gate CLI actually executes and never logs credentials',()=>{
+  const script=new URL('./verifyTgcloudStagingGate.mjs',import.meta.url).pathname;
+  const safe=spawnSync(process.execPath,[script],{env:{...process.env,...good},encoding:'utf8'});
+  assert.equal(safe.status,0,safe.stderr);
+  assert.match(safe.stdout,/STAGING_GATE_OK/);
+  assert.doesNotMatch(safe.stdout+safe.stderr,/staging-secret-example/);
+  const dangerous=spawnSync(process.execPath,[script],{env:{...process.env,...good,
+    TGCLOUD_TOKEN:'app456:production-secret-example'},encoding:'utf8'});
+  assert.notEqual(dangerous.status,0);
+  assert.match(dangerous.stderr,/STAGING_TOKEN_APP_MISMATCH/);
+  assert.doesNotMatch(dangerous.stderr,/production-secret-example/);
+});
