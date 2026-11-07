@@ -1,0 +1,5 @@
+{
+  // The existing EFLUZ Vite build will be connected after endpoint parity
+  // checks. Keep static hosting disabled while this shadow project is tested.
+  "$schema": "./node_modules/@tgcloud/cli/schema/tgcloud.json"
+}
