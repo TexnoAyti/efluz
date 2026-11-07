@@ -33,7 +33,7 @@ test('projection keeps public fields, drops embedded base64 and private roster',
  assert.throws(()=>convertTeamsCatalog(invalid,{knownUserIds}),/TEAMS_DUPLICATE_ID/);
 });
 test('TEAMS list is strictly paginated and never exposes private fields',async()=>{
- const {rows}=convertTeamsCatalog(source);
+ const {rows}=convertTeamsCatalog(source,{knownUserIds});
  const sql=new DatabaseSync(':memory:');
  try{
   sql.exec(`CREATE TABLE efl_teams_catalog(
