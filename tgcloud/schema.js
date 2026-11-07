@@ -168,3 +168,31 @@ export const rawDocumentParts=table('efl_raw_document_parts',{
   sourcePart:uniqueIndex('efl_raw_parts_source_index_uidx').on(t.sourceDocumentId,t.partIndex),
   sourceLookup:index('efl_raw_parts_source_idx').on(t.sourceSpace,t.collectionPath,t.documentId)
 }));
+
+
+// Lossless original UZEFLIFE state stays in the private raw-document archive.
+// These separate tables provide a bounded, read-only operational projection.
+export const uzeflifeState=table('efl_uzeflife_state',{
+ id:text('id').primaryKey(),name:text('name').notNull(),
+ status:text('status').notNull(),format:text('format').notNull().default(''),
+ currentRound:integer('current_round').notNull().default(0),
+ totalRounds:integer('total_rounds').notNull().default(0),
+ roundHours:integer('round_hours').notNull().default(24),
+ participantsCount:integer('participants_count').notNull(),
+ matchesCount:integer('matches_count').notNull(),
+ sourceRevision:integer('source_revision').notNull().default(0),
+});
+
+export const uzeflifeEntrants=table('efl_uzeflife_entrants',{
+ id:text('id').primaryKey(),name:text('name').notNull(),
+ status:text('status').notNull(),
+},(t)=>({stateIdx:index('efl_uzeflife_entrants_status_idx').on(t.status)}));
+
+export const uzeflifeFixtures=table('efl_uzeflife_fixtures',{
+ id:text('id').primaryKey(),round:integer('round').notNull(),
+ bracket:integer('bracket').notNull(),home:text('home').notNull(),
+ away:text('away').notNull(),winner:text('winner'),
+ homeScore:integer('home_score'),awayScore:integer('away_score'),
+ penaltyHome:integer('penalty_home'),penaltyAway:integer('penalty_away'),
+ deadlineAt:integer('deadline_at'),
+},(t)=>({roundIndex:index('efl_uzeflife_fixtures_round_idx').on(t.round,t.bracket)}));
