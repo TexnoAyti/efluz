@@ -5,6 +5,31 @@ import {readUzeflife} from './uzeflifeRead.js';
 import {readTeamsCatalog} from './teamsCatalogRead.js';
 import {readMyFixtures} from './myFixturesRead.js';
 export async function readOnlyBotExtra(db,command,{id,telegramId}){
+ if(command==='/leagues'||command==='/cups'){
+  // Signed-user visibility only. Do not let Telegram text choose seasons,
+  // competitions or private identities.
+  const season=await db.get(`SELECT id,name FROM efl_seasons
+    WHERE is_active=1 ORDER BY created_at DESC,id DESC LIMIT 1`);
+  if(!season)return 'Sinov bazasida faol mavsum topilmadi.';
+  if(command==='/leagues'){
+   const rows=await db.all(`SELECT name,status,current_round AS currentRound
+     FROM efl_leagues WHERE season_id=:season
+     ORDER BY sort_order ASC,id ASC LIMIT 20`,{':season':season.id});
+   return rows.length
+    ?'Ligalar (sinov) — '+String(season.name).slice(0,60)+'\\n'+
+      rows.map(l=>String(l.name).slice(0,55)+' — '+
+       String(l.status).slice(0,24)+' (tur '+Number(l.currentRound??0)+')').join('\\n')
+    :'Sinov bazasida ligalar topilmadi.';
+  }
+  const rows=await db.all(`SELECT name,type,status FROM efl_competitions
+    WHERE season_id=:season AND type IN ('CUP','SUPER_CUP','DOMESTIC_CUP',
+    'DOMESTIC_SUPER_CUP','INTERNATIONAL_CUP','KNOCKOUT')
+    ORDER BY name ASC,id ASC LIMIT 20`,{':season':season.id});
+  return rows.length
+   ?'Kuboklar (sinov) — '+String(season.name).slice(0,60)+'\\n'+
+    rows.map(c=>String(c.name).slice(0,55)+' — '+String(c.status).slice(0,24)).join('\\n')
+   :'Sinov bazasida kuboklar topilmadi.';
+ }
  if(command==='/uzeflife'){
   const result=await readUzeflife(db,{section:'overview'});
   if(!result.available)return 'UZEFLIFE sinov bazasida hali mavjud emas.';
