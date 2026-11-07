@@ -24,3 +24,6 @@ android/.gradle/
 /serverless-import-packets/
 *production-snapshot*.json
 *normalized-snapshot*.json
+
+# Dedicated Telegram Serverless static export
+/dist-tgcloud/
