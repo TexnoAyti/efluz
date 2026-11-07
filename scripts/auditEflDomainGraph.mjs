@@ -76,11 +76,24 @@ for(const d of s('result_submissions').values()){
 for(const d of s('disputes').values()){
  if(!owns('fixtures',d.fixtureId))defect('DISPUTE_WITHOUT_FIXTURE');
 }
+// Legacy durable overrides are part of the authoritative fixture state.
+// Refuse a migration snapshot where the base fixture and override disagree:
+// standings, cup brackets and award outcomes would otherwise diverge.
+let reconciledOverrides=0;
+for(const [fixtureId,override] of s('durable_fixture_overrides')){
+ const fixture=s('fixtures').get(fixtureId);
+ if(!fixture){defect('OVERRIDE_WITHOUT_FIXTURE');continue;}
+ const keys=['status','homeScore','awayScore','homeClubId','awayClubId'];
+ if(keys.some(key=>Object.hasOwn(override,key)&&override[key]!==fixture[key]))
+  defect('FIXTURE_OVERRIDE_MISMATCH');
+ else reconciledOverrides++;
+}
 const globalLeagueRows=[...s('leagues').values()].filter(d=>!d.seasonId).length;
 const result={ok:Object.keys(errors).length===0,
  counts:Object.fromEntries([...roots].map(([name,items])=>[name,items.size])),
  confirmedFixtures:confirmedCount,pendingOpponentSlots:pendingOpponentCount,
- fixtureOverridesNeedingReconciliation:s('durable_fixture_overrides').size,
+ fixtureOverrides:s('durable_fixture_overrides').size,
+ reconciledFixtureOverrides:reconciledOverrides,
  globalLeagueRowsNeedingSeasonMapping:globalLeagueRows,errorsByType:errors,
  cutoverReady:false};
 console.log(JSON.stringify(result,null,2));
