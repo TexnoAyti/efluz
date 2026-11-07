@@ -88,6 +88,7 @@ on:
       - 'tgcloud/lib/teamsJoinWorkflow.js'
       - 'tgcloud/endpoints/requestTeamJoin.js'
       - 'tgcloud/endpoints/approveTeamJoin.js'
+      - 'tgcloud/endpoints/rejectTeamJoin.js'
       - 'scripts/serverlessTeamsJoinWorkflow.test.mjs'
       - 'scripts/serverlessTeamsJoinQueue.test.mjs'
       - 'tgcloud/lib/teamsJoinQueue.js'
