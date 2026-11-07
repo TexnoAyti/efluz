@@ -43,6 +43,9 @@ on:
       - 'scripts/serverlessCompetitionDetail.test.mjs'
       - 'scripts/serverlessSourceInventory.test.mjs'
       - 'scripts/serverlessDomainGraph.test.mjs'
+      - 'scripts/serverlessCoreConverter.test.mjs'
+      - 'scripts/lib/convertEflCore.mjs'
+      - 'scripts/convertEflCoreSnapshot.mjs'
       - 'scripts/auditEflDomainGraph.mjs'
       - 'scripts/auditEflSourceInventory.mjs'
       - 'migration/source-collections-inventory.json'
@@ -78,7 +81,7 @@ jobs:
       - name: Check Telegram runtime module imports
         run: node scripts/checkTgcloudModules.mjs
       - name: Validate replay, conflicts and bounded batches
-        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs scripts/serverlessStreamingPackets.test.mjs scripts/serverlessRawBatchVerify.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessResultProposal.test.mjs scripts/serverlessClubClaim.test.mjs scripts/serverlessJsonReplay.test.mjs scripts/serverlessSqliteIntegration.test.mjs scripts/serverlessMatchChatSqlite.test.mjs scripts/serverlessConfirmResultSqlite.test.mjs scripts/serverlessBotReadOnly.test.mjs scripts/serverlessCallbacks.test.mjs scripts/serverlessAdminOverview.test.mjs scripts/serverlessStagingGate.test.mjs scripts/serverlessCompetitionDetail.test.mjs scripts/serverlessSourceInventory.test.mjs scripts/serverlessDomainGraph.test.mjs
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs scripts/serverlessStreamingPackets.test.mjs scripts/serverlessRawBatchVerify.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessResultProposal.test.mjs scripts/serverlessClubClaim.test.mjs scripts/serverlessJsonReplay.test.mjs scripts/serverlessSqliteIntegration.test.mjs scripts/serverlessMatchChatSqlite.test.mjs scripts/serverlessConfirmResultSqlite.test.mjs scripts/serverlessBotReadOnly.test.mjs scripts/serverlessCallbacks.test.mjs scripts/serverlessAdminOverview.test.mjs scripts/serverlessStagingGate.test.mjs scripts/serverlessCompetitionDetail.test.mjs scripts/serverlessSourceInventory.test.mjs scripts/serverlessDomainGraph.test.mjs scripts/serverlessCoreConverter.test.mjs
   frontend-static:
     runs-on: ubuntu-latest
     timeout-minutes: 12
