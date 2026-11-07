@@ -35,7 +35,11 @@ function source(collections,kind){
  return map;
 }
 const required=(value,code)=>nonempty(value)??fail(code);
-export function convertEflCore(collections){
+export function convertEflCore(collections,options={}){
+ // Historical records with vanished references must never gain fabricated
+ // users or competitions. They can be quarantined only by explicit opt-in.
+ const quarantine=options.quarantineHistoricalOrphans===true;
+ const quarantined={releasedOccupancies:0,notifications:0,participants:0};
  const users=source(collections,'users'),seasons=source(collections,'seasons');
  const leagues=source(collections,'leagues'),clubs=source(collections,'clubs');
  const competitions=source(collections,'competitions');
@@ -125,8 +129,14 @@ export function convertEflCore(collections){
   const seasonId=required(d.seasonId,'OCCUPANCY_WITHOUT_SEASON');
   const clubId=required(d.clubId,'OCCUPANCY_WITHOUT_CLUB');
   const userId=required(d.userId,'OCCUPANCY_WITHOUT_USER');
-  if(!seasons.has(seasonId)||!clubs.has(clubId)||!users.has(userId))
+  if(!seasons.has(seasonId)||!clubs.has(clubId))
     fail('OCCUPANCY_REFERENCE_MISSING');
+  if(!users.has(userId)){
+    if(quarantine&&str(d.status).toUpperCase()==='RELEASED'){
+      quarantined.releasedOccupancies++;continue;
+    }
+    fail('OCCUPANCY_REFERENCE_MISSING');
+  }
   const leagueId=required(clubs.get(clubId).leagueId,'CLUB_WITHOUT_LEAGUE');
   const telegram_id=userById.get(userId);
   const status=str(d.status,'RELEASED').toUpperCase();
@@ -176,7 +186,13 @@ export function convertEflCore(collections){
  for(const [id,d] of participants){
   const seasonId=required(d.seasonId,'PARTICIPANT_WITHOUT_SEASON');
   const compId=required(d.competitionId,'PARTICIPANT_WITHOUT_COMPETITION');
-  if(competitionSeason.get(compId)!==seasonId||!clubs.has(d.clubId))
+  if(!clubs.has(d.clubId)||!seasons.has(seasonId))
+    fail('PARTICIPANT_REFERENCE_MISSING');
+  if(!competitionSeason.has(compId)){
+    if(quarantine){quarantined.participants++;continue;}
+    fail('PARTICIPANT_REFERENCE_MISSING');
+  }
+  if(competitionSeason.get(compId)!==seasonId)
     fail('PARTICIPANT_REFERENCE_MISSING');
   output.participants.push({id,competition_id:compId,season_id:seasonId,
    club_id:relationId(seasonId,d.clubId),owner_user_id:d.ownerUserId??null,
@@ -212,7 +228,10 @@ export function convertEflCore(collections){
    created_at:time(d.createdAt),resolved_at:time(d.resolvedAt)||null});
  }
  for(const [id,d] of notifications){
-  if(!users.has(d.userId))fail('NOTIFICATION_USER_MISSING');
+  if(!users.has(d.userId)){
+    if(quarantine){quarantined.notifications++;continue;}
+    fail('NOTIFICATION_USER_MISSING');
+  }
   output.notifications.push({id,user_id:d.userId,
    type:required(d.type,'NOTIFICATION_WITHOUT_TYPE'),
    title:str(d.title),message:str(d.message),data:d.data??null,
@@ -229,6 +248,7 @@ export function convertEflCore(collections){
  return {rows:output,report:{mappedTables:Object.keys(output),
    scopedLeagueCopies:output.leagues.length,scopedClubCopies:output.clubs.length,
    sourceFixtures:fixtures.size,reconciledFixtureOverrides:overrides.size,notificationsPreserved:output.notifications.length,
-   auditLogsPreserved:output.auditLogs.length,stagingMatchAccessWritable:false,
+   auditLogsPreserved:output.auditLogs.length,
+   quarantinedHistorical:quarantined,stagingMatchAccessWritable:false,
    requiresLegacyArchive:true,cutoverReady:false}};
 }
