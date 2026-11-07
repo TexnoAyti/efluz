@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {submitTeamJoin,approveTeamJoin} from '../tgcloud/lib/teamsJoinWorkflow.js';
+import {submitTeamJoin,approveTeamJoin,rejectTeamJoin} from '../tgcloud/lib/teamsJoinWorkflow.js';
 
 function setup(){
  const sql=new DatabaseSync(':memory:');
@@ -107,5 +107,43 @@ test('mandatory group membership and bans remain fail closed',async()=>{
   await assert.rejects(approveTeamJoin(db,{telegramId:'999'},
    {requestId:'request-0001'}),/TEAMS_JOIN_APPROVAL_CONFLICT/);
   assert.equal(sql.prepare("SELECT status FROM efl_team_join_requests WHERE id='request-0001'").get().status,'PENDING');
+ }finally{sql.close();}
+});
+
+test('captain or manager can reject a pending TEAMS request with safe replay',async()=>{
+ const {sql,db}=setup();
+ try{
+  await submitTeamJoin(db,{id:'u1',telegramId:'123'},
+   {teamId:'team1',requestId:'request-0010'});
+  const rejected=await rejectTeamJoin(db,{telegramId:'888'},
+   {requestId:'request-0010'});
+  assert.equal(rejected.status,'REJECTED');
+  assert.equal(rejected.replayed,false);
+  assert.equal((await rejectTeamJoin(db,{telegramId:'777'},
+   {requestId:'request-0010'})).replayed,true);
+  await assert.rejects(approveTeamJoin(db,{telegramId:'999'},
+   {requestId:'request-0010'}),/TEAMS_JOIN_NOT_PENDING/);
+  assert.equal(sql.prepare("SELECT status FROM efl_team_join_requests WHERE id='request-0010'").get().status,'REJECTED');
+ }finally{sql.close();}
+});
+test('wrong team, banned admin and already approved requests cannot be rejected',async()=>{
+ const {sql,db}=setup();
+ try{
+  await submitTeamJoin(db,{id:'u2',telegramId:'456'},
+   {teamId:'team2',requestId:'request-0020'});
+  await assert.rejects(rejectTeamJoin(db,{telegramId:'777'},
+   {requestId:'request-0020'}),/TEAMS_ADMIN_FORBIDDEN/);
+  await assert.rejects(rejectTeamJoin(db,{telegramId:'789'},
+   {requestId:'request-0020'}),/TEAMS_ADMIN_FORBIDDEN/);
+  await assert.rejects(rejectTeamJoin(db,{telegramId:'456'},
+   {requestId:'request-0020'}),/TEAMS_ADMIN_FORBIDDEN/);
+  await approveTeamJoin(db,{telegramId:'999'},{requestId:'request-0020'});
+  await assert.rejects(rejectTeamJoin(db,{telegramId:'999'},
+   {requestId:'request-0020'}),/TEAMS_JOIN_NOT_PENDING/);
+  assert.equal(sql.prepare("SELECT status FROM efl_team_join_requests WHERE id='request-0020'").get().status,'APPROVED');
+  await assert.rejects(rejectTeamJoin(db,{telegramId:'999'},
+   {requestId:'missing'}),/TEAMS_JOIN_NOT_FOUND/);
+  await assert.rejects(rejectTeamJoin(db,{telegramId:'999'},
+   {requestId:'request-0020',userId:'u2'}),/UNKNOWN_TEAMS_JOIN_FIELD/);
  }finally{sql.close();}
 });
