@@ -65,7 +65,8 @@ export async function finishNotificationForWorker(db,input){
   sent_at=CASE WHEN :success=1 THEN :now ELSE sent_at END,
   retry_after=CASE WHEN :success=1 THEN 0 ELSE :now+attempts*60000 END,
   last_error=:error,lease_token=NULL,lease_until=NULL
- WHERE notification_id=:id AND lease_token=:token AND status='LEASED'`,params);
+ WHERE notification_id=:id AND lease_token=:token AND status='LEASED'
+  AND lease_until>=:now`,params);
  const row=await db.get(`SELECT status,lease_token AS leaseToken,
   attempts,sent_at AS sentAt,last_error AS lastError
  FROM efl_notification_deliveries WHERE notification_id=:id`,{':id':notificationId});
