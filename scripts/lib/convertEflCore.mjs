@@ -17,6 +17,7 @@ export function epoch(value){
 }
 const time=(value,fallback=0)=>epoch(value)??fallback;
 const score=x=>x==null?null:Number.isSafeInteger(x)&&x>=0&&x<=99?x:fail('INVALID_SCORE');
+const jsonValue=x=>{if(x===undefined||x===null)return null;if(typeof x!=='string')return x;try{return JSON.parse(x);}catch{return {legacyText:x};}};
 function fail(code){throw Error(code);}
 const active=x=>str(x).toUpperCase()==='ACTIVE';
 const relationId=(seasonId,id)=>'s'+seasonId.length+':'+seasonId+':'+id;
@@ -209,7 +210,7 @@ export function convertEflCore(collections){
   output.auditLogs.push({id,actor_user_id:str(d.actorUserId,'SYSTEM'),
    actor_username:str(d.actorUsername),action:required(d.action,'AUDIT_WITHOUT_ACTION'),
    entity_type:str(d.entityType,'SYSTEM'),entity_id:str(d.entityId,id),
-   old_value:d.oldValueJson??null,new_value:d.newValueJson??null,
+   old_value:jsonValue(d.oldValueJson),new_value:jsonValue(d.newValueJson),
    created_at:time(d.createdAt,time(d.timestamp))});
  }
  return {rows:output,report:{mappedTables:Object.keys(output),
