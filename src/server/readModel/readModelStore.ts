@@ -685,13 +685,48 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   const { key, ttlSeconds = 86400, expectedCount, firestoreFetcher, validateData } = options;
   const cleanKey = getRawDatasetKey(key);
 
+  // Serve a fresh in-process copy before probing the remote snapshot store.
+  // Supabase RPCs can take up to 15s when the database is saturated; making
+  // the RPC happen first defeats the purpose of the L1 cache and freezes the
+  // main club/leagues screens on every revisit.
+  const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
+  if (!cleanKey.endsWith(':fixtures') && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < Math.min(ttlSeconds * 1000, PROCESS_MEMORY_TTL_MS)) {
+    return {
+      data: memoryHit.data,
+      source: 'memory',
+      generatedAt: memoryHit.generatedAt,
+      sourceVersion: memoryHit.sourceVersion,
+      stale: Boolean(memoryHit.stale),
+      degraded: Boolean(memoryHit.degraded),
+    };
+  }
+
   const breakerStatus = firestoreCircuitBreaker.getStatus();
   const firestoreHealthy = breakerStatus.state === 'CLOSED' && !breakerStatus.softLimitExceeded;
-  const postgresBundle = usesPostgresSnapshots() ? await readPostgresSnapshotBundle(getFreshKey(cleanKey), getLkgKey(cleanKey), getDirtyKey(cleanKey)) : null;
+  let postgresBundle: Awaited<ReturnType<typeof readPostgresSnapshotBundle>> | null = null;
+  if (usesPostgresSnapshots()) {
+    try {
+      postgresBundle = await readPostgresSnapshotBundle(getFreshKey(cleanKey), getLkgKey(cleanKey), getDirtyKey(cleanKey));
+    } catch (error: any) {
+      // A remote snapshot probe is an optimization, not a reason to discard a
+      // usable in-process value. The authoritative fetch/fallback path below
+      // will decide whether the request can be served.
+      console.warn('[READ_MODEL_SNAPSHOT_PROBE_DEGRADED]', error?.message || error);
+      if (memoryHit && memoryHit.data !== undefined) {
+        return {
+          data: memoryHit.data,
+          source: 'memory_stale',
+          generatedAt: memoryHit.generatedAt,
+          sourceVersion: memoryHit.sourceVersion,
+          stale: true,
+          degraded: true,
+        };
+      }
+    }
+  }
   const isDirty = postgresBundle ? Boolean(postgresBundle.dirty?.data) : await redisIsDirty(cleanKey);
 
   // 1. Process Memory Cache (Level 1)
-  const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
   if (!(postgresBundle && cleanKey.endsWith(':fixtures')) && !isDirty && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < ttlSeconds * 1000) {
     if (!firestoreHealthy) {
       return {
