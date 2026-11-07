@@ -27,3 +27,6 @@ android/.gradle/
 
 # Dedicated Telegram Serverless static export
 /dist-tgcloud/
+
+# Telegram CLI project credentials and local deployment state
+/.tgcloud/
