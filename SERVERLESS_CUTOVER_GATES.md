@@ -27,7 +27,7 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 | AI assistant | NOT IMPLEMENTED | Authorization, quotas, no unsafe mutations, parity |
 | Notifications and scheduled work | NOT IMPLEMENTED | Delivery deduplication, timers/cron replacement, replay proof |
 | Frontend | SHADOW ONLY | Every authenticated API call migrated with parity and UI E2E; new writes intentionally not routed live |
-| Static Mini App hosting | NOT CONFIGURED | Build output configured for tgcloud, signed launch smoke test |
+| Static Mini App hosting | STAGING BUILD CONFIGURED, NOT DEPLOYED | `npm run build:tgcloud` creates isolated `dist-tgcloud`; CI scans for Node bundles, actual tgcloud host/signed launch not verified |
 | Performance and errors | NOT MEASURED | Load, retries, timeout, rollback monitoring |
 | Rollback | NOT PREPARED | Restore exact prior webhook and legacy frontend routing |
 
@@ -98,3 +98,13 @@ Telegram Serverless CLI pushes were performed in this audit.
 and migrated staging schema, then compare EFLUZ production domain behavior.
 Passing offline SQL tests does not prove the platform-specific SDK contract,
 Telegram handler parity or current production data parity.
+
+## Isolated Telegram Mini App static hosting
+
+Use `npm run build:tgcloud` to create `dist-tgcloud`. The
+`tgcloud.jsonc` file now points only to that folder, **not** the regular
+`dist` folder containing the Node server bundle. The shadow workflow
+checks `node scripts/verifyTgcloudStatic.mjs` after building. Static files
+must not be deployed to the production bot while existing client routes
+still call the legacy Vercel API. `npx tgcloud push` is a separate,
+operator-controlled step after backend feature parity and staging approval.
