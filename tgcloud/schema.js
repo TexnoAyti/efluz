@@ -141,6 +141,21 @@ export const notifications = table('efl_notifications',{
   createdAt:integer('created_at').notNull(),
 },(t)=>({inboxIdx:index('efl_notifications_user_idx').on(t.userId,t.isRead,t.createdAt)}));
 
+// Durable staging notification delivery queue, linked to the existing inbox.
+// No private message content or Telegram token is copied into this queue.
+// Sending is *not* enabled; completion/retries need Telegram SDK verification.
+export const notificationDeliveries=table('efl_notification_deliveries',{
+  id:text('id').primaryKey(),notificationId:text('notification_id').notNull().unique(),
+  userId:text('user_id').notNull(),status:text('status').notNull().default('PENDING'),
+  attempts:integer('attempts').notNull().default(0),
+  leaseToken:text('lease_token'),leaseUntil:integer('lease_until'),
+  createdAt:integer('created_at').notNull(),sentAt:integer('sent_at'),
+  lastError:text('last_error'),
+},t=>({
+  pendingIdx:index('efl_notification_delivery_pending_idx').on(t.status,t.createdAt),
+  recipientIdx:index('efl_notification_delivery_user_idx').on(t.userId,t.status),
+}));
+
 export const auditLogs = table('efl_audit_logs',{
   id:text('id').primaryKey(),actorUserId:text('actor_user_id').notNull(),
   actorUsername:text('actor_username').notNull(),action:text('action').notNull(),
