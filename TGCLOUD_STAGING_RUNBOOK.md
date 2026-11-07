@@ -26,7 +26,7 @@ frontend environment variables.
 ## What has already been prepared
 
 - CI checks SQL migrations, stable imports, read-only bot command and callback
-  permissions, admin overview, and the isolated static React build.
+  permissions, admin overview, and the isolated, read-only Telegram SDK smoke Mini App build.
 - The `tgcloud/handlers` routes only support a **limited read-only**
   staging command set and are not production parity-complete.
 - Result, club claim and confirmation endpoints have
@@ -44,12 +44,13 @@ frontend environment variables.
 2. Run GitHub Actions workflow `Telegram Serverless staging deploy
    (manual only)` with confirmation `DEPLOY_STAGING_ONLY`. It validates
    token identity **before** building or communicating with Telegram.
-3. The workflow performs `npx tgcloud push` and `npx tgcloud migrate`
-   for the staging bot only. Inspect its logs and stop at any failure;
+3. The workflow performs `tgcloud push`, `tgcloud migrate --dry-run`,
+   and `tgcloud migrate --safe` for the staging bot only. Inspect its logs and stop at any failure;
    no automatic retry with production credentials is allowed.
 4. Open the staging Mini App URL reported by the CLI through the *staging*
    bot and test signed user identity, `/start`, `/myclub`, the read-only
-   callbacks, health, leagues, fixtures and chat.
+   callbacks, `health` and `bootstrap`. The hosted staging page is intentionally
+   limited; it must **not** present the legacy React app as migrated.
 5. Import only a privacy-protected staging snapshot when the authorized
    importer has been reviewed and deliberately enabled for this staging
    bot. Check row counts, SHA-256 checksums, missing references, duplicates,
@@ -73,3 +74,7 @@ Do not switch production until all of the following are true:
 
 **Passing CI and creating a staging bot are not proof of a fully migrated
 production system.** See `SERVERLESS_CUTOVER_GATES.md` for the blockers.
+
+The existing React web UI is **not** deployed to staging while it still
+calls Vercel. The `tgcloud-staging/` front-end is an isolated, read-only
+smoke UI. Its build is checked to exclude server bundles and legacy API calls.
