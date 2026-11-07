@@ -15,6 +15,7 @@ function setup(){
   id TEXT PRIMARY KEY,notification_id TEXT NOT NULL UNIQUE,
   user_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',
   attempts INTEGER NOT NULL DEFAULT 0,lease_token TEXT,lease_until INTEGER,
+  retry_after INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,sent_at INTEGER,last_error TEXT);
  INSERT INTO efl_users VALUES
   ('admin','999',1,0),('member','123',0,0),('other','456',0,0),
@@ -38,7 +39,7 @@ test('only admin enqueues an existing recipient notification, replay is idempote
   assert.equal(sql.prepare('SELECT COUNT(*) AS total FROM efl_notification_deliveries').get().total,1);
   assert.equal(sql.prepare('SELECT user_id AS userId FROM efl_notification_deliveries').get().userId,'member');
   const audit=await readNotificationDeliveryAudit(db,'999');
-  assert.deepEqual(audit.stats,{total:1,pending:1,leased:0,sent:0});
+  assert.deepEqual(audit.stats,{total:1,pending:1,leased:0,sent:0,failed:0});
   assert.doesNotMatch(JSON.stringify(audit),/Sensitive content|123|member/);
  }finally{sql.close();}
 });
