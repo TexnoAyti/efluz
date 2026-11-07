@@ -41,3 +41,28 @@ test('streaming import refuses duplicate document identities',async()=>{
     assert.match(result.stderr,/DUPLICATE_DOCUMENT/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('transient login/webhook documents excluded, review collections block migration',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'efl-policy-'));
+ try{
+  const input=join(dir,'source.jsonl'),output=join(dir,'packets');
+  const transient={space:'production',collection_path:'telegram_webhook_leases',
+    document_id:'lease-1',encoded:{token:'private'},data:{status:'leased'}};
+  const durable={space:'production',collection_path:'fixtures',
+    document_id:'fixture-1',encoded:{id:1},data:{id:'fixture-1'}};
+  await writeFile(input,[transient,durable].map(JSON.stringify).join('\n')+'\n');
+  let result=spawnSync(process.execPath,[program,input,output],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+  const manifest=JSON.parse(await readFile(join(output,'manifest.json'),'utf8'));
+  assert.equal(manifest.count,1);
+  assert.equal(manifest.sourceDocuments,2);
+  assert.equal(manifest.rebuildExcluded,1);
+  const packageData=await readFile(join(output,manifest.batches[0].file),'utf8');
+  assert.doesNotMatch(packageData,/private|lease-1/);
+  const reviewInput=join(dir,'review.jsonl'),reviewOutput=join(dir,'review-packets');
+  await writeFile(reviewInput,JSON.stringify({...durable,collection_path:'telegram_ai_state'})+'\n');
+  result=spawnSync(process.execPath,[program,reviewInput,reviewOutput],{encoding:'utf8'});
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/SOURCE_COLLECTION_NOT_APPROVED/);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
