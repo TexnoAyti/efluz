@@ -319,7 +319,13 @@ Actual Telegram Serverless-hosted runtime remains unverified.
 - TEAMS join request submission and admin approval have normalized
   `efl_team_join_requests` storage and a partial unique index preventing
   more than one approved team per user. Private join queues and admin
-  pending requests are authenticated and paginated.
+  pending requests are authenticated and paginated. The production TEAMS
+  `ownerId` fields were confirmed to reference existing EFLUZ user IDs.
+  Private `owner_user_id` and `admin_user_id` are now preserved in the
+  normalized catalog, while the public TEAMS endpoint explicitly excludes
+  them. Verified team owners and assigned team admins may review and approve
+  **their own team only**; global admins can manage all teams. SQLite tests
+  cover permission isolation and unauthorized cross-team approvals.
 - TEAMS join writes remain **disabled**. The new schema is not yet
   a complete replacement for legacy membership history, captain approvals,
   mandatory-group checks, tickets, existing TEAMS teams or tournament logic.
