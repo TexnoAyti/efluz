@@ -15,7 +15,7 @@ function canonicalJson(value) {
   try {
     const parsed = typeof value === 'string' ? JSON.parse(value) : value;
     return stableRow({value:parsed}, ['value']);
-  } catch { return null; }
+  } catch { return { invalidJson: true }; }
 }
 export function rowsEquivalent(actual, incoming, columns) {
   return columns.every(column => {
