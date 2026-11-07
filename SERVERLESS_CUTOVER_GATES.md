@@ -121,6 +121,18 @@ signed-user access, retries, revoked write permissions and cross-match ID
 conflicts. Passing these tests **does not** make the endpoint ready for real
 users without Telegram Serverless staging and club-release lifecycle tests.
 
+## Shadow mutation gate audit
+
+The staging bot now refuses **all** known application writes by default,
+including club claims, score proposals, opponent confirmations, match chat
+messages, notification read-state changes, and raw imports.
+`scripts/serverlessMutationGate.test.mjs` checks all known mutation
+endpoints and verifies both `MUTATION_CONTROL.enabled=false` and
+`IMPORT_CONTROL.enabled=false` at build time. It fails if a new direct SQL
+write is added to an unreviewed endpoint. These restrictions are independent
+of the offline SQL tests, and prevent a partially deployed staging version
+from writing to an unverified source/target database.
+
 ## Opponent result confirmation (shadow only)
 
 The `tgcloud/endpoints/confirmResult.js` endpoint is guarded by
