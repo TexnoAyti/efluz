@@ -132,3 +132,18 @@ export const auditLogs = table('efl_audit_logs',{
   entityType:text('entity_type').notNull(),entityId:text('entity_id').notNull(),
   oldValue:json('old_value'),newValue:json('new_value'),createdAt:integer('created_at').notNull(),
 },(t)=>({entityIdx:index('efl_audit_entity_idx').on(t.entityType,t.entityId)}));
+
+ 
+// Lossless mirror for legacy document collections that do not yet have an
+// equivalent relational model (TEAMS, UZEFLIFE, tickets, AI, etc.).
+// It is a migration archive, NOT a general-purpose public API.
+export const rawDocuments=table('efl_raw_documents',{
+  id:text('id').primaryKey(),sourceSpace:text('source_space').notNull(),
+  collectionPath:text('collection_path').notNull(),
+  documentId:text('document_id').notNull(),
+  encoded:json('encoded').notNull(),data:json('data').notNull(),
+  sourceChecksum:text('source_checksum').notNull(),
+},(t)=>({
+  sourceKey:uniqueIndex('efl_raw_doc_source_key').on(t.sourceSpace,t.collectionPath,t.documentId),
+  collectionIdx:index('efl_raw_doc_collection_idx').on(t.sourceSpace,t.collectionPath)
+}));
