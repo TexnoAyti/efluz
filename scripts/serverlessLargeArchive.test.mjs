@@ -46,8 +46,10 @@ test('archiver verifies small and oversized records together and rejects tampere
   assert.equal(audited.status,0,audited.stderr);
   assert.equal(JSON.parse(audited.stdout).documents,2);
   const partPath=join(out,m.partsBatches[0].file);
-  const part=await readFile(partPath,'utf8');
-  await writeFile(partPath,part.replace('UZEFLIFE','CHANGED_'));
+  const packet=JSON.parse(await readFile(partPath,'utf8'));
+  const previous=packet.rows[0].part_data;
+  packet.rows[0].part_data=(previous[0]==='A'?'B':'A')+previous.slice(1);
+  await writeFile(partPath,JSON.stringify(packet)+'\n');
   const invalid=spawnSync(process.execPath,[verify,out],{encoding:'utf8'});
   assert.notEqual(invalid.status,0);
   assert.match(invalid.stderr,/PACKET_HASH_OR_SIZE_MISMATCH/);
