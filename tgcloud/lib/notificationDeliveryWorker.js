@@ -61,6 +61,7 @@ export async function finishNotificationForWorker(db,input){
   ':success':success?1:0,':error':success?null:errorCode};
  await db.run(`UPDATE efl_notification_deliveries
  SET status=CASE WHEN :success=1 THEN 'SENT'
+   WHEN :error IN ('TELEGRAM_TIMEOUT','NETWORK_UNCERTAIN') THEN 'REVIEW'
    WHEN attempts>=5 THEN 'FAILED' ELSE 'PENDING' END,
   sent_at=CASE WHEN :success=1 THEN :now ELSE sent_at END,
   retry_after=CASE WHEN :success=1 THEN 0 ELSE :now+attempts*60000 END,
@@ -71,7 +72,9 @@ export async function finishNotificationForWorker(db,input){
   attempts,sent_at AS sentAt,last_error AS lastError
  FROM efl_notification_deliveries WHERE notification_id=:id`,{':id':notificationId});
  if(!row||row.leaseToken!==null||
-    row.status!==(success?'SENT':row.attempts>=5?'FAILED':'PENDING')||
+    row.status!==(success?'SENT':
+      ['TELEGRAM_TIMEOUT','NETWORK_UNCERTAIN'].includes(errorCode)?'REVIEW':
+       row.attempts>=5?'FAILED':'PENDING')||
     (success?row.sentAt!==now:row.lastError!==errorCode))
   throw Error('DELIVERY_ACK_CONFLICT');
  return {ok:true,notificationId,status:row.status,attempts:row.attempts};
