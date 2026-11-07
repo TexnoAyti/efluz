@@ -8,7 +8,7 @@ function setup(){
  sql.exec(`
  CREATE TABLE efl_users(id TEXT PRIMARY KEY,telegram_id TEXT UNIQUE,
    is_admin INTEGER NOT NULL,is_banned INTEGER NOT NULL);
- CREATE TABLE efl_teams_catalog(id TEXT PRIMARY KEY,membership_required INTEGER NOT NULL);
+ CREATE TABLE efl_teams_catalog(id TEXT PRIMARY KEY,membership_required INTEGER NOT NULL,owner_user_id TEXT,admin_user_id TEXT);
  CREATE TABLE efl_team_join_requests(id TEXT PRIMARY KEY,team_id TEXT NOT NULL,
    user_id TEXT NOT NULL,telegram_id TEXT NOT NULL,status TEXT NOT NULL,
    created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
@@ -16,8 +16,8 @@ function setup(){
  CREATE UNIQUE INDEX one_approved_team ON efl_team_join_requests(user_id)
    WHERE status='APPROVED';
  INSERT INTO efl_users VALUES ('u1','123',0,0),('u2','456',0,0),
-   ('admin','999',1,0),('banned','789',0,1);
- INSERT INTO efl_teams_catalog VALUES('team1',0),('team2',0),('restricted',1);
+   ('admin','999',1,0),('banned','789',0,1),('captain','777',0,0),('manager','888',0,0);
+ INSERT INTO efl_teams_catalog VALUES('team1',0,'captain','manager'),('team2',0,'admin',NULL),('restricted',1,'captain',NULL);
  `);
  return {sql,db:{
   async get(q,p={}){return sql.prepare(q).get(p)??null;},
@@ -57,6 +57,26 @@ test('admin approval enforces one team per player and explicit role checks',asyn
    {requestId:'request-0002'}),/TEAMS_JOIN_APPROVAL_CONFLICT/);
   const approved=sql.prepare("SELECT count(*) AS n FROM efl_team_join_requests WHERE status='APPROVED'").get();
   assert.equal(approved.n,1);
+ }finally{sql.close();}
+});
+test('verified captain and assigned team manager may approve only their team',async()=>{
+ const {sql,db}=setup();
+ try{
+  await submitTeamJoin(db,{id:'u1',telegramId:'123'},
+   {teamId:'team1',requestId:'request-0001'});
+  await submitTeamJoin(db,{id:'u2',telegramId:'456'},
+   {teamId:'team2',requestId:'request-0002'});
+  assert.equal((await approveTeamJoin(db,{telegramId:'777'},
+   {requestId:'request-0001'})).status,'APPROVED');
+  await assert.rejects(approveTeamJoin(db,{telegramId:'777'},
+   {requestId:'request-0002'}),/TEAMS_ADMIN_FORBIDDEN/);
+  // Manager of team1 can operate independently of global admin privileges.
+  const request=await submitTeamJoin(db,{id:'u2',telegramId:'456'},
+   {teamId:'team1',requestId:'request-0003'});
+  assert.equal(request.status,'PENDING');
+  const approved=await approveTeamJoin(db,{telegramId:'888'},
+   {requestId:'request-0003'});
+  assert.equal(approved.status,'APPROVED');
  }finally{sql.close();}
 });
 test('mandatory group membership and bans remain fail closed',async()=>{
