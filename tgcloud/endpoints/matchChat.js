@@ -1,7 +1,10 @@
 import {db,EndpointError} from 'sdk';
 import {runMatchChat} from '../lib/matchChatEngine.js';
+import {MUTATION_CONTROL} from '../lib/mutationControl.js';
 
 export default async function(input={},ctx){
+  if(input?.action==='send'&&!MUTATION_CONTROL.enabled)
+    throw new EndpointError('Staging chat yozish hozircha yopiq.',{code:'SHADOW_WRITE_DISABLED'});
   try{return await runMatchChat(db,input,ctx?.initData?.user?.id);}
   catch(error){
     const code=String(error?.message||'CHAT_FAILED');
