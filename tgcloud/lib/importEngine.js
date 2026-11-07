@@ -1,10 +1,12 @@
 import { validateImportBatch, stableRow } from './importBatch.js';
 
 // Dependency-injected implementation for isolated testing without Telegram SDK.
+const JSON_FIELDS = new Set(['settings','format_config','data','encoded','old_value','new_value']);
+
 export function comparableValue(value, column) {
   if (value === undefined || value === null) return null;
   if (typeof value === 'boolean') return Number(value);
-  if (column === 'settings' && typeof value === 'object') return JSON.stringify(value);
+  if (JSON_FIELDS.has(column) && typeof value === 'object') return JSON.stringify(value);
   if (typeof value === 'object') return JSON.stringify(value);
   return value;
 }
@@ -20,7 +22,7 @@ export function rowsEquivalent(actual, incoming, columns) {
     const a = actual[column] ?? null;
     const b = incoming[column] ?? null;
     if (a === null || b === null) return a === null && b === null;
-    if (column === 'settings') return canonicalJson(a) === canonicalJson(b);
+    if (JSON_FIELDS.has(column)) return canonicalJson(a) === canonicalJson(b);
     if (typeof b === 'boolean') return (a === true || a === 1 || a === '1') === b;
     return String(a) === String(b);
   });
