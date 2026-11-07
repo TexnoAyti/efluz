@@ -178,3 +178,50 @@ source counts before considering an archive valid.
 cannot proceed as production-ready until every reviewed collection, official
 competition rule, worker queue and payment/notification side effect is
 independently reconciled.
+
+## Core domain conversion and oversized archive support
+
+The read-only source investigation identified that legacy `leagues` and
+`clubs` are global, but the target Serverless schema makes them
+season-specific. The new `scripts/convertEflCoreSnapshot.mjs` transforms
+source JSONL to season-scoped normalized IDs; it maps user identity, owner
+restrictions, competitions, participants, fixtures, result submissions,
+disputes, notification history and audit history. It rejects dangling
+references, duplicate active club ownership and conflicting cross-season
+fixtures. It deliberately leaves generated league admission state
+**CLOSED** until the official season policy is imported and verified.
+
+An actual source collection size audit found that the single `uzeflife`
+document is roughly 476 KiB, and other collections contain even larger
+documents. A 96 KiB import packet would silently fail to migrate them.
+`scripts/prepareEflRawDocumentBatches.mjs` now creates checksummed
+`rawDocumentParts` packets for large preserved documents; each packet
+fits under the size limit. `scripts/verifyEflRawBatches.mjs` reassembles
+them in memory, verifies the complete byte stream, source checksum,
+document identity, all packet checksums, counts and manifest digest.
+`efl_raw_document_parts` is a **private archive table**, not an exposed
+application data API. Reconstruction has only been tested offline.
+
+### Reproducible offline validation sequence
+
+Given an authorized, consistent production JSONL export in a private
+location **outside Git**, and after resolving all collections in
+`migration/source-collections-inventory.json` marked `review`:
+
+1. `node scripts/auditEflSourceInventory.mjs source.jsonl --strict`
+2. `node scripts/auditEflDomainGraph.mjs source.jsonl`
+3. `node scripts/prepareEflRawDocumentBatches.mjs source.jsonl private-archive`
+4. `node scripts/verifyEflRawBatches.mjs private-archive`
+5. `node scripts/convertEflCoreSnapshot.mjs source.jsonl core.json`
+6. `node scripts/prepareServerlessImport.mjs core.json private-core-batches`
+
+These are **preparation** steps, not a production import. The operator
+must separately import into an isolated Telegram staging database and
+independently verify target table hashes and domain behavior. No source
+secrets, player records or private JSONL files belong in GitHub Actions
+artifacts or the static Mini App bundle.
+
+**Still not cutover-ready:** full Teams/UZEFLIFE administration and
+mutation workflows, payment operations, AI state policy, async workers,
+notifications delivery, real Telegram Serverless SDK deployment tests,
+target database parity and tested rollback.
