@@ -10,7 +10,7 @@ export function verifyStagingGate(env){
      typeof production!=='string'||!/^[1-9][0-9]{0,19}$/.test(production))
     throw Error('APP_IDS_NOT_CONFIGURED');
   if(staging===production)throw Error('STAGING_EQUALS_PRODUCTION');
-  if(typeof token!=='string'||!/^app[1-9][0-9]*:[^\\s]{10,}$/.test(token))
+  if(typeof token!=='string'||!/^app[1-9][0-9]*:[^\s]{10,}$/.test(token))
     throw Error('STAGING_TOKEN_UNAVAILABLE');
   const appId=token.slice(3,token.indexOf(':'));
   if(appId!==staging)throw Error('STAGING_TOKEN_APP_MISMATCH');
