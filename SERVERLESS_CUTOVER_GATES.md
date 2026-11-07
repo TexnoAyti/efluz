@@ -225,3 +225,30 @@ artifacts or the static Mini App bundle.
 mutation workflows, payment operations, AI state policy, async workers,
 notifications delivery, real Telegram Serverless SDK deployment tests,
 target database parity and tested rollback.
+
+## Production referential integrity findings (2026-11-07, read only)
+
+The current source graph was inspected without exporting identifiable rows:
+
+- 446 `durable_fixture_overrides` records match the corresponding base
+  fixture status, scores and club IDs. The offline graph audit and core
+  converter now **recheck this at import time** and reject any divergence.
+- 8 historical club occupancies refer to users absent from the current
+  `users` collection; all eight are **RELEASED**, not ACTIVE.
+- 13 historical notifications refer to absent users.
+- 6 historical competition participant rows refer to removed competitions,
+  while their clubs and seasons remain present.
+- No orphan result submissions or fixture-to-competition references were
+  observed in this read-only check.
+
+The strict default normalized conversion rejects the orphan rows. For
+**staging only**, the explicit `--quarantine-historical` option may exclude
+only released occupancies, undeliverable historical notifications and
+participants of removed competitions from operational tables. It reports
+counts in `quarantinedHistorical`; it **never** skips active ownership.
+Every excluded source document must first be retained and independently
+verified in the private raw-document archive. No fake users or competitions
+are generated. Excluded data does **not** get deleted from Supabase.
+
+These counts are a point-in-time diagnostic, **not** a clean cutover
+certificate or an authorization to delete historical records.
