@@ -306,3 +306,27 @@ TEAMS tournaments **have not been implemented as mutations**.
 Both projections are included in the normalized import and strict snapshot
 parity tests. SQLite tests cover pagination and private-field exclusion.
 Actual Telegram Serverless-hosted runtime remains unverified.
+
+## TEAMS / UZEFLIFE shadow workflows (not production-ready)
+
+- UZEFLIFE admin result decision now has a guarded, user-authorized,
+  current-round SQL engine in `tgcloud/lib/uzeflifeResultAdmin.js`.
+  It validates scores, penalty shootout winners, idempotent replay,
+  admin bans and concurrent updates. The real production UZEFLIFE
+  status `PLAYING` is supported, not just generic `ACTIVE`.
+  The endpoint remains **disabled** until proof handling, admin audit,
+  notifications and bracket advancement can be committed atomically.
+- TEAMS join request submission and admin approval have normalized
+  `efl_team_join_requests` storage and a partial unique index preventing
+  more than one approved team per user. Private join queues and admin
+  pending requests are authenticated and paginated.
+- TEAMS join writes remain **disabled**. The new schema is not yet
+  a complete replacement for legacy membership history, captain approvals,
+  mandatory-group checks, tickets, existing TEAMS teams or tournament logic.
+  It explicitly rejects join requests requiring mandatory membership checks
+  instead of silently bypassing them.
+- All new write endpoints are covered by the disabled-mutation regression
+  guard, and both domains have real SQLite authorization tests.
+
+**Do not enable these endpoints or merge this branch to production to
+experiment with live players.**
