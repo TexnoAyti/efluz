@@ -1,7 +1,7 @@
 import {readOnlyBotExtra} from './readOnlyBotExtraCommands.js';
 // Read-only bot commands for the isolated staging bot.
 // Do not register side-effecting commands before feature parity.
-const commands=new Set(['/start','/help','/myclub','/myfixtures','/leagues','/cups','/uzeflife','/teams','/inbox','/serverless-check']);
+const commands=new Set(['/start','/help','/myclub','/myfixtures','/leagues','/cups','/uzeflife','/teams','/inbox','/serverless-check','/audit']);
 export function parseCommand(text){
   if(typeof text!=='string')return null;
   const token=text.trim().split(/\s+/)[0]?.toLowerCase();
