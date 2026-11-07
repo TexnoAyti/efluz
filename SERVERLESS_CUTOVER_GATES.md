@@ -18,9 +18,9 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 | Snapshot & delta export from actual production Firestore/SQLite/Postgres | NOT IMPLEMENTED | All relevant datasets exported from consistent read-only snapshot |
 | Legacy domain conversion | NOT IMPLEMENTED | Per-field lossless conversions, including timestamps/status/IDs |
 | Core import to isolated Telegram database | NOT RUN | No conflicts, counts+SHA-256 parity |
-| Extra domain data | NOT IMPLEMENTED | Competition participants, submissions, disputes, standings snapshots, notifications, audit logs, payments, TEAMS, UZEFLIFE, cups, awards |
+| Extra domain data | NOT IMPLEMENTED | Schema now includes participants, submissions, disputes, notifications and audit; their source conversion and parity remain unverified. Standings snapshots, payments, TEAMS, UZEFLIFE, cups and awards still need coverage |
 | Club claim / release | NOT IMPLEMENTED | Single-club ownership, bans, admission windows, concurrent users |
-| Fixtures / score submission / confirmation | READ ONLY | Replay- and race-safe writes, matchday rules, dispute outcomes |
+| Fixtures / score submission / confirmation | READ ONLY (fixtures endpoint added) | Replay- and race-safe writes, matchday rules, dispute outcomes |
 | Admin tools | NOT IMPLEMENTED | Auth/role checks, side-effect audit, all required actions |
 | Chat | PARTIAL | SDK-integrated persistence, read-only gating, retries under race |
 | Telegram updates | PROBE ONLY | message, callback_query, channel posts, payment events |
