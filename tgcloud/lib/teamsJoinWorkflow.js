@@ -18,13 +18,13 @@ export async function submitTeamJoin(db,actor,input){
  const params={':id':request.requestId,':team':request.teamId,
   ':user':actor.id,':telegram':String(actor.telegramId),':now':Date.now()};
  const user=await db.get('SELECT id,is_banned AS banned FROM efl_users WHERE id=:user AND telegram_id=:telegram',
-  params);
+  {':user':actor.id,':telegram':String(actor.telegramId)});
  if(!user||user.banned)throw Error('TEAMS_JOIN_FORBIDDEN');
- const team=await db.get('SELECT id,membership_required AS membershipRequired FROM efl_teams_catalog WHERE id=:team',params);
+ const team=await db.get('SELECT id,membership_required AS membershipRequired FROM efl_teams_catalog WHERE id=:team',{':team':request.teamId});
  if(!team)throw Error('TEAMS_TEAM_NOT_FOUND');
  // Mandatory-group joins cannot be verified by the current shadow endpoint.
  if(team.membershipRequired)throw Error('TEAMS_MEMBERSHIP_GATE_PENDING');
- const joined=await db.get("SELECT team_id FROM efl_team_join_requests WHERE user_id=:user AND status='APPROVED'",params);
+ const joined=await db.get("SELECT team_id FROM efl_team_join_requests WHERE user_id=:user AND status='APPROVED'",{':user':actor.id});
  if(joined)throw Error('TEAMS_ALREADY_JOINED');
  await db.run(`INSERT INTO efl_team_join_requests
  (id,team_id,user_id,telegram_id,status,created_at,updated_at)
@@ -37,7 +37,7 @@ export async function submitTeamJoin(db,actor,input){
  ON CONFLICT DO NOTHING`,params);
  const saved=await db.get(`SELECT id,team_id AS teamId,user_id AS userId,
    telegram_id AS telegramId,status FROM efl_team_join_requests
-   WHERE team_id=:team AND user_id=:user`,params);
+   WHERE team_id=:team AND user_id=:user`,{':team':request.teamId,':user':actor.id});
  if(!saved||saved.id!==request.requestId||saved.userId!==actor.id||
    saved.telegramId!==String(actor.telegramId)||saved.status!=='PENDING')
   throw Error('TEAMS_JOIN_CONFLICT');
@@ -52,7 +52,7 @@ export async function approveTeamJoin(db,actor,input){
   {':telegram':String(actor.telegramId)});
  if(!admin?.admin||admin.banned)throw Error('TEAMS_ADMIN_FORBIDDEN');
  const params={':id':input.requestId,':telegram':String(actor.telegramId),':now':Date.now()};
- const pending=await db.get('SELECT id,team_id AS teamId,user_id AS userId,status FROM efl_team_join_requests WHERE id=:id',params);
+ const pending=await db.get('SELECT id,team_id AS teamId,user_id AS userId,status FROM efl_team_join_requests WHERE id=:id',{':id':input.requestId});
  if(!pending)throw Error('TEAMS_JOIN_NOT_FOUND');
  if(pending.status==='APPROVED')return {ok:true,requestId:pending.id,status:'APPROVED',replayed:true};
  if(pending.status!=='PENDING')throw Error('TEAMS_JOIN_NOT_PENDING');
@@ -70,7 +70,7 @@ export async function approveTeamJoin(db,actor,input){
     WHERE team.id=efl_team_join_requests.team_id AND team.membership_required=0)
  AND NOT EXISTS(SELECT 1 FROM efl_team_join_requests other
     WHERE other.user_id=efl_team_join_requests.user_id AND other.status='APPROVED')`,params);
- const saved=await db.get('SELECT status FROM efl_team_join_requests WHERE id=:id',params);
+ const saved=await db.get('SELECT status FROM efl_team_join_requests WHERE id=:id',{':id':input.requestId});
  if(saved?.status!=='APPROVED')throw Error('TEAMS_JOIN_APPROVAL_CONFLICT');
  return {ok:true,requestId:pending.id,status:'APPROVED',replayed:false};
 }
