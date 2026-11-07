@@ -460,3 +460,10 @@ and verified operational rollback remain prerequisites for cutover.
 - `tgcloud/lib/resultOutboxAudit.js` and `tgcloud/endpoints/resultOutboxAudit.js` expose **read-only admin aggregate gaps** between confirmed results and their audit/inbox/delivery chain in the active season. Imported historical confirmed results can legitimately predate this outbox; counts are diagnostics, not automatic repairs. No user records are exposed.
 - **Do not enable this engine on the Telegram-hosted SDK yet**: a transaction callback API and semantic guarantees for all writes have not been proven. There is intentionally no mutation endpoint for the composed engine. The previous `confirmResult.js` endpoint remains behind the disabled global mutation switch, and is not automatically upgraded to transactional outbox delivery.
 - No Telegram API sends, scheduled jobs, real production import, frontend route cutover or webhook changes have been performed.
+
+## Notification delivery ambiguity hardening (2026-11-08)
+
+- Delivery acknowledgments now require the **same unexpired lease token** at SQL write time. Old workers cannot mark a notification delivered after lease expiry, even before a new worker obtains the lease.
+- A worker reporting `TELEGRAM_TIMEOUT` or `NETWORK_UNCERTAIN` leaves the delivery in `REVIEW`, **not** `PENDING`: Telegram Bot API send success might be unknown after an interrupted network request, so blindly retrying can create duplicate user messages. Operators must reconcile and manually resolve these states through a separately reviewed, authenticated process before enabling delivery in production.
+- A retriable error such as `API_RETRYABLE` follows bounded backoff and eventually `FAILED`. The admin aggregate delivery audit now includes `review` count; users cannot inspect private message bodies through this audit.
+- The module remains **not connected** to `sdk/api` in any active bot handler or endpoint. No message was sent by this migration and no production switch was flipped.
