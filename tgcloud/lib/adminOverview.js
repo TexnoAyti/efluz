@@ -13,7 +13,7 @@ export async function getAdminOverview(db,telegramId){
     occupancies:'efl_club_occupancies',
     competitions:'efl_competitions',
     fixtures:'efl_fixtures',
-    pendingResults:'efl_result_submissions',
+    resultSubmissions:'efl_result_submissions',
     disputes:'efl_disputes',
     notifications:'efl_notifications'
   };
@@ -21,7 +21,7 @@ export async function getAdminOverview(db,telegramId){
   const entries=await Promise.all(Object.entries(scopes).map(async ([key,table])=>{
     const where=key==='occupancies'?" WHERE status='ACTIVE'":
       key==='disputes'?" WHERE status IN ('OPEN','PENDING','UNDER_REVIEW')":
-      key==='pendingResults'?'': '';
+      '';
     const record=await db.get(`SELECT COUNT(*) AS count FROM ${table}${where}`);
     const count=Number(record?.count);
     if(!Number.isSafeInteger(count)||count<0)throw Error('ADMIN_OVERVIEW_UNAVAILABLE');
