@@ -51,6 +51,14 @@ competitionsRouter.get('/', async (req: Request, res: Response) => {
       snapshotAt: result.snapshotAt,
     });
   } catch (err: any) {
+    // A future season can be open for club registration before its competition
+    // catalog is generated. Do not block the entire app/bootstrap with a 503;
+    // the club-owner/admission views can still load and the catalog will appear
+    // once the season is initialized.
+    if (seasonId !== 'season-2026-27' && err?.errorCode === 'READ_MODEL_NOT_WARMED') {
+      res.json({ competitions: [], source: 'future-season-not-initialized', stale: true, degraded: true, snapshotAt: new Date().toISOString() });
+      return;
+    }
     handleFirestoreError(res, err, 'GET /api/competitions');
   }
 });
