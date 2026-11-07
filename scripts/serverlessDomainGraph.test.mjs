@@ -69,3 +69,18 @@ test('fixture override discrepancies block cutover and matching overrides reconc
   assert.equal(JSON.parse(result.stdout).errorsByType.OVERRIDE_WITHOUT_FIXTURE,1);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('orphan notification history fails with a count but no user identifier leak',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'efl-orphan-notify-'));
+ try{
+  const input=join(dir,'source.jsonl');
+  const missingUser='historical-account-do-not-publish';
+  await writeFile(input,JSON.stringify(doc('notifications','notice-1',{
+    userId:missingUser,type:'SYSTEM',message:'Private historical notification'}))+'\n');
+  const run=spawnSync(process.execPath,[script,input],{encoding:'utf8'});
+  assert.notEqual(run.status,0);
+  const parsed=JSON.parse(run.stdout);
+  assert.equal(parsed.errorsByType.NOTIFICATION_WITHOUT_USER,1);
+  assert.doesNotMatch(run.stdout,/(?:historical-account|Private historical)/);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
