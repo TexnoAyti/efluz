@@ -25,5 +25,13 @@ const prohibited=assets.filter(file=>
   file.startsWith('src/server/')||file.startsWith('.env'));
 if(prohibited.length)throw Error('SERVER_OR_PRIVATE_STATIC_ASSET:'+prohibited.join(','));
 const html=await readFile(resolve(root,'index.html'),'utf8');
-if(!html.includes('id="root"'))throw Error('VITE_ENTRY_INVALID');
-console.log(JSON.stringify({ok:true,files:assets.length,onlyFrontend:true}));
+if(!html.includes('id="root"')||!html.includes('Serverless sinov muhiti'))
+  throw Error('ISOLATED_STAGING_ENTRY_MISSING');
+const scripts=assets.filter(file=>file.endsWith('.js'));
+if(!scripts.length)throw Error('STAGING_SCRIPT_MISSING');
+for(const file of scripts){
+  const js=await readFile(resolve(root,file),'utf8');
+  if(/\/api\/|\/api\b|vercel\.app|fetch\s*\(/i.test(js))
+    throw Error('LEGACY_API_IN_STAGING_BUNDLE');
+}
+console.log(JSON.stringify({ok:true,files:assets.length,isolatedStaging:true,onlyFrontend:true}));
