@@ -4,7 +4,27 @@
 import {readUzeflife} from './uzeflifeRead.js';
 import {readTeamsCatalog} from './teamsCatalogRead.js';
 import {readMyFixtures} from './myFixturesRead.js';
+import {readDomainOperationsAudit} from './domainOperationsAudit.js';
 export async function readOnlyBotExtra(db,command,{id,telegramId}){
+ if(command==='/audit'){
+  try{
+   const r=await readDomainOperationsAudit(db,telegramId);
+   return 'EFLUZ Serverless admin auditi (sinov)\\n'+
+    'Mavsum: '+(r.season?.name??'faol emas')+'\\n'+
+    'Ligalar: '+r.leagues.total+'\\n'+
+    'Uchrashuvlar: '+r.fixtures.confirmed+'/'+r.fixtures.total+' tasdiqlangan\\n'+
+    'Kuboklar: '+r.cups.unfinished+' tugallanmagan\\n'+
+    'Nizolar: '+r.disputes.unresolved+'\\n'+
+    'TEAMS: '+r.teams.total+', hal etilmagan a’zolar: '+r.teams.unresolvedMembers+
+    ', so‘rovlar: '+r.teams.pendingRequests+'\\n'+
+    'UZEFLIFE joriy turi: '+r.uzeflife.currentRoundFinished+'/'+
+    r.uzeflife.currentRoundTotal+' yakunlangan\\n'+
+    'O‘qilmagan bildirishnomalar: '+r.notifications.unread;
+  }catch(error){
+   if(error?.message==='DOMAIN_AUDIT_FORBIDDEN')return 'Bu buyruq faqat administrator uchun.';
+   throw error;
+  }
+ }
  if(command==='/leagues'||command==='/cups'){
   // Signed-user visibility only. Do not let Telegram text choose seasons,
   // competitions or private identities.
