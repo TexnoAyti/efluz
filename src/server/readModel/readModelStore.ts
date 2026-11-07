@@ -704,10 +704,12 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   const breakerStatus = firestoreCircuitBreaker.getStatus();
   const firestoreHealthy = breakerStatus.state === 'CLOSED' && !breakerStatus.softLimitExceeded;
   let postgresBundle: Awaited<ReturnType<typeof readPostgresSnapshotBundle>> | null = null;
+  let snapshotProbeFailed = false;
   if (usesPostgresSnapshots()) {
     try {
       postgresBundle = await readPostgresSnapshotBundle(getFreshKey(cleanKey), getLkgKey(cleanKey), getDirtyKey(cleanKey));
     } catch (error: any) {
+      snapshotProbeFailed = true;
       // A remote snapshot probe is an optimization, not a reason to discard a
       // usable in-process value. The authoritative fetch/fallback path below
       // will decide whether the request can be served.
@@ -724,7 +726,9 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
       }
     }
   }
-  const isDirty = postgresBundle ? Boolean(postgresBundle.dirty?.data) : await redisIsDirty(cleanKey);
+  // Do not issue a second RPC dirty-check after the snapshot probe already
+  // timed out; it only multiplies cold-start latency during an outage.
+  const isDirty = postgresBundle ? Boolean(postgresBundle.dirty?.data) : snapshotProbeFailed ? false : await redisIsDirty(cleanKey);
 
   // 1. Process Memory Cache (Level 1)
   if (!(postgresBundle && cleanKey.endsWith(':fixtures')) && !isDirty && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < ttlSeconds * 1000) {
@@ -1655,7 +1659,8 @@ export async function getClubByIdFromReadModel(
   currentUserId?: string
 ): Promise<{ club: Club | null; source: string; stale: boolean; degraded: boolean }> {
   try {
-    const result = await readThroughReadModel<OwnerNeutralClub[]>({
+    const result = await Promise.race([
+      readThroughReadModel<OwnerNeutralClub[]>({
       key: ReadModelKeys.clubsWithOwners(seasonId),
       seasonId,
       expectedCount: seasonClubs(seasonId).length,
@@ -1664,7 +1669,9 @@ export async function getClubByIdFromReadModel(
         return snap.data;
       },
       validateData: (data) => Array.isArray(data) && data.length > 0,
-    });
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error('READ_MODEL_TIMEOUT'), { name: 'TimeoutError' })), 3500)),
+    ]);
 
     const neutral = result.data.find((c) => c.id === clubId);
     if (!neutral) {
