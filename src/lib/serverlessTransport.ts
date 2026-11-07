@@ -1,7 +1,7 @@
 // Shadow-only adapter: keeps legacy /api traffic on Vercel by default.
 // Opt in per operation only after comparing response contracts and auth behavior.
 export type EflTransport = 'vercel' | 'telegram-serverless';
-export type EflOperation = 'health' | 'bootstrap' | 'leagues' | 'clubProfile' | 'matchChat' | 'fixtures' | 'competitions' | 'standings' | 'notifications' | 'markNotificationRead' | 'myFixtures';
+export type EflOperation = 'health' | 'bootstrap' | 'leagues' | 'clubProfile' | 'matchChat' | 'fixtures' | 'competitions' | 'standings' | 'notifications' | 'markNotificationRead' | 'myFixtures' | 'adminOverview';
 
 type TelegramServerless = {
   call: (name: string, input: Record<string, unknown>, callback: (error: {message?:string;type?:string;parameters?:{code?:string}} | null, result?:unknown) => void) => void;
@@ -18,7 +18,8 @@ const operations: Record<EflOperation,string> = {
   health:'health', bootstrap:'bootstrap', leagues:'leagues',
   clubProfile:'clubProfile', matchChat:'matchChat', fixtures:'fixtures',
   competitions:'competitions', standings:'standings', notifications:'notifications',
-  myFixtures:'myFixtures', markNotificationRead:'markNotificationRead'
+  myFixtures:'myFixtures', markNotificationRead:'markNotificationRead',
+  adminOverview:'adminOverview'
 };
 export function telegramServerlessAvailable(): boolean {
   if (typeof window==='undefined') return false;
