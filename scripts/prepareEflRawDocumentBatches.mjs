@@ -2,13 +2,15 @@
 // Bounded, streaming converter: PostgreSQL JSONL -> Telegram import packets.
 // Does not connect to any database. Keep private output outside Git checkout.
 import {createReadStream} from 'node:fs';
-import {mkdir,writeFile,stat} from 'node:fs/promises';
+import {mkdir,writeFile,stat,readFile} from 'node:fs/promises';
 import {createInterface} from 'node:readline';
 import {createHash} from 'node:crypto';
 import {resolve,join} from 'node:path';
 import {stableRow,validateImportBatch} from '../tgcloud/lib/importBatch.js';
 
 const [sourceName,destName]=process.argv.slice(2);
+const policy=JSON.parse(await readFile(new URL('../migration/source-collections-inventory.json',import.meta.url),'utf8'));
+const handling=new Map(policy.collections.map(x=>[x.collection,x.handling]));
 if(!sourceName||!destName){
   console.error('Usage: node scripts/prepareEflRawDocumentBatches.mjs private-source.jsonl private-output-directory');
   process.exit(2);
@@ -19,7 +21,8 @@ try { await stat(dest); throw new Error('TARGET_ALREADY_EXISTS'); }
 catch(error) { if(error.code!=='ENOENT') throw error; }
 await mkdir(dest,{recursive:false,mode:0o700});
 const manifest={source:'efl_runtime.documents:production',table:'rawDocuments',
-  version:1,maxRows:100,maxBytes:98304,count:0,bytes:0,batches:[],sourceSha256:null};
+  version:1,maxRows:100,maxBytes:98304,count:0,bytes:0,batches:[],sourceSha256:null,
+  rebuildExcluded:0,sourceDocuments:0};
 const sourceDigest=createHash('sha256');
 const seen=new Set();
 let batch=[],batchNumber=0,batchBytes=0;
@@ -45,6 +48,14 @@ for await(const line of createInterface({input:createReadStream(source,{encoding
     typeof doc.document_id!=='string'||!doc.collection_path||!doc.document_id||
     !doc.encoded||typeof doc.encoded!=='object'||!doc.data||typeof doc.data!=='object')
     throw new Error('INVALID_SOURCE_DOCUMENT');
+  manifest.sourceDocuments++;
+  const root=doc.collection_path.split('/')[0];
+  const policyDecision=handling.get(root);
+  if(policyDecision==='review'||!policyDecision)throw new Error('SOURCE_COLLECTION_NOT_APPROVED');
+  // Session/challenge, ephemeral lease and regenerated cache records stay
+  // in the encrypted source backup, but must NOT be copied to the live bot.
+  if(policyDecision==='rebuild'){manifest.rebuildExcluded++;continue;}
+  if(policyDecision!=='preserve')throw new Error('INVALID_COLLECTION_POLICY');
   const identity=stableRow(doc,['space','collection_path','document_id']);
   if(seen.has(identity))throw new Error('DUPLICATE_DOCUMENT');
   seen.add(identity);
@@ -63,4 +74,5 @@ await flush();
 if(!manifest.count)throw new Error('EMPTY_SOURCE');
 manifest.sourceSha256=sourceDigest.digest('hex');
 await writeFile(join(dest,'manifest.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
-console.log(JSON.stringify({status:'PACKETS_READY',count:manifest.count,batches:manifest.batches.length}));
+console.log(JSON.stringify({status:'PACKETS_READY',count:manifest.count,
+  rebuildExcluded:manifest.rebuildExcluded,batches:manifest.batches.length}));
