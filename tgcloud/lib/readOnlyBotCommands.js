@@ -1,6 +1,7 @@
+import {readOnlyBotExtra} from './readOnlyBotExtraCommands.js';
 // Read-only bot commands for the isolated staging bot.
 // Do not register side-effecting commands before feature parity.
-const commands=new Set(['/start','/help','/myclub','/serverless-check']);
+const commands=new Set(['/start','/help','/myclub','/myfixtures','/uzeflife','/teams','/inbox','/serverless-check']);
 export function parseCommand(text){
   if(typeof text!=='string')return null;
   const token=text.trim().split(/\s+/)[0]?.toLowerCase();
@@ -25,12 +26,16 @@ export async function handleReadOnlyBotCommand(db,message){
   if(command==='/serverless-check')
     return {chat_id:chatId,text:'EFLUZ Serverless sinov kanali ishlayapti. Production bot hali eski tizimda.'};
   if(command==='/start'||command==='/help')
-    return {chat_id:chatId,text:'EFLUZ Serverless sinov boti. Buyruqlar: /myclub — klubim, /serverless-check — aloqa tekshiruvi. Klub tanlash va natija kiritish hozircha o‘chirilgan.'};
+    return {chat_id:chatId,text:'EFLUZ Serverless sinov boti. Buyruqlar: /myclub — klubim, /myfixtures — uchrashuvlarim, /uzeflife — joriy tur, /teams — jamoalar, /inbox — xabarlarim, /serverless-check — aloqa. Klub tanlash va natija kiritish hozircha o‘chirilgan.'};
   const telegramId=String(from.id);
   const profile=await db.get('SELECT id,is_banned FROM efl_users WHERE telegram_id=:telegram',
     {':telegram':telegramId});
   if(!profile)return {chat_id:chatId,text:'Profil sinov bazasida topilmadi. Production hisobingiz o‘zgarmagan.'};
   if(profile.is_banned)return {chat_id:chatId,text:'Profil cheklangan. Administratorga murojaat qiling.'};
+  if(command!=='/myclub'){
+    const message=await readOnlyBotExtra(db,command,{id:profile.id,telegramId});
+    return message===null?null:{chat_id:chatId,text:message};
+  }
   const clubs=await db.all(`SELECT c.name AS clubName,l.name AS leagueName,s.name AS seasonName
     FROM efl_club_occupancies o
     JOIN efl_clubs c ON c.id=o.club_id
