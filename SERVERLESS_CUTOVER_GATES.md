@@ -52,3 +52,30 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 
 **Do not mark this project complete merely because the repository builds.
 Do not push the draft branch to the production bot.**
+
+## Evidence from connected Supabase (read-only, 2026-11-07)
+
+Confirmed EFLUZ source project has `efl_runtime` data in **two distinct spaces**:
+- production: **26,111** documents, generation observed as 256837, mode active
+- preview: **3,535** documents, generation observed as 77, mode staging
+
+The old `efl_migration` schema has two VERIFIED runs with **3,532**
+and **3,540** documents, from earlier export work. These are **not a
+current production snapshot** and do not prove parity with 26,111
+production documents.
+
+Important production collections include:
+`telegram_webhook_leases`, `telegram_ai_state`, `notifications`,
+`fixtures`, `audit_logs`, `users`, `ticket_transactions`,
+`user_tickets`, `competition_participants`, `uzeflife_audit`,
+`club_memberships`, `club_occupancies` and many more.
+
+The new `efl_raw_documents` archive schema and
+`scripts/prepareSupabaseDocumentArchive.mjs` can preserve source
+documents in lossless batches **once an authorized current snapshot is
+exported**, but the archive alone cannot execute the existing business
+logic. Reimplementing Telegram handlers, TEAMS, UZEFLIFE, tickets, AI,
+club selection and admin workflows remains mandatory.
+
+No production SQL modifications, migrations, webhook changes or
+Telegram Serverless CLI pushes were performed in this audit.
