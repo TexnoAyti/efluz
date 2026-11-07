@@ -203,6 +203,7 @@ export const uzeflifeFixtures=table('efl_uzeflife_fixtures',{
 export const teamsCatalog=table('efl_teams_catalog',{
  id:text('id').primaryKey(),name:text('name').notNull(),
  ownerUserId:text('owner_user_id'),adminUserId:text('admin_user_id'),
+ unresolvedMemberCount:integer('unresolved_member_count').notNull().default(0),
  logoUrl:text('logo_url'),memberCount:integer('member_count').notNull(),
  membershipRequired:boolean('membership_required').notNull().default(false),
  updatedAt:integer('updated_at').notNull().default(0),
@@ -221,4 +222,21 @@ export const teamJoinRequests=table('efl_team_join_requests',{
  oneApprovedTeam:uniqueIndex('efl_team_approved_user_unique').on(t.userId)
    .where(sql`status = 'APPROVED'`),
  statusIndex:index('efl_team_requests_status_idx').on(t.teamId,t.status)
+}));
+
+
+// Private TEAMS source membership normalization. Historic source member IDs
+// without a verified EFL userId remain UNRESOLVED and cannot be granted a
+// fabricated player identity. No endpoint exposes raw names to the public.
+export const teamMembers=table('efl_team_members',{
+ id:text('id').primaryKey(),
+ teamId:text('team_id').notNull(),sourceMemberId:text('source_member_id').notNull(),
+ userId:text('user_id'),memberName:text('member_name').notNull().default(''),
+ status:text('status').notNull(),
+ createdAt:integer('created_at').notNull(),updatedAt:integer('updated_at').notNull(),
+},t=>({
+ oncePerSourceMember:uniqueIndex('efl_team_member_source_unique').on(t.teamId,t.sourceMemberId),
+ oneLinkedTeamPerUser:uniqueIndex('efl_team_member_linked_user_unique').on(t.userId)
+  .where(sql`status = 'LINKED'`),
+ teamIdx:index('efl_team_member_team_idx').on(t.teamId,t.status)
 }));
