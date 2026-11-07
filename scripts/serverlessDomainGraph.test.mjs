@@ -37,3 +37,35 @@ test('legacy source graph verifies reference integrity without exposing IDs',asy
   assert.equal(JSON.parse(failed.stdout).errorsByType.SUBMISSION_WITHOUT_FIXTURE,1);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('fixture override discrepancies block cutover and matching overrides reconcile',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'efl-overrides-'));
+ try{
+  const file=join(dir,'data.jsonl');
+  const fixture={id:'f1',status:'CONFIRMED',homeScore:2,awayScore:1,
+    homeClubId:'a',awayClubId:'b',seasonId:'s1',competitionId:'comp1'};
+  const base=[
+   doc('seasons','s1',{id:'s1'}),
+   doc('competitions','comp1',{id:'comp1',seasonId:'s1'}),
+   doc('clubs','a',{id:'a'}),doc('clubs','b',{id:'b'}),
+   doc('fixtures','f1',fixture)];
+  const run=rows=>{
+    // This test creates a private local fixture only, no production data.
+    return writeFile(file,rows.map(JSON.stringify).join('\n')+'\n');
+  };
+  await run([...base,doc('durable_fixture_overrides','f1',{
+    status:'CONFIRMED',homeScore:2,awayScore:1,homeClubId:'a',awayClubId:'b'})]);
+  let result=spawnSync(process.execPath,[script,file],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(JSON.parse(result.stdout).reconciledFixtureOverrides,1);
+  await run([...base,doc('durable_fixture_overrides','f1',{
+    status:'CONFIRMED',homeScore:9,awayScore:1,homeClubId:'a',awayClubId:'b'})]);
+  result=spawnSync(process.execPath,[script,file],{encoding:'utf8'});
+  assert.notEqual(result.status,0);
+  assert.equal(JSON.parse(result.stdout).errorsByType.FIXTURE_OVERRIDE_MISMATCH,1);
+  assert.doesNotMatch(result.stdout,/homeScore|f1/);
+  await run([...base,doc('durable_fixture_overrides','missing',{status:'SCHEDULED'})]);
+  result=spawnSync(process.execPath,[script,file],{encoding:'utf8'});
+  assert.equal(JSON.parse(result.stdout).errorsByType.OVERRIDE_WITHOUT_FIXTURE,1);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
