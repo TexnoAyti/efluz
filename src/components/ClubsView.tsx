@@ -62,9 +62,10 @@ const secondSeasonLeagueLogos: Record<string, string> = {
 
 interface ClubsViewProps {
   onNavigateTab?: (tab: any) => void;
+  onOpenClub?: (club: Club) => void;
 }
 
-export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
+export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub }) => {
   const { user, currentClub, ownedClubs, activeSeasonId, setActiveSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
@@ -327,7 +328,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
         isQuota,
       });
     }
-  }, [activeSeasonId, loadClubsForLeague]);
+  }, [activeSeasonId, currentClub?.leagueId, loadClubsForLeague]);
 
   useEffect(() => {
     if (activeSeasonId === EFL_SECOND_SEASON.id) {
@@ -846,6 +847,16 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
                 return (
                   <div
                     key={club.id}
+                    role={onOpenClub ? 'button' : undefined}
+                    tabIndex={onOpenClub ? 0 : undefined}
+                    onClick={(event) => {
+                      if (!onOpenClub || (event.target as HTMLElement).closest('button,a')) return;
+                      onOpenClub(club);
+                    }}
+                    onKeyDown={(event) => {
+                      if (!onOpenClub || (event.target as HTMLElement).closest('button,a')) return;
+                      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenClub(club); }
+                    }}
                     className={`p-4 rounded-2xl flex flex-col justify-between shadow-xs transition-all relative overflow-hidden border bg-[var(--efl-surface)] ${
                       isUserClub
                         ? 'border-[var(--efl-primary)]/50 bg-[var(--efl-primary-soft)]'
