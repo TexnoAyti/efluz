@@ -33,6 +33,10 @@ function fixture(){
      round INTEGER NOT NULL,status TEXT NOT NULL,
      home_club_id TEXT,away_club_id TEXT
    );
+   CREATE TABLE efl_fixture_score_windows (
+     fixture_id TEXT PRIMARY KEY,season_id TEXT NOT NULL,competition_id TEXT NOT NULL,
+     is_open INTEGER NOT NULL,authorized_by TEXT NOT NULL,updated_at INTEGER NOT NULL
+   );
    CREATE TABLE efl_result_submissions (
      id TEXT PRIMARY KEY,fixture_id TEXT NOT NULL,
      submitted_by_user_id TEXT NOT NULL,club_id TEXT NOT NULL,
