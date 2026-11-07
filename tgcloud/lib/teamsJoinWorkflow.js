@@ -87,3 +87,38 @@ export async function approveTeamJoin(db,actor,input){
  if(saved?.status!=='APPROVED')throw Error('TEAMS_JOIN_APPROVAL_CONFLICT');
  return {ok:true,requestId:pending.id,status:'APPROVED',replayed:false};
 }
+
+export async function rejectTeamJoin(db,actor,input){
+ fields(input,['requestId']);
+ if(!validId(input.requestId))throw Error('INVALID_TEAMS_JOIN');
+ if(!actor||!/^[1-9][0-9]{0,19}$/.test(String(actor.telegramId)))
+  throw Error('TEAMS_AUTH_REQUIRED');
+ const admin=await db.get(`SELECT id,is_admin AS admin,is_banned AS banned
+ FROM efl_users WHERE telegram_id=:telegram`,{':telegram':String(actor.telegramId)});
+ if(!admin||admin.banned)throw Error('TEAMS_ADMIN_FORBIDDEN');
+ const request=await db.get(`SELECT id,team_id AS teamId,status
+ FROM efl_team_join_requests WHERE id=:id`,{':id':input.requestId});
+ if(!request)throw Error('TEAMS_JOIN_NOT_FOUND');
+ const team=await db.get(`SELECT owner_user_id AS ownerId,admin_user_id AS managerId
+ FROM efl_teams_catalog WHERE id=:team`,{':team':request.teamId});
+ if(!team||(!admin.admin&&team.ownerId!==admin.id&&team.managerId!==admin.id))
+  throw Error('TEAMS_ADMIN_FORBIDDEN');
+ if(request.status==='REJECTED')
+  return {ok:true,requestId:request.id,status:'REJECTED',replayed:true};
+ if(request.status!=='PENDING')throw Error('TEAMS_JOIN_NOT_PENDING');
+ const params={':id':request.id,':telegram':String(actor.telegramId),
+  ':now':Date.now()};
+ // No player, roster or ticket is deleted. A rejected request cannot be
+ // replayed to join a different team or override an approved membership.
+ await db.run(`UPDATE efl_team_join_requests
+ SET status='REJECTED',updated_at=:now WHERE id=:id AND status='PENDING'
+ AND EXISTS(SELECT 1 FROM efl_users admin JOIN efl_teams_catalog team
+  ON team.id=efl_team_join_requests.team_id
+  WHERE admin.telegram_id=:telegram AND admin.is_banned=0
+   AND (admin.is_admin=1 OR team.owner_user_id=admin.id
+    OR team.admin_user_id=admin.id))`,params);
+ const saved=await db.get('SELECT status FROM efl_team_join_requests WHERE id=:id',
+  {':id':request.id});
+ if(saved?.status!=='REJECTED')throw Error('TEAMS_JOIN_REJECTION_CONFLICT');
+ return {ok:true,requestId:request.id,status:'REJECTED',replayed:false};
+}
