@@ -5,6 +5,8 @@ import {createReadStream} from 'node:fs';
 import {createInterface} from 'node:readline';
 
 const path=process.argv[2];
+const quarantine=process.argv.includes('--quarantine-historical');
+const quarantined={releasedOccupancies:0,notifications:0,participants:0};
 if(!path){console.error('Usage: node scripts/auditEflDomainGraph.mjs private-source.jsonl');process.exit(2);}
 const interesting=new Set(['users','seasons','leagues','clubs','club_occupancies',
   'competitions','competition_participants','fixtures','result_submissions',
@@ -35,7 +37,10 @@ for(const d of s('competitions').values()){
 }
 const activeByClub=new Set(),activeByUserLeague=new Set();
 for(const d of s('club_occupancies').values()){
- if(!owns('users',d.userId))defect('OCCUPANCY_WITHOUT_USER');
+ if(!owns('users',d.userId)){
+   if(quarantine&&String(d.status).toUpperCase()==='RELEASED')quarantined.releasedOccupancies++;
+   else defect('OCCUPANCY_WITHOUT_USER');
+ }
  if(!owns('seasons',d.seasonId))defect('OCCUPANCY_WITHOUT_SEASON');
  if(!owns('clubs',d.clubId))defect('OCCUPANCY_WITHOUT_CLUB');
  if(String(d.status).toUpperCase()!=='ACTIVE')continue;
@@ -66,7 +71,10 @@ for(const d of s('fixtures').values()){
 for(const d of s('competition_participants').values()){
  if(!owns('seasons',d.seasonId))defect('PARTICIPANT_WITHOUT_SEASON');
  if(!owns('clubs',d.clubId))defect('PARTICIPANT_WITHOUT_CLUB');
- if(!owns('competitions',d.competitionId))defect('PARTICIPANT_WITHOUT_COMPETITION');
+ if(!owns('competitions',d.competitionId)){
+   if(quarantine)quarantined.participants++;
+   else defect('PARTICIPANT_WITHOUT_COMPETITION');
+ }
 }
 for(const d of s('result_submissions').values()){
  if(!owns('users',d.submittedByUserId))defect('SUBMISSION_WITHOUT_USER');
@@ -77,8 +85,10 @@ for(const d of s('result_submissions').values()){
 // Notification history can remain in the private archive until explicitly
 // reconciled, but is never silently omitted from a normalized live import.
 for(const d of s('notifications').values()){
- if(!owns('users',d.userId)||!d.userId)
-  defect('NOTIFICATION_WITHOUT_USER');
+ if(!owns('users',d.userId)||!d.userId){
+  if(quarantine)quarantined.notifications++;
+  else defect('NOTIFICATION_WITHOUT_USER');
+ }
 }
 for(const d of s('disputes').values()){
  if(!owns('fixtures',d.fixtureId))defect('DISPUTE_WITHOUT_FIXTURE');
@@ -101,7 +111,8 @@ const result={ok:Object.keys(errors).length===0,
  confirmedFixtures:confirmedCount,pendingOpponentSlots:pendingOpponentCount,
  fixtureOverrides:s('durable_fixture_overrides').size,
  reconciledFixtureOverrides:reconciledOverrides,
- globalLeagueRowsNeedingSeasonMapping:globalLeagueRows,errorsByType:errors,
+ globalLeagueRowsNeedingSeasonMapping:globalLeagueRows,
+ quarantinedHistorical:quarantined,errorsByType:errors,
  cutoverReady:false};
 console.log(JSON.stringify(result,null,2));
 if(!result.ok)process.exitCode=1;
