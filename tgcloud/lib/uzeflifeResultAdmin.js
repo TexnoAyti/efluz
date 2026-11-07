@@ -33,7 +33,8 @@ export async function finalizeUzeflifeResult(db,telegramId,input){
    FROM efl_uzeflife_fixtures WHERE id=:id`,{':id':decision.fixtureId});
  if(!match)throw Error('UZEFLIFE_MATCH_NOT_FOUND');
  if(match.round!==state.currentRound)throw Error('UZEFLIFE_ROUND_LOCKED');
- if(!validId(match.home)||!validId(match.away)||match.home===match.away)
+ if(typeof match.home!=='string'||!match.home.trim()||
+    typeof match.away!=='string'||!match.away.trim()||match.home===match.away)
   throw Error('UZEFLIFE_OPPONENTS_INCOMPLETE');
  const winner=(decision.homeScore===decision.awayScore
    ?decision.penaltyHome>decision.penaltyAway
