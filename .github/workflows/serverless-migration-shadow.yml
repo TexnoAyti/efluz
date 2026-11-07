@@ -4,6 +4,9 @@ on:
     paths:
       - 'tgcloud/lib/importBatch.js'
       - 'tgcloud/lib/importEngine.js'
+      - 'tgcloud/lib/resultProposal.js'
+      - 'tgcloud/endpoints/proposeResult.js'
+      - 'tgcloud/lib/mutationControl.js'
       - 'scripts/serverlessMigration*.test.mjs'
       - 'scripts/serverlessImportPacket.test.mjs'
       - 'scripts/prepareServerlessImport.mjs'
@@ -19,6 +22,7 @@ on:
       - 'scripts/verifyEflRawBatches.mjs'
       - 'scripts/serverlessRawBatchVerify.test.mjs'
       - 'scripts/serverlessImportBoundaries.test.mjs'
+      - 'scripts/serverlessResultProposal.test.mjs'
       - '.github/workflows/serverless-migration-shadow.yml'
   workflow_dispatch:
 permissions:
@@ -33,4 +37,4 @@ jobs:
         with:
           node-version: '22'
       - name: Validate replay, conflicts and bounded batches
-        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs scripts/serverlessStreamingPackets.test.mjs scripts/serverlessRawBatchVerify.test.mjs scripts/serverlessImportBoundaries.test.mjs
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs scripts/serverlessRawArchive.test.mjs scripts/serverlessStreamingPackets.test.mjs scripts/serverlessRawBatchVerify.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessResultProposal.test.mjs
