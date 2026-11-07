@@ -39,7 +39,7 @@ export function convertEflCore(collections,options={}){
  // Historical records with vanished references must never gain fabricated
  // users or competitions. They can be quarantined only by explicit opt-in.
  const quarantine=options.quarantineHistoricalOrphans===true;
- const quarantined={releasedOccupancies:0,notifications:0,participants:0};
+ const quarantined={releasedOccupancies:0,notifications:0,participants:0,resolvedDisputes:0};
  const users=source(collections,'users'),seasons=source(collections,'seasons');
  const leagues=source(collections,'leagues'),clubs=source(collections,'clubs');
  const competitions=source(collections,'competitions');
@@ -218,7 +218,16 @@ export function convertEflCore(collections,options={}){
  }
  for(const [id,d] of disputes){
   const fid=required(d.fixtureId,'DISPUTE_WITHOUT_FIXTURE');
-  const f=fixtures.get(fid);if(!f)fail('DISPUTE_FIXTURE_MISSING');
+  const f=fixtures.get(fid);
+  if(!f){
+   // Missing fixture references are permitted only for already-resolved
+   // historical disputes and only with explicit archival quarantine.
+   // Open or pending disputes are never discarded.
+   if(quarantine&&['RESOLVED','CLOSED','DISMISSED'].includes(str(d.status).toUpperCase())){
+    quarantined.resolvedDisputes++;continue;
+   }
+   fail('DISPUTE_FIXTURE_MISSING');
+  }
   output.disputes.push({id,fixture_id:fid,season_id:required(d.seasonId,'DISPUTE_WITHOUT_SEASON'),
    home_submission_id:d.homeSubmissionId??null,
    away_submission_id:d.awaySubmissionId??null,
