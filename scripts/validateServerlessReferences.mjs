@@ -22,6 +22,8 @@ export function validateSnapshotReferences(snapshot) {
     ['auditLogs',[['actor_user_id',users]]],
     ['matchAccess',[['match_id',fixtures]]],
     ['matchMessages',[['match_id',fixtures]]],
+    ['teamsCatalog',[['owner_user_id',users],['admin_user_id',users]]],
+    ['teamMembers',[['team_id',ids('teamsCatalog')],['user_id',users]]],
   ];
   for(const [table,fields] of checks){
     for(const row of get(table)){
