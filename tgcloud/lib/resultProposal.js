@@ -36,12 +36,14 @@ export async function proposeFixtureResult(db,uid,input){
   });
   if(!occupancy)throw Error('FIXTURE_FORBIDDEN');
   const submissionId=proposal.fixtureId+':'+uid;
+  const previous=await db.get(`SELECT id FROM efl_result_submissions
+    WHERE id=:id AND submitted_by_user_id=:user`,{':id':submissionId,':user':uid});
   const params={':id':submissionId,':fixture':proposal.fixtureId,
     ':user':uid,':club':occupancy.club_id,':homeScore':proposal.homeScore,
     ':awayScore':proposal.awayScore,':now':Date.now(),':telegram':actor.telegram_id};
   // Eligibility is repeated inside the insert to avoid a stale read
   // authorizing writes after the matchday closes or the club is released.
-  const inserted=await db.run(`INSERT INTO efl_result_submissions
+  await db.run(`INSERT INTO efl_result_submissions
     (id,fixture_id,submitted_by_user_id,club_id,home_score,away_score,created_at)
     SELECT :id,:fixture,:user,:club,:homeScore,:awayScore,:now
     FROM efl_fixtures f JOIN efl_competitions c
@@ -65,5 +67,5 @@ export async function proposeFixtureResult(db,uid,input){
      record.home_score!==proposal.homeScore||record.away_score!==proposal.awayScore)
     throw Error('PROPOSAL_CONFLICT');
   return {ok:true,fixtureId:proposal.fixtureId,submissionId,
-    alreadySubmitted:!(inserted?.rowsAffected>0),pendingConfirmation:true};
+    alreadySubmitted:!!previous,pendingConfirmation:true};
 }
