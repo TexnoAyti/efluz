@@ -30,11 +30,17 @@ export function convertTeamsCatalog(records){
   // catalog; raw-document multipart backup retains the exact image bytes.
   const logo=typeof d.logo==='string'&&d.logo.length<=2048&&
     /^https:\/\//i.test(d.logo)?d.logo:null;
-  rows.push({id:source.document_id,name:d.name.trim(),logo_url:logo,
+  // Owner IDs match the authoritative users collection (not Telegram IDs).
+  // These values are PRIVATE and never selected by the public teams endpoint.
+  const owner=d.ownerId??null,manager=d.adminUserId??null;
+  if(owner!==null&&!validId(owner))throw Error('TEAMS_INVALID_OWNER_ID');
+  if(manager!==null&&!validId(manager))throw Error('TEAMS_INVALID_ADMIN_ID');
+  rows.push({id:source.document_id,name:d.name.trim(),
+    owner_user_id:owner,admin_user_id:manager,logo_url:logo,
     member_count:d.members.length,membership_required:d.membershipRequired===true,
     updated_at:timestamp(d.updatedAt)});
  }
  return {rows:{teamsCatalog:rows},report:{
   teams:rows.length,logoEmbedsRetainedInPrivateArchive:true,
-  privateRostersExcluded:true,readOnly:true,cutoverReady:false}};
+  privateRostersExcluded:true,privateTeamAdministratorsStored:true,readOnly:true,cutoverReady:false}};
 }
