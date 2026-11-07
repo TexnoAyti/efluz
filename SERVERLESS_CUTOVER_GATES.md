@@ -380,3 +380,28 @@ messages or modifying production. Real auto-round logic requires an
 explicit comparison with the current legacy tournament engine and
 player-facing rules; until then results remain under the default-off
 shadow mutation gate.
+
+## Integrated read-only Telegram bot and Mini App (current branch)
+
+The staging Telegram bot's private `/start` menu now contains **fixed**
+inline callbacks for existing EFLUZ sections: `/myclub`,
+`/myfixtures`, `/uzeflife`, `/teams`, and `/inbox`. Commands and
+callbacks reject group chats, bots, mismatched sender IDs and arbitrary
+identity parameters. The result is always delivered to the invoking
+user's private chat. No club selection, result submission, broadcast,
+payment or season mutation is enabled.
+
+The separate `tgcloud-staging` Mini App can now read signed-owner
+fixtures and the active season's competition list, user notifications,
+TEAMS applications, existing UZEFLIFE rounds, a staff-only round audit,
+and aggregate administrative counts. None of these read-only screens
+constitute a migrated production interface.
+
+The test `scripts/serverlessMyFixtures.test.mjs` covers imported legacy
+season IDs and excludes released/non-owner clubs. The
+`scripts/serverlessBotExtra.test.mjs` and callback regressions assert
+sender privacy and prohibit accidental group disclosure.
+
+**Do not remove the default-off mutation gates.** A live Telegram bot
+deployment, complete source-to-target parity, legacy write workflows
+and verified operational rollback remain prerequisites for cutover.
