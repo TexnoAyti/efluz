@@ -44,7 +44,9 @@ if(collections.uzeflife.length===1){
  result.report.uzeflife=projection.report;
 }
 if(collections.team_league_preview_teams.length){
- const catalog=convertTeamsCatalog(collections.team_league_preview_teams);
+ const catalog=convertTeamsCatalog(collections.team_league_preview_teams,{
+   knownUserIds:new Set(collections.users.map(doc=>doc.document_id))
+ });
  Object.assign(result.rows,catalog.rows);
  result.report.teams=catalog.report;
 }
