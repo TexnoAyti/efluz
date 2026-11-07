@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readDomainOperationsAudit} from '../tgcloud/lib/domainOperationsAudit.js';
+import {handleReadOnlyBotCommand} from '../tgcloud/lib/readOnlyBotCommands.js';
 
 function seededDb(){
  const sql=new DatabaseSync(':memory:');
@@ -70,5 +71,21 @@ test('no active season remains safely empty without showing past season data',as
   assert.equal(r.fixtures.total,0);
   assert.equal(r.cups.total,0);
   assert.equal(r.teams.total,2);
+ }finally{sql.close();}
+});
+
+test('private admin command reveals only aggregate counts',async()=>{
+ const {sql,db}=seededDb();
+ const msg=id=>({text:'/audit',chat:{id,type:'private'},from:{id,is_bot:false}});
+ try{
+  const admin=await handleReadOnlyBotCommand(db,msg(123));
+  assert.match(admin.text,/Serverless admin auditi/);
+  assert.match(admin.text,/UZEFLIFE joriy turi: 1\/2/);
+  assert.doesNotMatch(admin.text,/p1|team1|u1/);
+  const other=await handleReadOnlyBotCommand(db,msg(456));
+  assert.match(other.text,/faqat administrator/);
+  const banned=await handleReadOnlyBotCommand(db,msg(789));
+  assert.match(banned.text,/cheklangan/);
+  assert.equal(await handleReadOnlyBotCommand(db,{...msg(123),chat:{id:123,type:'group'}}),null);
  }finally{sql.close();}
 });
