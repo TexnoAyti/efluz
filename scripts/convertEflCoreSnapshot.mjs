@@ -7,6 +7,7 @@ import {createInterface} from 'node:readline';
 import {writeFile,stat} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {convertEflCore} from './lib/convertEflCore.mjs';
+import {convertUzeflife} from './lib/convertUzeflife.mjs';
 import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
 const [src,dest]=process.argv.slice(2);
 if(!src||!dest){
@@ -17,7 +18,7 @@ try{await stat(resolve(dest));throw Error('DESTINATION_ALREADY_EXISTS');}
 catch(err){if(err.code!=='ENOENT')throw err;}
 const scope=new Set(['users','seasons','leagues','clubs','club_occupancies',
  'competitions','competition_participants','fixtures','result_submissions','disputes',
- 'notifications','audit_logs','durable_fixture_overrides']);
+ 'notifications','audit_logs','durable_fixture_overrides','uzeflife']);
 const collections=Object.fromEntries([...scope].map(x=>[x,[]]));
 for await(const line of createInterface({input:createReadStream(resolve(src),{encoding:'utf8'}),crlfDelay:Infinity})){
  if(!line.trim())continue;
@@ -28,6 +29,12 @@ for await(const line of createInterface({input:createReadStream(resolve(src),{en
 }
 const quarantineHistoricalOrphans=process.argv.includes('--quarantine-historical');
 const result=convertEflCore(collections,{quarantineHistoricalOrphans});
+if(collections.uzeflife.length>1)throw Error('MULTIPLE_UZEFLIFE_ROOTS');
+if(collections.uzeflife.length===1){
+ const projection=convertUzeflife(collections.uzeflife[0].data);
+ Object.assign(result.rows,projection.rows);
+ result.report.uzeflife=projection.report;
+}
 for(const [table,rows] of Object.entries(result.rows)){
  for(let index=0;index<rows.length;index+=100)
   validateImportBatch({table,batchId:table+':'+String(index/100).padStart(8,'0'),rows:rows.slice(index,index+100)});
