@@ -508,10 +508,11 @@ export const api = {
     return request(`/api/competitions/${competitionId}/participants`, { cacheTtlMs: 1800000, skipCache });
   },
 
-  async getCompetitionFixtures(competitionId: string, matchday?: number, status?: string, skipCache = false): Promise<{ fixtures: Fixture[] }> {
+  async getCompetitionFixtures(competitionId: string, matchday?: number, status?: string, skipCache = false, seasonId?: string): Promise<{ fixtures: Fixture[] }> {
     let url = `/api/competitions/${competitionId}/fixtures?`;
     if (matchday) url += `matchday=${matchday}&`;
     if (status) url += `status=${status}&`;
+    if (seasonId) url += `seasonId=${encodeURIComponent(seasonId)}&`;
     return request(url, { cacheTtlMs: 60000, skipCache });
   },
 

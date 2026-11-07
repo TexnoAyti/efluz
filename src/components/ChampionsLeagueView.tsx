@@ -101,7 +101,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
         api.getCompetitionParticipants(compId).catch(() => ({ participants: [] })),
       ];
       if (loadFix || activeTab === 'BRACKET') {
-        promises.push(api.getCompetitionFixtures(compId).catch(() => ({ fixtures: [] })));
+        promises.push(api.getCompetitionFixtures(compId, undefined, undefined, false, activeSeasonId).catch(() => ({ fixtures: [] })));
       }
 
       const results = await Promise.all(promises);
@@ -124,7 +124,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const handleTabChange = (tab: 'STANDINGS' | 'BRACKET') => {
     setActiveTab(tab);
     if (tab === 'BRACKET' && selectedTournament && fixtures.length === 0) {
-      api.getCompetitionFixtures(selectedTournament.id)
+      api.getCompetitionFixtures(selectedTournament.id, undefined, undefined, false, activeSeasonId)
         .then((res) => setFixtures(res.fixtures || []))
         .catch((err) => console.error('Error loading bracket fixtures:', err));
     }

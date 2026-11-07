@@ -141,7 +141,7 @@ export const FixturesView: React.FC = () => {
     setError(null);
     try {
       const matchdayParam = activeComp?.type === 'LEAGUE' ? selectedMatchday : undefined;
-      const res = await api.getCompetitionFixtures(selectedCompetitionId, matchdayParam, undefined, skipCache);
+      const res = await api.getCompetitionFixtures(selectedCompetitionId, matchdayParam, undefined, skipCache, activeSeasonId);
       setFixtures(res.fixtures || []);
     } catch (err: any) {
       console.error('Failed to load fixtures:', err);

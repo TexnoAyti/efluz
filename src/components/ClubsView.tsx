@@ -277,7 +277,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab }) => {
     setIsLoadingFixtures(true);
     try {
       const targetMd = matchday ?? selectedMatchday;
-      const fixRes = await api.getCompetitionFixtures(matchingComp.id, targetMd);
+      const fixRes = await api.getCompetitionFixtures(matchingComp.id, targetMd, undefined, false, activeSeasonId);
       if (fixRes.fixtures) {
         setLeagueFixtures(fixRes.fixtures);
       }
