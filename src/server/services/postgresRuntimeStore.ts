@@ -97,7 +97,11 @@ let cleanupAfter = 0;
  * removes up to 100 expired rows per minute without holding up the request. */
 export function createPostgresRuntimeStore(): PostgresRuntimeStore {
   const store = new PostgresRuntimeStore();
-  if (process.env.VERCEL === '1' && Date.now() >= cleanupAfter) {
+  // Supabase runtime-state writes already share the production generation
+  // transaction with application mutations. Opportunistic expiry cleanup is
+  // non-essential and creates an extra write transaction on every warm
+  // instance, so leave retention to the database maintenance path there.
+  if (process.env.VERCEL === '1' && process.env.DATABASE_PROVIDER !== 'supabase' && Date.now() >= cleanupAfter) {
     cleanupAfter = Date.now() + 60_000;
     waitUntil(store.pruneExpired().catch(() => { console.warn('[RUNTIME_STATE_RETENTION_UNAVAILABLE]'); }));
   }
