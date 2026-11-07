@@ -42,6 +42,12 @@ export function stableRow(row, columns) {
 }
 export function validateImportBatch(input) {
   if (!input || typeof input!=='object' || Array.isArray(input)) throw new Error('INVALID_BATCH');
+  // Telegram Serverless calls must remain bounded even if the row count is small.
+  // This also prevents one oversized JSON document from exhausting the isolate.
+  let packetBytes;
+  try { packetBytes = JSON.stringify(input).length; }
+  catch { throw new Error('INVALID_BATCH_ENCODING'); }
+  if (packetBytes > 98304) throw new Error('INVALID_BATCH_BYTES');
   const { table, batchId, rows } = input;
   if (!has(IMPORT_TABLES,table)) throw new Error('INVALID_TABLE');
   if (typeof batchId!=='string' || !/^[a-zA-Z0-9_:-]{8,120}$/.test(batchId)) throw new Error('INVALID_BATCH_ID');
@@ -54,6 +60,21 @@ export function validateImportBatch(input) {
     if (Object.keys(row).some(k=>!columns.includes(k))) throw new Error('UNKNOWN_COLUMN');
     if (columns.some(k=>!has(row,k))) throw new Error('MISSING_COLUMN');
     if (Object.values(row).some(v=>v===undefined || (typeof v==='number' && !Number.isFinite(v)))) throw new Error('INVALID_VALUE');
+    // Every non-JSON database column must be scalar; no implicit stringification
+    // of objects, functions or symbols can enter IDs, statuses or score fields.
+    for (const [key,value] of Object.entries(row)) {
+      if (value === null) continue;
+      if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint')
+        throw new Error('INVALID_VALUE');
+      if (!['settings','format_config','data','encoded','old_value','new_value'].includes(key) &&
+        (typeof value === 'object' || Array.isArray(value))) throw new Error('INVALID_VALUE');
+    }
+    if (table === 'rawDocuments' &&
+      (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
+       !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
+       typeof row.source_checksum !== 'string' || !/^[a-f0-9]{64}$/.test(row.source_checksum)))
+      throw new Error('INVALID_ARCHIVE_ROW');
+
     if (ids.has(String(row[pk]))) throw new Error('DUPLICATE_IN_BATCH');
     ids.add(String(row[pk]));
   }
