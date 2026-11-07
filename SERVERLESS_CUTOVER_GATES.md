@@ -437,3 +437,9 @@ and verified operational rollback remain prerequisites for cutover.
 - Telegram `sendMessage` generally cannot guarantee exactly-once external delivery after an ambiguous timeout. A reviewed worker must reconcile uncertain sends, scheduled invocations, rate limits, mandatory notification policy and credentials before anything is enabled. Queue correctness alone does not prove delivery.
 - Notifications are **not yet automatically enqueued** from match confirmation, league rounds, UZEFLIFE, TEAMS or payments. Producers need an atomic database transaction linking the event and outbox entry, plus source parity and SDK verification.
 - Production webhook, migration imports and Telegram-delivery mutations remain unchanged and disabled.
+
+## TEAMS application rejection (shadow-only)
+
+- `rejectTeamJoin` adds an idempotent, captain/manager/global-admin authorized `PENDING → REJECTED` transition, with SQL write-time permission checks and no membership/roster deletion.
+- `tgcloud/endpoints/rejectTeamJoin.js` remains guarded by the global disabled mutation switch. The SQLite workflow test covers authorization, replay, approved-request protection, bad inputs, and team scoping.
+- Still missing before production: confirmation of team/group membership, tickets/payment parity, actual captain policy, automatic notifications, audit/outbox side effects, and real Telegram SDK staging tests.
