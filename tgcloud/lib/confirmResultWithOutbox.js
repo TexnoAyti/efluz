@@ -66,8 +66,8 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
       const notificationId='fixture_confirmed:'+fixtureId+
         (owner.clubId===source.homeClub?':home':':away');
       const params={':id':notificationId,':user':owner.userId,
-       ':fixture':fixtureId,':now':now,':telegramUser':userId,
-       ':homeScore':result.homeScore,':awayScore':result.awayScore};
+       ':now':now,':homeScore':result.homeScore,
+       ':awayScore':result.awayScore};
       // Each inbox record has a deterministic ID; safe on replay.
       await tx.run(`INSERT INTO efl_notifications
        (id,user_id,type,title,message,data,is_read,created_at)
@@ -86,7 +86,9 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
        FROM efl_notifications n JOIN efl_users u ON u.id=n.user_id
        WHERE n.id=:id AND n.user_id=:user AND u.is_banned=0
          AND u.telegram_id IS NOT NULL AND u.telegram_id<>''
-       ON CONFLICT DO NOTHING`,params);
+       ON CONFLICT DO NOTHING`,{
+       ':id':notificationId,':user':owner.userId,':now':now
+      });
       const queued=await tx.get(`SELECT user_id AS userId FROM
         efl_notification_deliveries WHERE notification_id=:id`,
         {':id':notificationId});
