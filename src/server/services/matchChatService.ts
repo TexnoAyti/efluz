@@ -11,7 +11,7 @@ import {telegramMiniAppButton} from './telegramMiniAppButton';
 const MAX_MESSAGES=200;
 const QUICK_MESSAGES=['Assalomu alaykum, qachon o‘ynaymiz?','Xona ID yuboring.','Hozir o‘ynay olaman.','Hisobni tasdiqlang.'];
 
-type Participant={id:string;name:string};
+type Participant={id:string;name:string;username?:string|null};
 type MatchContext={kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];closed:boolean};
 type ChatReport={id:string;reporterId:string;reason:string;createdAt:string;status:'OPEN'|'RESOLVED'};
 type ChatRoom={id:string;kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];messages:MatchChatMessage[];unread:Record<string,number>;blockedBy:string[];reports:ChatReport[];createdAt:string;updatedAt:string;lastMessageAt:string|null;closed:boolean};
@@ -39,7 +39,7 @@ async function fixtureContext(matchId:string):Promise<MatchContext>{
  if(!ids[0]||!ids[1]||ids[0]===ids[1])throw new MatchChatError('Ikki raqibning akkaunti topilmadi.',409,'PARTICIPANTS_UNAVAILABLE');
  const [homeUser,awayUser,homeClub,awayClub]=await Promise.all([db.collection(COLLECTIONS.USERS).doc(ids[0]).get(),db.collection(COLLECTIONS.USERS).doc(ids[1]).get(),db.collection(COLLECTIONS.CLUBS).doc(clubIds[0]).get(),db.collection(COLLECTIONS.CLUBS).doc(clubIds[1]).get()]);
  const homeName=String(homeClub.data()?.name||clubIds[0]).slice(0,80),awayName=String(awayClub.data()?.name||clubIds[1]).slice(0,80);
- return {kind:'fixture',matchId,seasonId,title:`${homeName} — ${awayName}`,subtitle:`${fixture.competitionName||fixture.competitionId||'EFLUZ'} · ${fixture.roundName||`${fixture.matchday||1}-tur`}`,participants:[{id:ids[0],name:displayName(homeUser.data(),ids[0])},{id:ids[1],name:displayName(awayUser.data(),ids[1])}],closed:['CONFIRMED','CANCELLED'].includes(String(fixture.status))};
+ return {kind:'fixture',matchId,seasonId,title:`${homeName} — ${awayName}`,subtitle:`${fixture.competitionName||fixture.competitionId||'EFLUZ'} · ${fixture.roundName||`${fixture.matchday||1}-tur`}`,participants:[{id:ids[0],name:displayName(homeUser.data(),ids[0]),username:homeUser.data()?.username||null},{id:ids[1],name:displayName(awayUser.data(),ids[1]),username:awayUser.data()?.username||null}],closed:['CONFIRMED','CANCELLED'].includes(String(fixture.status))};
 }
 
 async function uzeflifeContext(matchId:string):Promise<MatchContext>{
@@ -57,7 +57,7 @@ async function context(kind:MatchChatKind,rawId:string,user:User){
 }
 
 function initialRoom(value:MatchContext):ChatRoom{const now=new Date().toISOString();return {id:roomId(value.kind,value.matchId,value.participants.map(p=>p.id)),kind:value.kind,matchId:value.matchId,seasonId:value.seasonId,title:value.title,subtitle:value.subtitle,participants:value.participants,messages:[],unread:Object.fromEntries(value.participants.map(p=>[p.id,0])),blockedBy:[],reports:[],createdAt:now,updatedAt:now,lastMessageAt:null,closed:value.closed};}
-function view(room:ChatRoom,userId:string):MatchChatView{const opponent=room.participants.find(p=>p.id!==userId)!;return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,messages:room.messages||[],unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
+function view(room:ChatRoom,userId:string):MatchChatView{const opponent=room.participants.find(p=>p.id!==userId)!;return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,messages:room.messages||[],unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
 
 export async function readMatchChat(kind:MatchChatKind,matchId:string,user:User):Promise<MatchChatView>{
  const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);
