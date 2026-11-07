@@ -80,7 +80,7 @@ test('private admin command reveals only aggregate counts',async()=>{
  try{
   const admin=await handleReadOnlyBotCommand(db,msg(123));
   assert.match(admin.text,/Serverless admin auditi/);
-  assert.ok(admin.text.includes('sinov)\\nMavsum:'));
+  assert.ok(admin.text.includes(String.fromCharCode(10)+'Mavsum:'));
   assert.match(admin.text,/UZEFLIFE joriy turi: 1\/2/);
   assert.doesNotMatch(admin.text,/p1|team1|u1/);
   const other=await handleReadOnlyBotCommand(db,msg(456));
