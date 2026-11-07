@@ -43,7 +43,7 @@ test('opponent only confirms submitted scores, fixture remains idempotently conf
   assert.equal(result.homeScore,2);
   assert.equal((await confirmFixtureResult(db,'u2',{submissionId:'p1'})).confirmed,true);
   const row=sql.prepare("SELECT status,home_score,away_score FROM efl_fixtures WHERE id='f1'").get();
-  assert.deepEqual(row,{status:'CONFIRMED',home_score:2,away_score:1});
+  assert.deepEqual({...row},{status:'CONFIRMED',home_score:2,away_score:1});
   await assert.rejects(confirmFixtureResult(db,'u1',{submissionId:'p1'}),/SELF_CONFIRM_FORBIDDEN/);
   await assert.rejects(confirmFixtureResult(db,'u3',{submissionId:'p1'}),/CONFIRM_FORBIDDEN/);
  }finally{sql.close();}
