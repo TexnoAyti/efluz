@@ -50,6 +50,7 @@ on:
       - 'tgcloud/endpoints/standings.js'
       - 'tgcloud.jsonc'
       - 'vite.config.ts'
+      - 'tgcloud-staging/**'
       - 'package.json'
       - 'scripts/build-tgcloud.mjs'
       - 'scripts/verifyTgcloudStatic.mjs'
