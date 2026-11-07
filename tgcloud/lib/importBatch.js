@@ -15,6 +15,7 @@ export const IMPORT_TABLES = Object.freeze({
   disputes: ['id','fixture_id','season_id','home_submission_id','away_submission_id','status','resolved_by_user_id','resolution_notes','created_at','resolved_at'],
   notifications: ['id','user_id','type','title','message','data','is_read','created_at'],
   auditLogs: ['id','actor_user_id','actor_username','action','entity_type','entity_id','old_value','new_value','created_at'],
+  rawDocuments: ['id','source_space','collection_path','document_id','encoded','data','source_checksum'],
 });
 export const SQL_TABLES = Object.freeze({
   users:'efl_users',seasons:'efl_seasons',leagues:'efl_leagues',clubs:'efl_clubs',
@@ -22,13 +23,13 @@ export const SQL_TABLES = Object.freeze({
   matchAccess:'efl_match_access',matchMessages:'efl_match_messages',
   competitions:'efl_competitions',participants:'efl_competition_participants',
   resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
-  notifications:'efl_notifications',auditLogs:'efl_audit_logs'
+  notifications:'efl_notifications',auditLogs:'efl_audit_logs',rawDocuments:'efl_raw_documents'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
   clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
   competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
-  notifications:'id',auditLogs:'id'
+  notifications:'id',auditLogs:'id',rawDocuments:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
