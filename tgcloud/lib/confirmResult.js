@@ -53,7 +53,13 @@ export async function confirmFixtureResult(db,userId,input) {
       AND EXISTS (SELECT 1 FROM efl_result_submissions p
         WHERE p.id=:submission AND p.fixture_id=efl_fixtures.id
           AND p.submitted_by_user_id<>:user AND p.club_id<>:club
-          AND p.home_score=:homeScore AND p.away_score=:awayScore)`,params);
+          AND p.home_score=:homeScore AND p.away_score=:awayScore)
+      AND NOT EXISTS (SELECT 1 FROM efl_result_submissions other
+        WHERE other.fixture_id=efl_fixtures.id
+          AND other.submitted_by_user_id=:user
+          AND (other.home_score<>:homeScore OR other.away_score<>:awayScore))
+      AND NOT EXISTS (SELECT 1 FROM efl_disputes d WHERE d.fixture_id=efl_fixtures.id
+        AND d.status IN ('OPEN','PENDING','UNDER_REVIEW'))`,params);
   const after=await db.get(`SELECT id,status,home_score AS homeScore,away_score AS awayScore,
     confirmation_status AS confirmationStatus
     FROM efl_fixtures WHERE id=:fixture`,{':fixture':proposal.fixtureId});
