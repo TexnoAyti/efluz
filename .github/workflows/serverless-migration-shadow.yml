@@ -10,6 +10,8 @@ on:
       - 'tgcloud/endpoints/competitionDetail.js'
       - 'tgcloud/lib/confirmResult.js'
       - 'tgcloud/lib/readOnlyBotCommands.js'
+      - 'tgcloud/lib/readOnlyBotExtraCommands.js'
+      - 'scripts/serverlessBotExtra.test.mjs'
       - 'tgcloud/handlers/message.js'
       - 'tgcloud/lib/readOnlyCallbacks.js'
       - 'tgcloud/lib/adminOverview.js'
