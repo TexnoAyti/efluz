@@ -46,3 +46,22 @@ The final webhook switch is the last step, never the first.
 When an authorized offline extraction and exact schema mapping have produced a complete normalized JSON snapshot, run `node scripts/prepareServerlessImport.mjs normalized-snapshot.json private-output`. The generated manifest contains row counts and SHA-256 per table and packet. Keep the JSON files off GitHub and outside static hosting. A normalized export is **not** yet implemented for the current Firestore/SQLite production schema; do not claim it has been transferred.
 
 Run `node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs` locally after fetching the branch. Do not run CLI push, migrate, or webhook sync against the current live bot.
+
+## Extended shadow domain (not production ready)
+
+The migration schema now includes competitions, participants, result submissions,
+disputes, notifications and audit logs, in addition to the initial eight tables.
+A read-only competitions endpoint, owner-scoped notifications inbox and locked
+migration audit endpoint are present. New fixtures/standings endpoints are
+read-only; standings remain **provisional** until tie-break and competition
+policies match production.
+
+Offline checks:
+- `node scripts/validateServerlessReferences.mjs normalized-snapshot.json`
+  detects missing references and duplicate active club ownership.
+- `node scripts/verifyServerlessSnapshot.mjs source.json target.json`
+  compares all catalogued tables by count and SHA-256.
+
+These scripts do not read production automatically and cannot prove feature
+parity on their own. Keep real snapshots out of Git and protect the migration
+operator's access.
