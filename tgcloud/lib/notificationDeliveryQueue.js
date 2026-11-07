@@ -49,16 +49,17 @@ export async function readNotificationDeliveryAudit(db,telegramId,input={}){
   COALESCE(SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END),0) AS pending,
   COALESCE(SUM(CASE WHEN status='LEASED' THEN 1 ELSE 0 END),0) AS leased,
   COALESCE(SUM(CASE WHEN status='SENT' THEN 1 ELSE 0 END),0) AS sent,
-  COALESCE(SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END),0) AS failed
+  COALESCE(SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END),0) AS failed,
+  COALESCE(SUM(CASE WHEN status='REVIEW' THEN 1 ELSE 0 END),0) AS review
  FROM efl_notification_deliveries`);
  const output={};
- for(const key of ['total','pending','leased','sent','failed']){
+ for(const key of ['total','pending','leased','sent','failed','review']){
   const number=Number(result?.[key]??0);
   if(!Number.isSafeInteger(number)||number<0)
    throw Error('INVALID_NOTIFICATION_DELIVERY_COUNT');
   output[key]=number;
  }
- if(output.pending+output.leased+output.sent+output.failed!==output.total)
+ if(output.pending+output.leased+output.sent+output.failed+output.review!==output.total)
   throw Error('NOTIFICATION_DELIVERY_STATE_INCONSISTENT');
  return {ok:true,readOnly:true,stats:output,source:'telegram-serverless',
   note:'Queue audit only. Telegram delivery remains disabled.'};
