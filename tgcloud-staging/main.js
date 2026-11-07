@@ -17,6 +17,10 @@ const staffPanel=document.getElementById('staffPanel');
 const overviewButton=document.getElementById('staffOverview');
 const auditButton=document.getElementById('roundAudit');
 const staffResult=document.getElementById('staffResult');
+const competitionsButton=document.getElementById('competitions');
+const fixturesButton=document.getElementById('myFixtures');
+const fixturesResult=document.getElementById('fixturesResult');
+let activeSeasonId=null;
 const webApp=window.Telegram?.WebApp;
 const sdk=webApp?.Serverless;
 webApp?.ready?.();
@@ -60,6 +64,9 @@ profileButton.addEventListener('click',async()=>{
     if(result?.ok!==true)throw Error('UNEXPECTED_PROFILE');
     const clubCount=Array.isArray(result.ownerships)?result.ownerships.length:0;
     const leagueCount=Array.isArray(result.leagues)?result.leagues.length:0;
+    activeSeasonId=typeof result.activeSeason?.id==='string'?result.activeSeason.id:null;
+    competitionsButton.disabled=!activeSeasonId;
+    fixturesButton.disabled=!activeSeasonId||!result.user;
     if(result.user?.isAdmin===true){
       staffPanel.hidden=false;
       overviewButton.disabled=false;
@@ -161,4 +168,34 @@ auditButton.addEventListener('click',async()=>{
     '\nRejim: faqat o‘qish, tur o‘zgarmaydi.';
  }catch(error){staffResult.textContent='Xato: '+readable(error);}
  finally{auditButton.disabled=false;}
+});
+
+competitionsButton.addEventListener('click',async()=>{
+ if(!activeSeasonId)return;
+ competitionsButton.disabled=true;fixturesResult.textContent='Musobaqalar olinmoqda…';
+ try{
+  const result=await call('competitions',{seasonId:activeSeasonId,limit:50});
+  if(result?.ok!==true||!Array.isArray(result.competitions))
+    throw Error('INVALID_COMPETITION_FEED');
+  fixturesResult.textContent=result.competitions.length
+    ?result.competitions.map(x=>String(x.name??'Musobaqa').slice(0,80)+
+      ' — '+String(x.status??'').slice(0,20)).join('\n')
+    :'Staging bazasida ushbu mavsumning musobaqalari topilmadi.';
+ }catch(error){fixturesResult.textContent='Xato: '+readable(error);}
+ finally{competitionsButton.disabled=false;}
+});
+fixturesButton.addEventListener('click',async()=>{
+ if(!activeSeasonId)return;
+ fixturesButton.disabled=true;fixturesResult.textContent='Uchrashuvlaringiz olinmoqda…';
+ try{
+  const result=await call('myFixtures',{seasonId:activeSeasonId,limit:30});
+  if(result?.ok!==true||!Array.isArray(result.fixtures))
+    throw Error('INVALID_OWNER_FIXTURES');
+  fixturesResult.textContent=result.fixtures.length
+    ?result.fixtures.map(f=>'Tur '+Number(f.round??0)+': '+
+      String(f.status??'').slice(0,20)+
+      (f.homeScore!=null&&f.awayScore!=null?' — '+Number(f.homeScore)+':'+Number(f.awayScore):'')).join('\n')
+    :'Ushbu mavsumda faol klubingiz uchun o‘yin topilmadi.';
+ }catch(error){fixturesResult.textContent='Xato: '+readable(error);}
+ finally{fixturesButton.disabled=false;}
 });
