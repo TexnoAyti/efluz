@@ -59,8 +59,16 @@ async function fixtureOverrides(key: string): Promise<Map<string, any>> {
   let query = getFirestoreDb().collection('durable_fixture_overrides').where('seasonId', '==', seasonId);
   const competitionId = key.match(/:competition:([^:]+):fixtures$/)?.[1];
   if (competitionId) query = query.where('competitionId', '==', competitionId);
-  const rows = await query.get();
-  return new Map(rows.docs.map(doc => [doc.id, doc.data()]));
+  try {
+    const rows = await query.get();
+    return new Map(rows.docs.map(doc => [doc.id, doc.data()]));
+  } catch (error: any) {
+    // Overrides are an enrichment layer. If the optional override query is
+    // slow or temporarily unavailable, keep serving the validated snapshot
+    // instead of turning the whole competitions/clubs page into a 503.
+    console.warn('[POSTGRES_FIXTURE_OVERRIDES_DEGRADED]', error?.message || error);
+    return new Map();
+  }
 }
 function overlay(snapshot: any, changes: Map<string, any>): any {
   if (!Array.isArray(snapshot?.data) || !changes.size) return snapshot;
