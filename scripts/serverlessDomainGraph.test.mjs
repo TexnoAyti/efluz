@@ -126,7 +126,7 @@ test('historical audit opt-in quarantines only released owners and missing old r
   const staging=spawnSync(process.execPath,[script,input,'--quarantine-historical'],{encoding:'utf8'});
   assert.equal(staging.status,0,staging.stderr);
   assert.deepEqual(JSON.parse(staging.stdout).quarantinedHistorical,{
-   releasedOccupancies:1,notifications:1,participants:1
+   releasedOccupancies:1,notifications:1,participants:1,resolvedDisputes:0
   });
   rows[3].data.status='ACTIVE';
   await writeFile(input,rows.map(JSON.stringify).join('\n')+'\n');
