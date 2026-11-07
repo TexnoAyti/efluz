@@ -13,11 +13,13 @@ import { Trophy, Award, Globe2, Users, ChevronRight } from 'lucide-react';
 
 interface CompetitionHubViewProps {
   onNavigateTab: (tab: any) => void;
+  onOpenClub?: (club: import('../types').Club) => void;
   initialSubTab?: 'leagues' | 'cups' | 'european' | 'season' | 'custom' | 'uzeflife' | 'awards';
 }
 
 export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   onNavigateTab,
+  onOpenClub,
   initialSubTab = 'leagues',
 }) => {
   const { language } = useI18n();
