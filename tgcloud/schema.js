@@ -202,6 +202,7 @@ export const uzeflifeFixtures=table('efl_uzeflife_fixtures',{
 // and embedded base64 logos stay in the private source archive.
 export const teamsCatalog=table('efl_teams_catalog',{
  id:text('id').primaryKey(),name:text('name').notNull(),
+ ownerUserId:text('owner_user_id'),adminUserId:text('admin_user_id'),
  logoUrl:text('logo_url'),memberCount:integer('member_count').notNull(),
  membershipRequired:boolean('membership_required').notNull().default(false),
  updatedAt:integer('updated_at').notNull().default(0),
