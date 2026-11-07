@@ -26,7 +26,15 @@ export async function handleReadOnlyBotCommand(db,message){
   if(command==='/serverless-check')
     return {chat_id:chatId,text:'EFLUZ Serverless sinov kanali ishlayapti. Production bot hali eski tizimda.'};
   if(command==='/start'||command==='/help')
-    return {chat_id:chatId,text:'EFLUZ Serverless sinov boti. Buyruqlar: /myclub — klubim, /myfixtures — uchrashuvlarim, /uzeflife — joriy tur, /teams — jamoalar, /inbox — xabarlarim, /serverless-check — aloqa. Klub tanlash va natija kiritish hozircha o‘chirilgan.'};
+    return {chat_id:chatId,text:'EFLUZ Serverless sinov boti. Quyidagi bo‘limlarni faqat o‘qish mumkin. Klub tanlash, natija kiritish va tur almashishi o‘chirilgan.',
+      reply_markup:{inline_keyboard:[
+        [{text:'Klubim',callback_data:'efl:myclub'},
+         {text:'Uchrashuvlarim',callback_data:'efl:myfixtures'}],
+        [{text:'UZEFLIFE',callback_data:'efl:uzeflife'},
+         {text:'TEAMS',callback_data:'efl:teams'}],
+        [{text:'Bildirishnomalar',callback_data:'efl:inbox'},
+         {text:'Aloqa',callback_data:'efl:status'}]
+      ]}};
   const telegramId=String(from.id);
   const profile=await db.get('SELECT id,is_banned FROM efl_users WHERE telegram_id=:telegram',
     {':telegram':telegramId});
