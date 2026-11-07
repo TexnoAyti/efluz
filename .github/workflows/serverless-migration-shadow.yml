@@ -1,0 +1,23 @@
+name: Serverless migration shadow tests
+on:
+  pull_request:
+    paths:
+      - 'tgcloud/lib/importBatch.js'
+      - 'tgcloud/lib/importEngine.js'
+      - 'scripts/serverlessMigration*.test.mjs'
+      - 'scripts/prepareServerlessImport.mjs'
+      - '.github/workflows/serverless-migration-shadow.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replay-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate replay, conflicts and bounded batches
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs
