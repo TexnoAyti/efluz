@@ -21,8 +21,8 @@ function fixture(){
  ('c4','s2','Main league','LEAGUE','ACTIVE');
  `);
  const db={
-  async get(q,p){return sql.prepare(q).get(p)??null;},
-  async all(q,p){return sql.prepare(q).all(p);}
+  async get(q,p={}){return sql.prepare(q).get(p)??null;},
+  async all(q,p={}){return sql.prepare(q).all(p);}
  };
  return {sql,db};
 }
