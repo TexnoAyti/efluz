@@ -81,6 +81,32 @@ test('core converter checks durable fixture corrections without replacing author
  fixture.durable_fixture_overrides=[doc('missing',{status:'SCHEDULED'})];
  assert.throws(()=>convertEflCore(fixture),/OVERRIDE_WITHOUT_FIXTURE/);
 });
+test('historical orphan quarantine is explicit and never grants an active owner',()=>{
+ const d=sample();
+ d.club_occupancies.push(doc('released-orphan',{
+   seasonId:'s1',clubId:'c1',userId:'deleted-user',
+   status:'released',claimedAt:'2026-01-01T00:00:00Z'
+ }));
+ d.notifications.push(doc('unowned-notification',{
+   userId:'deleted-user',type:'SYSTEM',title:'Archived',message:'Historical',
+   createdAt:'2026-01-01T00:00:00Z'
+ }));
+ d.competition_participants.push(doc('past-participant',{
+   seasonId:'s1',competitionId:'deleted-competition',clubId:'c1',
+   createdAt:'2026-01-01T00:00:00Z'
+ }));
+ assert.throws(()=>convertEflCore(d),/OCCUPANCY_REFERENCE_MISSING/);
+ const {rows,report}=convertEflCore(d,{quarantineHistoricalOrphans:true});
+ assert.deepEqual(report.quarantinedHistorical,{
+   releasedOccupancies:1,notifications:1,participants:1
+ });
+ assert.equal(rows.clubOccupancies.length,2);
+ assert.equal(rows.notifications.length,1);
+ assert.equal(rows.participants.length,1);
+ d.club_occupancies[d.club_occupancies.length-1].data.status='active';
+ assert.throws(()=>convertEflCore(d,{quarantineHistoricalOrphans:true}),
+   /OCCUPANCY_REFERENCE_MISSING/);
+});
 test('CLI creates normalized file and refuses overwrite',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'efl-core-'));
  try{
