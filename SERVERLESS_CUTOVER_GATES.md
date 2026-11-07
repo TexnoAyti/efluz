@@ -412,3 +412,11 @@ and verified operational rollback remain prerequisites for cutover.
 - It identifies unresolved historical fixtures, pending/open disputes, incomplete opponents, mismatched league/competition round counters and missing next-round fixtures. It **does not** create knockout brackets or coerce pending results to 0:0.
 - Unlike the old production "all previous results must be complete" constraint, unfinished fixtures are **reported for explicit operator review**, not treated as a reason to fabricate winners. Advancement itself remains unimplemented: reliable dual-counter updates, durable notifications, concurrency controls, operational source parity and Telegram-hosted tests must precede enabling writes.
 - `scripts/serverlessCompetitionRoundPlan.test.mjs` provides offline SQLite cases. The feature remains staging-only and read-only.
+
+## Cup round conditional advance engine (staging, not enabled)
+
+- `tgcloud/lib/advanceCupRound.js` and `tgcloud/endpoints/advanceCupRound.js` add an idempotent, admin-only, conditional SQLite advance for **existing non-league fixtures**. It does not fabricate matches or a UZEFLIFE playoff, and does not overwrite unfinished scores. The endpoint is explicitly disabled by the global mutation gate.
+- `scripts/serverlessAdvanceCupRound.test.mjs` covers existing next-round fixtures, unresolved disputes, replay, authorization, missing next-round and league rejection.
+- **Blocking issue:** the existing result proposal and confirmation code accept only the competition's single current matchday. Advancing while prior fixtures remain unresolved therefore prevents those fixtures from being confirmed through the current endpoint. Introduce a reviewed per-round access policy and migrate it from production before enabling advance. Until then, the advance engine must remain **OFF**.
+- **Blocking issue:** league progress additionally stores `efl_leagues.current_round`; atomic multi-table transactions are required. The implementation refuses league advancement rather than leaving league and competition counters inconsistent.
+- Durable audit/outbox, notification dispatch, official cup advancement policy, error recovery and real Telegram SDK integration are still missing. **This is not completed functionality and is not authorization to switch webhooks.**
