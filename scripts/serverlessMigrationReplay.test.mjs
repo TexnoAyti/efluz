@@ -39,8 +39,8 @@ function makeDb() {
 const one=(rows=[base], batchId='users:000001')=>({table:'users',batchId,rows});
 test('first import writes once, identical replay skips safely',async()=>{
   const db=makeDb();
-  assert.equal((await applyImportBatch(db,one())).inserted,1);
-  assert.equal((await applyImportBatch(db,one())).skipped,1);
+  assert.equal((await applyImportBatch(db,one())).previouslyPresent,0);
+  assert.equal((await applyImportBatch(db,one())).previouslyPresent,1);
   assert.equal(db.records.size,1);
   assert.equal(db.states.size,1);
 });
@@ -51,7 +51,7 @@ test('partial import resumes without duplicate records',async()=>{
   assert.equal(db.records.size,1);assert.equal(db.states.size,0);
   db.setFailAfter(null);
   const result=await applyImportBatch(db,one(rows));
-  assert.equal(result.inserted,1);assert.equal(result.skipped,1);
+  assert.equal(result.verified,2);assert.equal(result.previouslyPresent,1);
   assert.equal(db.records.size,2);assert.equal(db.states.size,1);
 });
 test('conflicting existing row cannot be overwritten',async()=>{
