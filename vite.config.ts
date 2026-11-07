@@ -8,7 +8,7 @@ export default defineConfig(() => {
   // smoke app. The legacy React UI still calls Vercel for key operations.
   const staging = process.env.EFL_TGCLOUD_STATIC === '1';
   return {
-    ...(staging ? { root: path.resolve(__dirname, 'tgcloud-staging'), publicDir: false } : {}),
+    ...(staging ? { root: path.resolve(__dirname, 'tgcloud-staging'), publicDir: false as const } : {}),
     plugins: staging ? [] : [react(), tailwindcss()],
     build: staging
       ? { outDir: path.resolve(__dirname, 'dist-tgcloud'), emptyOutDir: true, sourcemap: false }
