@@ -61,6 +61,20 @@ export const fixtures = table('efl_fixtures', {
   awayOwnerIdx: index('efl_fixtures_away_owner_idx').on(t.awayTelegramId, t.status),
 }));
 
+// Explicit, fixture-specific late score windows. A previous round never
+// becomes writable just because a newer round is open. Admin authorization
+// must be reconciled with original competition policy before production.
+export const fixtureScoreWindows = table('efl_fixture_score_windows', {
+  fixtureId: text('fixture_id').primaryKey(),
+  seasonId: text('season_id').notNull(),
+  competitionId: text('competition_id').notNull(),
+  isOpen: boolean('is_open').notNull().default(false),
+  authorizedBy: text('authorized_by').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, t => ({
+  competitionIdx: index('efl_fixture_score_window_comp_idx').on(t.competitionId,t.isOpen),
+}));
+
 export const matchAccess = table('efl_match_access', {
   matchId: text('match_id').primaryKey(), homeTelegramId: text('home_telegram_id').notNull(),
   awayTelegramId: text('away_telegram_id').notNull(), writable: boolean('writable').notNull().default(false),
