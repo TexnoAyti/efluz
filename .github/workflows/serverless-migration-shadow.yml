@@ -9,6 +9,8 @@ on:
       - 'scripts/prepareServerlessImport.mjs'
       - 'scripts/verifyServerlessSnapshot.mjs'
       - 'scripts/serverlessParity.test.mjs'
+      - 'scripts/serverlessReferences.test.mjs'
+      - 'scripts/validateServerlessReferences.mjs'
       - '.github/workflows/serverless-migration-shadow.yml'
   workflow_dispatch:
 permissions:
@@ -23,4 +25,4 @@ jobs:
         with:
           node-version: '22'
       - name: Validate replay, conflicts and bounded batches
-        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs
+        run: node --test scripts/serverlessMigration.test.mjs scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportPacket.test.mjs scripts/serverlessParity.test.mjs scripts/serverlessReferences.test.mjs
