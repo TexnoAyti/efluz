@@ -1,7 +1,7 @@
 import {readOnlyBotExtra} from './readOnlyBotExtraCommands.js';
 // Read-only bot commands for the isolated staging bot.
 // Do not register side-effecting commands before feature parity.
-const commands=new Set(['/start','/help','/myclub','/myfixtures','/uzeflife','/teams','/inbox','/serverless-check']);
+const commands=new Set(['/start','/help','/myclub','/myfixtures','/leagues','/cups','/uzeflife','/teams','/inbox','/serverless-check']);
 export function parseCommand(text){
   if(typeof text!=='string')return null;
   const token=text.trim().split(/\s+/)[0]?.toLowerCase();
@@ -30,6 +30,8 @@ export async function handleReadOnlyBotCommand(db,message){
       reply_markup:{inline_keyboard:[
         [{text:'Klubim',callback_data:'efl:myclub'},
          {text:'Uchrashuvlarim',callback_data:'efl:myfixtures'}],
+        [{text:'Ligalar',callback_data:'efl:leagues'},
+         {text:'Kuboklar',callback_data:'efl:cups'}],
         [{text:'UZEFLIFE',callback_data:'efl:uzeflife'},
          {text:'TEAMS',callback_data:'efl:teams'}],
         [{text:'Bildirishnomalar',callback_data:'efl:inbox'},
