@@ -34,7 +34,8 @@ export async function confirmFixtureResult(db,userId,input) {
   const params={':submission':submissionId,':fixture':proposal.fixtureId,':season':proposal.seasonId,
     ':user':userId,':telegram':actor.telegram_id,':club':oppositeClub,
     ':homeScore':proposal.homeScore,':awayScore':proposal.awayScore,':now':Date.now()};
-  // Confirm only while the matchday is currently open. The opponent must be
+  // Confirm only in the current matchday or an explicitly authorized fixture
+  // score window. The opponent must be
   // the current owner at write time, and the submitter must not be the actor.
   await db.run(`UPDATE efl_fixtures
     SET home_score=:homeScore,away_score=:awayScore,status='CONFIRMED',
@@ -43,7 +44,12 @@ export async function confirmFixtureResult(db,userId,input) {
       AND home_club_id IS NOT NULL AND away_club_id IS NOT NULL
       AND EXISTS (SELECT 1 FROM efl_competitions c
         WHERE c.id=efl_fixtures.competition_id AND c.season_id=efl_fixtures.season_id
-          AND c.is_matchday_open=1 AND c.current_matchday=efl_fixtures.round)
+          AND ((c.is_matchday_open=1 AND c.current_matchday=efl_fixtures.round)
+           OR EXISTS(SELECT 1 FROM efl_fixture_score_windows w
+            WHERE w.fixture_id=efl_fixtures.id
+             AND w.season_id=efl_fixtures.season_id
+             AND w.competition_id=efl_fixtures.competition_id
+             AND w.is_open=1)))
       AND EXISTS (SELECT 1 FROM efl_users u JOIN efl_club_occupancies o
         ON o.user_id=u.id AND o.telegram_id=u.telegram_id
         WHERE u.id=:user AND u.telegram_id=:telegram AND u.is_banned=0
