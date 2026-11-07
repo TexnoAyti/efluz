@@ -262,3 +262,27 @@ active ownership or fixture correction mismatch.
 
 These counts are a point-in-time diagnostic, **not** a clean cutover
 certificate or an authorization to delete historical records.
+
+## TEAMS and UZEFLIFE read-only projections
+
+Source inspection on 2026-11-07 found one oversized UZEFLIFE document
+containing 1,815 match records, 257 participant entries and a private
+256-row roster. The normalized `uzeflifeState`, `uzeflifeEntrants` and
+`uzeflifeFixtures` tables store a **small read-only bracket projection**,
+while the exact original remains in the private multipart archive.
+The authenticated `uzeflife` endpoint uses 80-row maximum pagination.
+It cannot create matches, advance rounds, post results or administer the
+tournament. Proposals, disputes, roster details and admin identity are
+excluded from the public read model.
+
+Production currently has four `team_league_preview_teams` records.
+Some source logos are large embedded base64 values; the normalized
+`teamsCatalog` table stores a URL only if it is a bounded HTTPS link.
+Team owner and member IDs remain private in the raw archive. The signed
+`teamsCatalog` endpoint exposes only team name, public logo URL and
+member count. Membership invitations, payments, captains, rosters and
+TEAMS tournaments **have not been implemented as mutations**.
+
+Both projections are included in the normalized import and strict snapshot
+parity tests. SQLite tests cover pagination and private-field exclusion.
+Actual Telegram Serverless-hosted runtime remains unverified.
