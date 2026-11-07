@@ -26,3 +26,23 @@ test('identical full snapshots pass, changed or missing rows fail closed',async(
     assert.match(r.stderr,/MISSING_TABLE/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('parity rejects unknown tables and unrecognized source fields instead of silently dropping data',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'efl-parity-strict-'));
+ try{
+  const source=join(dir,'source.json'),target=join(dir,'target.json');
+  await writeFile(source,JSON.stringify(empty));
+  await writeFile(target,JSON.stringify({...empty,unmigratedPayments:[{id:'secret'}]}));
+  let run=spawnSync(process.execPath,[verifier,source,target],{encoding:'utf8'});
+  assert.notEqual(run.status,0);
+  assert.match(run.stderr,/UNKNOWN_SNAPSHOT_TABLES/);
+  const normalUser={id:'u1',telegram_id:'123',username:null,first_name:'A',last_name:'',
+   is_admin:false,is_banned:false,created_at:1,updated_at:1};
+  await writeFile(source,JSON.stringify({...empty,users:[normalUser]}));
+  await writeFile(target,JSON.stringify({...empty,users:[{...normalUser,
+   unmigratedBalance:70000}]}));
+  run=spawnSync(process.execPath,[verifier,source,target],{encoding:'utf8'});
+  assert.notEqual(run.status,0);
+  assert.match(run.stderr,/UNKNOWN_COLUMN:users/);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
