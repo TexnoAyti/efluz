@@ -17,6 +17,8 @@ function setup(){
   CREATE TABLE efl_result_submissions(id TEXT PRIMARY KEY,fixture_id TEXT,
     submitted_by_user_id TEXT,club_id TEXT,home_score INTEGER,away_score INTEGER);
   CREATE TABLE efl_disputes(id TEXT PRIMARY KEY,fixture_id TEXT,status TEXT);
+  CREATE TABLE efl_fixture_score_windows(fixture_id TEXT PRIMARY KEY,season_id TEXT,
+    competition_id TEXT,is_open INTEGER,authorized_by TEXT,updated_at INTEGER);
   INSERT INTO efl_users VALUES('u1','123',0),('u2','456',0),('u3','789',0);
   INSERT INTO efl_club_occupancies VALUES('o1','season1','home','u1','123','ACTIVE'),
     ('o2','season1','away','u2','456','ACTIVE');
