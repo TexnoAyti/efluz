@@ -16,7 +16,7 @@ export default async function(input={},ctx) {
   const fixtures=await db.all(`SELECT home_club_id AS homeClubId,away_club_id AS awayClubId,
     home_score AS homeScore,away_score AS awayScore FROM efl_fixtures
     WHERE league_id=:league AND season_id=:season AND
-    confirmation_status='CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL`,
+    status='CONFIRMED' AND home_score IS NOT NULL AND away_score IS NOT NULL`,
     {':league':leagueId,':season':seasonId});
   const rows=clubs.map(c=>({...c,played:0,wins:0,draws:0,losses:0,goalsFor:0,goalsAgainst:0,goalDifference:0,points:0}));
   const byId=new Map(rows.map(r=>[r.id,r]));
