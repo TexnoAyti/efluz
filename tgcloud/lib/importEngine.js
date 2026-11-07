@@ -4,7 +4,7 @@ import { validateImportBatch, stableRow } from './importBatch.js';
 export function comparableValue(value, column) {
   if (value === undefined || value === null) return null;
   if (typeof value === 'boolean') return Number(value);
-  if (column === 'settings' && typeof value === 'object') return stableRow({value}, ['value']);
+  if (column === 'settings' && typeof value === 'object') return JSON.stringify(value);
   if (typeof value === 'object') return JSON.stringify(value);
   return value;
 }
