@@ -231,9 +231,11 @@ export function createApp() {
     // All fixture/mutation routes keep their existing initialization boundary.
     const staticRead = req.method === 'GET' && ['/api/health', '/api/health/', '/api/seasons', '/api/seasons/active', '/api/leagues', '/api/auth/dev-profiles'].includes(req.path);
     const postgresClubRead = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'GET' && ['/api/me/club', '/api/me/bootstrap', '/api/me/matches'].includes(req.path);
+    // Supabase-backed match chat must not wait for the legacy SQLite bootstrap on cold starts.
+    const postgresMatchChat = process.env.DATABASE_PROVIDER === 'supabase' && req.path.startsWith('/api/match-chat');
     const postgresLogin = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'POST' && req.path === '/api/auth/telegram';
     try {
-      if (!staticRead && !postgresLogin && !postgresClubRead) await ensureDbReady();
+      if (!staticRead && !postgresLogin && !postgresClubRead && !postgresMatchChat) await ensureDbReady();
       res.setHeader('Server-Timing', [res.getHeader('Server-Timing'), `bootstrap;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
       next();
     }
