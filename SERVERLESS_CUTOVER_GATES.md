@@ -27,7 +27,7 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 | AI assistant | NOT IMPLEMENTED | Authorization, quotas, no unsafe mutations, parity |
 | Notifications and scheduled work | NOT IMPLEMENTED | Delivery deduplication, timers/cron replacement, replay proof |
 | Frontend | SHADOW ONLY | Every authenticated API call migrated with parity and UI E2E; new writes intentionally not routed live |
-| Static Mini App hosting | STAGING BUILD CONFIGURED, NOT DEPLOYED | `npm run build:tgcloud` creates isolated `dist-tgcloud`; CI scans for Node bundles, actual tgcloud host/signed launch not verified |
+| Static Mini App hosting | ISOLATED STAGING SMOKE BUILD, NOT DEPLOYED | Dedicated Vercel-free read-only smoke page in `tgcloud-staging/`; CI verifies no backend bundles/legacy routes; full React UI not yet migrated |
 | Performance and errors | NOT MEASURED | Load, retries, timeout, rollback monitoring |
 | Rollback | NOT PREPARED | Restore exact prior webhook and legacy frontend routing |
 
@@ -101,10 +101,12 @@ Telegram handler parity or current production data parity.
 
 ## Isolated Telegram Mini App static hosting
 
-Use `npm run build:tgcloud` to create `dist-tgcloud`. The
+Use `npm run build:tgcloud` to create `dist-tgcloud` from the isolated
+`tgcloud-staging/` read-only smoke page. The
 `tgcloud.jsonc` file now points only to that folder, **not** the regular
 `dist` folder containing the Node server bundle. The shadow workflow
-checks `node scripts/verifyTgcloudStatic.mjs` after building. Static files
+checks `node scripts/verifyTgcloudStatic.mjs` after building and rejects
+legacy API calls in the compiled bundle. Static files
 must not be deployed to the production bot while existing client routes
 still call the legacy Vercel API. `npx tgcloud push` is a separate,
 operator-controlled step after backend feature parity and staging approval.
@@ -156,3 +158,23 @@ Telegram bot, web app or admin panel. The existing production webhook
 must not be switched until the missing handlers and operational workflows
 have been implemented, tested on a separate Telegram bot, and validated
 against a fresh production snapshot.
+
+## Production source collection audit
+
+Read-only inventory on 2026-11-07 identified **71 collection roots** and
+**26,305 total documents** (dynamic counts; do not treat as current cutover
+snapshot). The source inventory JSON in `migration/source-collections-inventory.json`
+records the roots, a historical count and a provisional retention status.
+`scripts/auditEflSourceInventory.mjs` fails for unknown collection roots;
+`--strict` also fails while any nonempty `review` collection remains.
+The raw document importer now deliberately **excludes** sensitive ephemeral
+login sessions, webhook leases and derived snapshots from a live target,
+while retaining them in the operator's private source export. It refuses
+unreviewed collections instead of silently copying or discarding them.
+`scripts/verifyEflRawBatches.mjs` reconciles preserved and excluded
+source counts before considering an archive valid.
+
+**This is not complete legacy-to-new-domain conversion.** The migration
+cannot proceed as production-ready until every reviewed collection, official
+competition rule, worker queue and payment/notification side effect is
+independently reconciled.
