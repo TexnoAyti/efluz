@@ -100,3 +100,21 @@ test('invalid worker arguments and tokens cannot acquire a lease',async()=>{
    /INVALID_DELIVERY_ACK/);
  }finally{sql.close();}
 });
+
+test('expired worker cannot acknowledge a delivery even before another claim',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  await claimNotificationForWorker(db,lease(tokenA,100000));
+  await assert.rejects(finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenA,now:130001,success:true
+  }),/DELIVERY_ACK_CONFLICT/);
+  assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'LEASED');
+  const retry=await claimNotificationForWorker(db,lease(tokenB,140000));
+  assert.equal(retry.attempt,2);
+  const ack=await finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenB,now:140100,success:true
+  });
+  assert.equal(ack.status,'SENT');
+ }finally{sql.close();}
+});
