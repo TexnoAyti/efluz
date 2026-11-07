@@ -19,13 +19,17 @@ export async function proposeFixtureResult(db,uid,input){
   if(!actor||actor.is_banned)throw Error('USER_BANNED_OR_MISSING');
   const fixture=await db.get(`SELECT f.id,f.season_id,f.round,f.status,
      f.home_club_id,f.away_club_id,f.competition_id,
-     c.current_matchday,c.is_matchday_open
+     c.current_matchday,c.is_matchday_open,
+     EXISTS(SELECT 1 FROM efl_fixture_score_windows w
+       WHERE w.fixture_id=f.id AND w.season_id=f.season_id
+         AND w.competition_id=f.competition_id AND w.is_open=1) AS late_access
      FROM efl_fixtures f JOIN efl_competitions c
        ON c.id=f.competition_id AND c.season_id=f.season_id
      WHERE f.id=:fixture`,{':fixture':proposal.fixtureId});
   if(!fixture)throw Error('FIXTURE_UNAVAILABLE');
-  if(fixture.status!=='SCHEDULED'||!fixture.is_matchday_open||
-    fixture.round!==fixture.current_matchday||
+  if(fixture.status!=='SCHEDULED'||
+    !(fixture.is_matchday_open&&fixture.round===fixture.current_matchday)&&
+    !fixture.late_access||
     !fixture.home_club_id||!fixture.away_club_id||
     fixture.home_club_id===fixture.away_club_id)throw Error('MATCHDAY_LOCKED');
   const occupancy=await db.get(`SELECT club_id FROM efl_club_occupancies
@@ -50,8 +54,12 @@ export async function proposeFixtureResult(db,uid,input){
     JOIN efl_users u ON u.id=:user AND u.telegram_id=:telegram
     JOIN efl_club_occupancies o ON o.user_id=u.id AND o.telegram_id=u.telegram_id
       AND o.season_id=f.season_id AND o.club_id=:club AND o.status='ACTIVE'
-    WHERE f.id=:fixture AND f.status='SCHEDULED' AND c.is_matchday_open=1
-      AND f.round=c.current_matchday AND u.is_banned=0
+    WHERE f.id=:fixture AND f.status='SCHEDULED'
+      AND ((c.is_matchday_open=1 AND f.round=c.current_matchday)
+       OR EXISTS(SELECT 1 FROM efl_fixture_score_windows w
+         WHERE w.fixture_id=f.id AND w.season_id=f.season_id
+          AND w.competition_id=f.competition_id AND w.is_open=1))
+      AND u.is_banned=0
       AND (o.club_id=f.home_club_id OR o.club_id=f.away_club_id)
       AND f.home_club_id IS NOT NULL AND f.away_club_id IS NOT NULL
     ON CONFLICT DO NOTHING`,params);
