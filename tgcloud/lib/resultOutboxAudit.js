@@ -25,8 +25,8 @@ export async function readResultOutboxAudit(db,telegramId,input={}){
    (CASE WHEN nh.id IS NULL THEN 1 ELSE 0 END)+
    (CASE WHEN na.id IS NULL THEN 1 ELSE 0 END)),0) AS missingInbox,
   COALESCE(SUM(
-   (CASE WHEN dh.id IS NULL THEN 1 ELSE 0 END)+
-   (CASE WHEN da.id IS NULL THEN 1 ELSE 0 END)),0) AS missingDeliveries
+   (CASE WHEN dh.notification_id IS NULL THEN 1 ELSE 0 END)+
+   (CASE WHEN da.notification_id IS NULL THEN 1 ELSE 0 END)),0) AS missingDeliveries
  FROM efl_fixtures f
  LEFT JOIN efl_audit_logs a ON
   a.id='result_confirmed:'||f.id AND a.action='RESULT_CONFIRMED'
