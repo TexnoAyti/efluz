@@ -40,6 +40,7 @@ export const clubOccupancies = table('efl_club_occupancies', {
   releasedAt: integer('released_at'), updatedAt: integer('updated_at').notNull(),
 }, (t) => ({
   oneClubOwner: uniqueIndex('efl_occupancy_active_club_uidx').on(t.seasonId, t.clubId).where(sql`status = 'ACTIVE'`),
+  oneClubPerLeaguePerPlayer: uniqueIndex('efl_occupancy_one_league_per_player_uidx').on(t.seasonId,t.leagueId,t.userId).where(sql`status = 'ACTIVE'`),
   ownerIdx: index('efl_occupancy_owner_idx').on(t.telegramId, t.seasonId, t.status),
   leagueIdx: index('efl_occupancy_league_idx').on(t.leagueId, t.status),
 }));
