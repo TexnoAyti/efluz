@@ -4,7 +4,7 @@ export type EflTransport = 'vercel' | 'telegram-serverless';
 export type EflOperation = 'health' | 'bootstrap' | 'leagues' | 'clubProfile' | 'matchChat';
 
 type TelegramServerless = {
-  call: (name: string, input?: Record<string, unknown>) => Promise<unknown>;
+  call: (name: string, input: Record<string, unknown>, callback: (error: {message?:string;type?:string;parameters?:{code?:string}} | null, result?:unknown) => void) => void;
 };
 type CallOptions = {
   operation: EflOperation;
@@ -36,7 +36,25 @@ export async function callEflTransport<T>({operation,input={},vercel,preferred}:
   if (typeof serverless?.call!=='function') throw new Error('TELEGRAM_SERVERLESS_UNAVAILABLE');
   // No credential forwarding: Telegram SDK authenticates the call itself.
   // Never fall back to Vercel after a failed Serverless write.
-  const result=await serverless.call(operations[operation],input);
+  const result=await new Promise<unknown>((resolve,reject)=>{
+    let completed=false;
+    const timer=window.setTimeout(()=>{
+      if (!completed) {completed=true;reject(new Error('TELEGRAM_SERVERLESS_TIMEOUT'));}
+    },12000);
+    try {
+      serverless.call(operations[operation],input,(error,value)=>{
+        if (completed) return;
+        completed=true;window.clearTimeout(timer);
+        if (error) {
+          const failure=new Error(error.message||'TELEGRAM_SERVERLESS_ERROR');
+          (failure as Error & {code?:string}).code=error.parameters?.code||error.type;
+          reject(failure);
+        } else resolve(value);
+      });
+    } catch (error) {
+      if (!completed) {completed=true;window.clearTimeout(timer);reject(error);}
+    }
+  });
   if (result && typeof result==='object' && (result as any).ok===false) {
     throw new Error(String((result as any).error||'SERVERLESS_REQUEST_FAILED'));
   }
