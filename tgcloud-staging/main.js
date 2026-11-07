@@ -5,6 +5,10 @@ const health=document.getElementById('health');
 const profile=document.getElementById('profileResult');
 const connect=document.getElementById('connect');
 const profileButton=document.getElementById('profile');
+const uzeflifeButton=document.getElementById('uzeflife');
+const teamsButton=document.getElementById('teams');
+const uzeflifeResult=document.getElementById('uzeflifeResult');
+const teamsResult=document.getElementById('teamsResult');
 const webApp=window.Telegram?.WebApp;
 const sdk=webApp?.Serverless;
 webApp?.ready?.();
@@ -34,6 +38,8 @@ connect.addEventListener('click',async()=>{
     status('Serverless aloqasi tasdiqlandi');
     health.textContent='API: efluz-serverless\nRejim: xavfsiz sinov\nTelegram ID: '+String(result.telegramUserId??'tasdiqlanmagan');
     profileButton.disabled=!result.telegramUserId;
+    uzeflifeButton.disabled=!result.telegramUserId;
+    teamsButton.disabled=!result.telegramUserId;
   }catch(error){status('Ulanish tekshiruvdan o‘tmadi');health.textContent='Xato: '+readable(error);}
   finally{connect.disabled=false;}
 });
@@ -49,4 +55,39 @@ profileButton.addEventListener('click',async()=>{
       '\nManba: '+String(result.source||'noma’lum');
   }catch(error){profile.textContent='Xato: '+readable(error);}
   finally{profileButton.disabled=false;}
+});
+
+uzeflifeButton.addEventListener('click',async()=>{
+ uzeflifeButton.disabled=true;uzeflifeResult.textContent='Turnir tekshirilmoqda…';
+ try{
+  const overview=await call('uzeflife',{section:'overview'});
+  if(overview?.ok!==true)throw Error('UNEXPECTED_UZEFLIFE');
+  if(!overview.available){
+   uzeflifeResult.textContent='Staging bazasida UZEFLIFE hali import qilinmagan.';
+   return;
+  }
+  const matches=await call('uzeflife',{section:'matches',limit:10});
+  if(matches?.ok!==true||!Array.isArray(matches.items))
+   throw Error('INVALID_UZEFLIFE_FEED');
+  const state=overview.state;
+  uzeflifeResult.textContent='Turnir: '+String(state.name??'UZEFLIFE')+
+    '\nIshtirokchilar: '+Number(state.participantsCount??0)+
+    '\nO‘yinlar: '+Number(state.matchesCount??0)+
+    '\nJoriy tur: '+Number(state.currentRound??0)+
+    '\nDastlabki 10 o‘yin: '+matches.items.length;
+ }catch(error){uzeflifeResult.textContent='Xato: '+readable(error);}
+ finally{uzeflifeButton.disabled=false;}
+});
+teamsButton.addEventListener('click',async()=>{
+ teamsButton.disabled=true;teamsResult.textContent='Jamoalar tekshirilmoqda…';
+ try{
+  const catalog=await call('teamsCatalog',{limit:10});
+  if(catalog?.ok!==true||!Array.isArray(catalog.teams))
+   throw Error('INVALID_TEAMS_FEED');
+  teamsResult.textContent=catalog.teams.length
+    ?catalog.teams.map(t=>String(t.name??'Jamoa').slice(0,100)+
+      ' — a’zolar: '+Number(t.memberCount??0)).join('\n')
+    :'Staging bazasida TEAMS katalogi hali import qilinmagan.';
+ }catch(error){teamsResult.textContent='Xato: '+readable(error);}
+ finally{teamsButton.disabled=false;}
 });
