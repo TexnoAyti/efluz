@@ -84,3 +84,33 @@ test('orphan notification history fails with a count but no user identifier leak
   assert.doesNotMatch(run.stdout,/(?:historical-account|Private historical)/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('historical audit opt-in quarantines only released owners and missing old references',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'efl-quarantine-audit-'));
+ try{
+  const input=join(dir,'source.jsonl');
+  const rows=[
+   doc('seasons','s1',{id:'s1'}),
+   doc('leagues','l1',{id:'l1'}),
+   doc('clubs','c1',{id:'c1',leagueId:'l1'}),
+   doc('club_occupancies','released',{seasonId:'s1',clubId:'c1',
+     userId:'former-user',status:'RELEASED'}),
+   doc('notifications','notice',{userId:'former-user',type:'SYSTEM'}),
+   doc('competition_participants','orphan',{seasonId:'s1',clubId:'c1',
+     competitionId:'deleted-competition'})
+  ];
+  await writeFile(input,rows.map(JSON.stringify).join('\n')+'\n');
+  const strict=spawnSync(process.execPath,[script,input],{encoding:'utf8'});
+  assert.notEqual(strict.status,0);
+  const staging=spawnSync(process.execPath,[script,input,'--quarantine-historical'],{encoding:'utf8'});
+  assert.equal(staging.status,0,staging.stderr);
+  assert.deepEqual(JSON.parse(staging.stdout).quarantinedHistorical,{
+   releasedOccupancies:1,notifications:1,participants:1
+  });
+  rows[3].data.status='ACTIVE';
+  await writeFile(input,rows.map(JSON.stringify).join('\n')+'\n');
+  const active=spawnSync(process.execPath,[script,input,'--quarantine-historical'],{encoding:'utf8'});
+  assert.notEqual(active.status,0);
+  assert.equal(JSON.parse(active.stdout).errorsByType.OCCUPANCY_WITHOUT_USER,1);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
