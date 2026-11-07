@@ -36,8 +36,7 @@ export async function proposeFixtureResult(db,uid,input){
   });
   if(!occupancy)throw Error('FIXTURE_FORBIDDEN');
   const submissionId=proposal.fixtureId+':'+uid;
-  const previous=await db.get(`SELECT id FROM efl_result_submissions
-    WHERE id=:id AND submitted_by_user_id=:user`,{':id':submissionId,':user':uid});
+  const previous=await db.get('SELECT id FROM efl_result_submissions WHERE id=:id AND submitted_by_user_id=:user',{':id':submissionId,':user':uid});
   const params={':id':submissionId,':fixture':proposal.fixtureId,
     ':user':uid,':club':occupancy.club_id,':homeScore':proposal.homeScore,
     ':awayScore':proposal.awayScore,':now':Date.now(),':telegram':actor.telegram_id};
