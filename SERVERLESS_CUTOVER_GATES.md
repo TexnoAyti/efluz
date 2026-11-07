@@ -238,6 +238,10 @@ The current source graph was inspected without exporting identifiable rows:
 - 13 historical notifications refer to absent users.
 - 6 historical competition participant rows refer to removed competitions,
   while their clubs and seasons remain present.
+- 1 historical **RESOLVED** dispute references a fixture that is no longer
+  in the current fixtures collection. The migration can quarantine it
+  only with explicit historical opt-in, while retaining its raw archive.
+  **OPEN** disputes are never eligible for quarantine.
 - No orphan result submissions or fixture-to-competition references were
   observed in this read-only check.
 
@@ -245,7 +249,8 @@ The strict source graph audit and normalized conversion reject the orphan rows b
 **staging only**, the explicit `--quarantine-historical` option on both
 `auditEflDomainGraph.mjs` and `convertEflCoreSnapshot.mjs` may exclude
 only released occupancies, undeliverable historical notifications and
-participants of removed competitions from operational tables. It reports
+participants of removed competitions and already-resolved orphan disputes
+from operational tables. It reports
 counts in `quarantinedHistorical`; it **never** skips active ownership.
 Every excluded source document must first be retained and independently
 verified in the private raw-document archive. No fake users or competitions
@@ -256,7 +261,7 @@ the complete private raw-document archive using
 `prepareEflRawDocumentBatches.mjs` and `verifyEflRawBatches.mjs`;
 then run the graph audit and core converter with the same explicit
 `--quarantine-historical` flag. Compare the three quarantine counters
-(`releasedOccupancies`, `notifications`, `participants`) with the
+(`releasedOccupancies`, `notifications`, `participants`, `resolvedDisputes`) with the
 source snapshot before staging import. Never use this flag to bypass an
 active ownership or fixture correction mismatch.
 
