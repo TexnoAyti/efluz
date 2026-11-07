@@ -5,6 +5,8 @@ import {handleReadOnlyBotCommand} from './readOnlyBotCommands.js';
 const allowed={
  'efl:myclub':'/myclub',
  'efl:myfixtures':'/myfixtures',
+ 'efl:leagues':'/leagues',
+ 'efl:cups':'/cups',
  'efl:uzeflife':'/uzeflife',
  'efl:teams':'/teams',
  'efl:inbox':'/inbox'
