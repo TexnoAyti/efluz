@@ -17,3 +17,10 @@ android/.gradle/
 *.jks
 *.keystore
 *.p12
+
+# EFLUZ private migration exports (never commit user/club records)
+/migration-private/
+/migration-snapshots/
+/serverless-import-packets/
+*production-snapshot*.json
+*normalized-snapshot*.json
