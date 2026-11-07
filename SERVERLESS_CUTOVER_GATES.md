@@ -259,8 +259,11 @@ are generated. Excluded data does **not** get deleted from Supabase.
 Required safe sequence for historical quarantine: first produce and verify
 the complete private raw-document archive using
 `prepareEflRawDocumentBatches.mjs` and `verifyEflRawBatches.mjs`;
-then run the graph audit and core converter with the same explicit
-`--quarantine-historical` flag. Compare the three quarantine counters
+then run the graph audit with `--quarantine-historical`, and the core
+converter with `--quarantine-historical --verified-archive private-archive`.
+The converter calculates a cryptographic digest of **the exact input JSONL**
+and checks it against the manifest and all independently verified packets.
+A stale, missing, edited or mismatched archive fails closed. Compare the three quarantine counters
 (`releasedOccupancies`, `notifications`, `participants`, `resolvedDisputes`) with the
 source snapshot before staging import. Never use this flag to bypass an
 active ownership or fixture correction mismatch.
