@@ -51,6 +51,7 @@ import {teamLeaguePreviewRouter} from './routes/teamLeaguePreview.routes';
 import {uzeflifeRouter} from './routes/uzeflife.routes';
 import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
+import { matchChatRouter } from './routes/matchChat.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -197,8 +198,9 @@ export function createApp() {
     const staticRead = req.method === 'GET' && (['/api/health', '/api/health/', '/api/seasons', '/api/seasons/active', '/api/leagues', '/api/auth/dev-profiles'].includes(req.path) || req.path.startsWith('/api/leagues/'));
     const postgresClubRead = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'GET' && ['/api/me/club', '/api/me/bootstrap', '/api/me/matches'].includes(req.path);
     const postgresLogin = process.env.DATABASE_PROVIDER === 'supabase' && req.method === 'POST' && req.path === '/api/auth/telegram';
+    const postgresMatchChat = process.env.DATABASE_PROVIDER === 'supabase' && req.path.startsWith('/api/match-chat');
     try {
-      if (!staticRead && !postgresLogin && !postgresClubRead) await ensureDbReady();
+      if (!staticRead && !postgresLogin && !postgresClubRead && !postgresMatchChat) await ensureDbReady();
       res.setHeader('Server-Timing', [res.getHeader('Server-Timing'), `bootstrap;dur=${(performance.now()-started).toFixed(1)}`].filter(Boolean).join(', '));
       next();
     }
@@ -215,6 +217,7 @@ export function createApp() {
   app.use('/api/health/probe', rateLimit('health-probe', 3, 600));
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
+  app.use('/api/match-chat', rateLimit('match-chat', 45, 60, { distributed: false }));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
   app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
@@ -230,6 +233,7 @@ export function createApp() {
   app.use('/api/competitions', competitionConsistencyRouter);
   app.use('/api/competitions', competitionsRouter);
   app.use('/api/fixtures', fixturesRouter);
+  app.use('/api/match-chat', matchChatRouter);
   app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
