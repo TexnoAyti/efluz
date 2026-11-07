@@ -8,7 +8,7 @@ const path=process.argv[2];
 if(!path){console.error('Usage: node scripts/auditEflDomainGraph.mjs private-source.jsonl');process.exit(2);}
 const interesting=new Set(['users','seasons','leagues','clubs','club_occupancies',
   'competitions','competition_participants','fixtures','result_submissions',
-  'disputes','durable_fixture_overrides']);
+  'disputes','durable_fixture_overrides','notifications']);
 const roots=new Map([...interesting].map(name=>[name,new Map()]));
 const errors={};
 function defect(type){errors[type]=(errors[type]||0)+1;}
@@ -72,6 +72,13 @@ for(const d of s('result_submissions').values()){
  if(!owns('users',d.submittedByUserId))defect('SUBMISSION_WITHOUT_USER');
  if(!owns('fixtures',d.fixtureId))defect('SUBMISSION_WITHOUT_FIXTURE');
  if(!owns('clubs',d.clubId))defect('SUBMISSION_WITHOUT_CLUB');
+}
+// Do not create fabricated Telegram identities for deleted or missing users.
+// Notification history can remain in the private archive until explicitly
+// reconciled, but is never silently omitted from a normalized live import.
+for(const d of s('notifications').values()){
+ if(!owns('users',d.userId)||!d.userId)
+  defect('NOTIFICATION_WITHOUT_USER');
 }
 for(const d of s('disputes').values()){
  if(!owns('fixtures',d.fixtureId))defect('DISPUTE_WITHOUT_FIXTURE');
