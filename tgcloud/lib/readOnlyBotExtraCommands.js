@@ -10,13 +10,13 @@ export async function readOnlyBotExtra(db,command,{id,telegramId}){
   try{
    const r=await readDomainOperationsAudit(db,telegramId);
    return 'EFLUZ Serverless admin auditi (sinov)\\n'+
-    'Mavsum: '+(r.season?.name??'faol emas')+'\\n'+
-    'Ligalar: '+r.leagues.total+'\\n'+
+    'Mavsum: '+(r.season?.name??'faol emas')+'\n'+
+    'Ligalar: '+r.leagues.total+'\n'+
     'Uchrashuvlar: '+r.fixtures.confirmed+'/'+r.fixtures.total+' tasdiqlangan\\n'+
     'Kuboklar: '+r.cups.unfinished+' tugallanmagan\\n'+
-    'Nizolar: '+r.disputes.unresolved+'\\n'+
+    'Nizolar: '+r.disputes.unresolved+'\n'+
     'TEAMS: '+r.teams.total+', hal etilmagan a’zolar: '+r.teams.unresolvedMembers+
-    ', so‘rovlar: '+r.teams.pendingRequests+'\\n'+
+    ', so‘rovlar: '+r.teams.pendingRequests+'\n'+
     'UZEFLIFE joriy turi: '+r.uzeflife.currentRoundFinished+'/'+
     r.uzeflife.currentRoundTotal+' yakunlangan\\n'+
     'O‘qilmagan bildirishnomalar: '+r.notifications.unread;
