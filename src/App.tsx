@@ -13,7 +13,7 @@ import { AppTheme, Header } from './components/Header';
 import { Navigation, TabType } from './components/Navigation';
 import { ContentBoundary } from './components/ContentBoundary';
 import { APP_BUILD_ID } from './context/AuthContext';
-import { Fixture, AdminPermissions } from './types';
+import { Fixture, AdminPermissions, Club } from './types';
 import { readUzeflifeLaunch } from './lib/uzeflifeLinks';
 import { readTournamentLaunch } from './lib/customTournamentLinks';
 import { clubPagePath, readClubPageId } from './lib/clubNavigation';
@@ -289,6 +289,12 @@ const AppContent: React.FC = () => {
               <CompetitionHubView
                 key={searchNavigationRevision}
                 onNavigateTab={setActiveTab}
+                onOpenClub={(club: Club) => {
+                  setTeamRoute(null);
+                  setPublicClubId(club.id);
+                  const path = clubPagePath(club.id);
+                  window.history.pushState({ publicClub: true }, '', isDesignPreview ? `${path}?designPreview=1` : path);
+                }}
                 initialSubTab={
                   isTeamWorkspaceLaunch()?'custom':readUzeflifeLaunch()!==null ? 'uzeflife' : readTournamentLaunch() ? 'custom' : currentTab === 'cups'
                     ? 'cups'
