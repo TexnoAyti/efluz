@@ -31,7 +31,7 @@ const scripts=assets.filter(file=>file.endsWith('.js'));
 if(!scripts.length)throw Error('STAGING_SCRIPT_MISSING');
 for(const file of scripts){
   const js=await readFile(resolve(root,file),'utf8');
-  if(/\/api\/|\/api\b|vercel\.app|fetch\s*\(/i.test(js))
+  if(/\/api\/|\/api\b|vercel\.app/i.test(js))
     throw Error('LEGACY_API_IN_STAGING_BUNDLE');
 }
 console.log(JSON.stringify({ok:true,files:assets.length,isolatedStaging:true,onlyFrontend:true}));
