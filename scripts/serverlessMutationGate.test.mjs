@@ -11,6 +11,7 @@ const expectedGated=new Map([
  ['finalizeUzeflifeResult.js','MUTATION_CONTROL.enabled'],
  ['requestTeamJoin.js','MUTATION_CONTROL.enabled'],
  ['approveTeamJoin.js','MUTATION_CONTROL.enabled'],
+ ['rejectTeamJoin.js','MUTATION_CONTROL.enabled'],
  ['matchChat.js','MUTATION_CONTROL.enabled'],
  ['markNotificationRead.js','MUTATION_CONTROL.enabled'],
  ['advanceCupRound.js','MUTATION_CONTROL.enabled'],
