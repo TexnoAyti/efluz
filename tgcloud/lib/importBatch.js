@@ -16,6 +16,7 @@ export const IMPORT_TABLES = Object.freeze({
   notifications: ['id','user_id','type','title','message','data','is_read','created_at'],
   auditLogs: ['id','actor_user_id','actor_username','action','entity_type','entity_id','old_value','new_value','created_at'],
   rawDocuments: ['id','source_space','collection_path','document_id','encoded','data','source_checksum'],
+  rawDocumentParts: ['id','source_document_id','source_space','collection_path','document_id','part_index','part_count','part_data','source_checksum','part_checksum'],
 });
 export const SQL_TABLES = Object.freeze({
   users:'efl_users',seasons:'efl_seasons',leagues:'efl_leagues',clubs:'efl_clubs',
@@ -23,13 +24,13 @@ export const SQL_TABLES = Object.freeze({
   matchAccess:'efl_match_access',matchMessages:'efl_match_messages',
   competitions:'efl_competitions',participants:'efl_competition_participants',
   resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
-  notifications:'efl_notifications',auditLogs:'efl_audit_logs',rawDocuments:'efl_raw_documents'
+  notifications:'efl_notifications',auditLogs:'efl_audit_logs',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
   clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
   competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
-  notifications:'id',auditLogs:'id',rawDocuments:'id'
+  notifications:'id',auditLogs:'id',rawDocuments:'id',rawDocumentParts:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
@@ -75,6 +76,21 @@ export function validateImportBatch(input) {
        typeof row.source_checksum !== 'string' || !/^[a-f0-9]{64}$/.test(row.source_checksum)))
       throw new Error('INVALID_ARCHIVE_ROW');
 
+    if (table === 'rawDocumentParts') {
+      if(!/^[a-f0-9]{64}$/.test(String(row.id))||
+         !/^[a-f0-9]{64}$/.test(String(row.source_document_id))||
+         !/^[a-f0-9]{64}$/.test(String(row.source_checksum))||
+         !/^[a-f0-9]{64}$/.test(String(row.part_checksum))||
+         row.source_space!=='production'||
+         typeof row.collection_path!=='string'||!row.collection_path||
+         typeof row.document_id!=='string'||!row.document_id||
+         !Number.isSafeInteger(row.part_index)||row.part_index<0||
+         !Number.isSafeInteger(row.part_count)||row.part_count<1||
+         row.part_index>=row.part_count||
+         typeof row.part_data!=='string'||row.part_data.length>70000||
+         !/^[A-Za-z0-9+/]+={0,2}$/.test(row.part_data))
+        throw new Error('INVALID_ARCHIVE_PART');
+    }
     if (ids.has(String(row[pk]))) throw new Error('DUPLICATE_IN_BATCH');
     ids.add(String(row[pk]));
   }
