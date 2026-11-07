@@ -22,7 +22,7 @@ Status on 2026-11-07: **NOT READY**. Production and its webhook MUST remain on V
 | Club claim / release | STAGING CLAIM ENGINE (DISABLED) | The new claim endpoint checks user, season, admission and uniqueness; full ban/admission policy parity, release flows and Telegram-hosted race tests are still missing |
 | Fixtures / score submission / confirmation | STAGING PROPOSAL ENGINE (DISABLED) | The proposal endpoint checks signed owner, score, lock and idempotency; full result consensus, dispute and admin confirmation workflow remains missing |
 | Admin tools | NOT IMPLEMENTED | Auth/role checks, side-effect audit, all required actions |
-| Chat | PARTIAL | SDK-integrated persistence, read-only gating, retries under race |
+| Chat | STAGING SQL ENGINE TESTED | SDK-independent persisted write confirmation, ACL/replay/read-only SQLite tests pass; actual Telegram-hosted SDK and owner-release parity still needed |
 | Telegram updates | PROBE ONLY | message, callback_query, channel posts, payment events |
 | AI assistant | NOT IMPLEMENTED | Authorization, quotas, no unsafe mutations, parity |
 | Notifications and scheduled work | NOT IMPLEMENTED | Delivery deduplication, timers/cron replacement, replay proof |
@@ -108,3 +108,13 @@ checks `node scripts/verifyTgcloudStatic.mjs` after building. Static files
 must not be deployed to the production bot while existing client routes
 still call the legacy Vercel API. `npx tgcloud push` is a separate,
 operator-controlled step after backend feature parity and staging approval.
+
+## Match chat hardening
+
+The chat endpoint now delegates to `tgcloud/lib/matchChatEngine.js`. It
+rechecks write permissions inside SQL and **verifies the persisted record**
+for every client ID; no unsupported SDK `rowsAffected` check remains.
+`scripts/serverlessMatchChatSqlite.test.mjs` uses a real SQLite engine for
+signed-user access, retries, revoked write permissions and cross-match ID
+conflicts. Passing these tests **does not** make the endpoint ready for real
+users without Telegram Serverless staging and club-release lifecycle tests.
