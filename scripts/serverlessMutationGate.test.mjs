@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 
 const root=new URL('../tgcloud/endpoints/',import.meta.url);
+const controlRoot=new URL('../tgcloud/lib/',import.meta.url);
 const expectedGated=new Map([
  ['claimClub.js','MUTATION_CONTROL.enabled'],
  ['proposeResult.js','MUTATION_CONTROL.enabled'],
@@ -26,4 +27,14 @@ test('all staging mutation endpoints remain fail-closed before production parity
   if(/\bdb\.run\s*\(/.test(source)||/\b(?:applyImportBatch|claimClub|proposeFixtureResult|confirmFixtureResult|runMatchChat)\s*\(/.test(source))
     assert.ok(expectedGated.has(file),'UNREVIEWED_STAGING_MUTATION:'+file);
  }
+});
+
+test('staging deployment defaults forbid mutations and import even if routes are called',async()=>{
+ const mutation=await readFile(new URL('mutationControl.js',controlRoot),'utf8');
+ const migration=await readFile(new URL('importControl.js',controlRoot),'utf8');
+ assert.match(mutation,/enabled\s*:\s*false/);
+ assert.match(migration,/enabled\s*:\s*false/);
+ assert.match(migration,/ownerTelegramId\s*:\s*['"]['"]/);
+ assert.doesNotMatch(mutation,/enabled\s*:\s*true/);
+ assert.doesNotMatch(migration,/enabled\s*:\s*true/);
 });
