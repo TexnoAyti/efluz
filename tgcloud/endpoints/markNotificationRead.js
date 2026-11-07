@@ -1,8 +1,11 @@
 import {db,EndpointError} from 'sdk';
 import {currentUser} from '../lib/auth.js';
+import {MUTATION_CONTROL} from '../lib/mutationControl.js';
 
 // Idempotent write scoped to the signed user. Never accept userId from client.
 export default async function(input={},ctx){
+  if(!MUTATION_CONTROL.enabled)
+    throw new EndpointError('Sinov bazasida bildirishnomani o‘qilgan deb belgilash hali yoqilmagan.',{code:'SHADOW_WRITE_DISABLED'});
   const {user}=await currentUser(ctx);
   if(!user)throw new EndpointError('Profil topilmadi.',{code:'PROFILE_REQUIRED'});
   const id=typeof input.notificationId==='string'?input.notificationId.trim():'';
