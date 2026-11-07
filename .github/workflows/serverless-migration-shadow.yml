@@ -42,6 +42,8 @@ on:
       - 'scripts/serverlessSqliteIntegration.test.mjs'
       - 'scripts/serverlessCompetitionDetail.test.mjs'
       - 'scripts/serverlessSourceInventory.test.mjs'
+      - 'scripts/serverlessDomainGraph.test.mjs'
+      - 'scripts/auditEflDomainGraph.mjs'
       - 'scripts/auditEflSourceInventory.mjs'
       - 'migration/source-collections-inventory.json'
       - 'scripts/serverlessMatchChatSqlite.test.mjs'
