@@ -20,7 +20,7 @@ export const IMPORT_TABLES = Object.freeze({
   uzeflifeState: ['id','name','status','format','current_round','total_rounds','round_hours','participants_count','matches_count','source_revision'],
   uzeflifeEntrants: ['id','name','status'],
   uzeflifeFixtures: ['id','round','bracket','home','away','winner','home_score','away_score','penalty_home','penalty_away','deadline_at'],
-  teamsCatalog: ['id','name','logo_url','member_count','membership_required','updated_at'],
+  teamsCatalog: ['id','name','owner_user_id','admin_user_id','logo_url','member_count','membership_required','updated_at'],
 });
 export const SQL_TABLES = Object.freeze({
   users:'efl_users',seasons:'efl_seasons',leagues:'efl_leagues',clubs:'efl_clubs',
