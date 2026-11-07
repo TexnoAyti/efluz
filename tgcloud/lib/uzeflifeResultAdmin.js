@@ -25,7 +25,7 @@ export async function finalizeUzeflifeResult(db,telegramId,input){
   {':telegram':String(telegramId)});
  if(!admin||!admin.isAdmin||admin.isBanned)throw Error('UZEFLIFE_ADMIN_FORBIDDEN');
  const state=await db.get("SELECT status,current_round AS currentRound FROM efl_uzeflife_state WHERE id='uzeflife'");
- if(!state||!['ACTIVE','IN_PROGRESS','RUNNING'].includes(String(state.status).toUpperCase()))
+ if(!state||!['ACTIVE','IN_PROGRESS','RUNNING','PLAYING'].includes(String(state.status).toUpperCase()))
   throw Error('UZEFLIFE_NOT_ACTIVE');
  const match=await db.get(`SELECT id,round,home,away,winner,
    home_score AS homeScore,away_score AS awayScore,
@@ -56,7 +56,7 @@ export async function finalizeUzeflifeResult(db,telegramId,input){
    WHERE id=:id AND round=:round AND home=:home AND away=:away
      AND winner IS NULL
      AND EXISTS(SELECT 1 FROM efl_uzeflife_state s WHERE s.id='uzeflife'
-       AND UPPER(s.status) IN ('ACTIVE','IN_PROGRESS','RUNNING')
+       AND UPPER(s.status) IN ('ACTIVE','IN_PROGRESS','RUNNING','PLAYING')
        AND s.current_round=:round)
      AND EXISTS(SELECT 1 FROM efl_users u WHERE u.telegram_id=:telegram
        AND u.is_admin=1 AND u.is_banned=0)`,params);
