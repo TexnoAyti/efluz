@@ -22,6 +22,7 @@ $previousToken = [Environment]::GetEnvironmentVariable('TGCLOUD_TOKEN','Process'
 $previousStaging = [Environment]::GetEnvironmentVariable('TGCLOUD_STAGING_APP_ID','Process')
 $previousProduction = [Environment]::GetEnvironmentVariable('TGCLOUD_PRODUCTION_APP_ID','Process')
 $previousConfirmation = [Environment]::GetEnvironmentVariable('CONFIRM_TGCLOUD_STAGING_DEPLOY','Process')
+$previousRealUi = [Environment]::GetEnvironmentVariable('EFL_VERIFY_REAL_UI','Process')
 $token = $null
 try {
   if ($TokenFromClipboard) {
@@ -67,6 +68,7 @@ try {
       bun run build:tgcloud
       if ($LASTEXITCODE -ne 0) { throw 'BUILD_FAILED' }
     }
+    if ($RealUi) { $env:EFL_VERIFY_REAL_UI='1' } else { $env:EFL_VERIFY_REAL_UI='0' }
     node scripts/verifyTgcloudStatic.mjs
     if ($LASTEXITCODE -ne 0) { throw 'STATIC_CHECK_FAILED' }
     Write-Host 'Deploying ONLY to verified staging app...'
@@ -85,4 +87,5 @@ try {
   $env:TGCLOUD_STAGING_APP_ID = $previousStaging
   $env:TGCLOUD_PRODUCTION_APP_ID = $previousProduction
   $env:CONFIRM_TGCLOUD_STAGING_DEPLOY = $previousConfirmation
+  $env:EFL_VERIFY_REAL_UI = $previousRealUi
 }
