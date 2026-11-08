@@ -6,7 +6,7 @@ import {handleReadOnlyCallback} from '../tgcloud/lib/readOnlyCallbacks.js';
 
 function setup(){
  const sql=new DatabaseSync(':memory:');
- sql.exec(\`
+ sql.exec(`
  CREATE TABLE efl_users(id TEXT PRIMARY KEY,telegram_id TEXT,is_admin INTEGER,is_banned INTEGER);
  CREATE TABLE efl_uzeflife_state(id TEXT PRIMARY KEY,name TEXT,status TEXT,format TEXT,
  current_round INTEGER,total_rounds INTEGER,round_hours INTEGER,
@@ -21,7 +21,7 @@ function setup(){
  ('current1',3,1,'Player A','Player B',NULL,NULL,NULL,NULL,NULL,NULL),
  ('current2',3,2,'Player C','Player D','Player D',1,2,NULL,NULL,NULL),
  ('future',4,1,'Future A','Future B',NULL,NULL,NULL,NULL,NULL,NULL);
- \`);
+ `);
  const db={
   async get(q,p={}){return sql.prepare(q).get(p)??null;},
   async all(q,p={}){return sql.prepare(q).all(p);}
