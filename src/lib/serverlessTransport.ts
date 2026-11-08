@@ -1,7 +1,7 @@
 // Shadow-only adapter: keeps legacy /api traffic on Vercel by default.
 // Opt in per operation only after comparing response contracts and auth behavior.
 export type EflTransport = 'vercel' | 'telegram-serverless';
-export type EflOperation = 'health' | 'bootstrap' | 'leagues' | 'clubProfile' | 'matchChat' | 'fixtures' | 'competitions' | 'standings' | 'notifications' | 'markNotificationRead' | 'myFixtures' | 'adminOverview' | 'competitionDetail' | 'uzeflife' | 'teamsCatalog';
+export type EflOperation = 'health' | 'bootstrap' | 'seasons' | 'leagues' | 'clubProfile' | 'matchChat' | 'fixtures' | 'competitions' | 'standings' | 'notifications' | 'markNotificationRead' | 'myFixtures' | 'adminOverview' | 'competitionDetail' | 'uzeflife' | 'teamsCatalog';
 
 type TelegramServerless = {
   call: (name: string, input: Record<string, unknown>, callback: (error: {message?:string;type?:string;parameters?:{code?:string}} | null, result?:unknown) => void) => void;
@@ -15,7 +15,7 @@ type CallOptions = {
 // Avoid broad unsafe routing: mutations must never silently fail over to a second
 // provider, and no ordinary /api request is intercepted by this module.
 const operations: Record<EflOperation,string> = {
-  health:'health', bootstrap:'bootstrap', leagues:'leagues',
+  health:'health', bootstrap:'bootstrap', seasons:'seasons', leagues:'leagues',
   clubProfile:'clubProfile', matchChat:'matchChat', fixtures:'fixtures',
   competitions:'competitions', standings:'standings', notifications:'notifications',
   myFixtures:'myFixtures', markNotificationRead:'markNotificationRead',
