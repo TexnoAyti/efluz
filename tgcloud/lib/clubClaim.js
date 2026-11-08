@@ -25,7 +25,7 @@ export async function claimClub(db,uid,input){
   if(selectionBan?.banned)throw Error('CLUB_CLAIM_BANNED');
   // A league being OPEN does not override a closed season admission gate.
   // The latest reviewed season control is required; unknown means closed.
-  const admission=await db.get(`SELECT enabled FROM efl_club_admissions
+  const admission=await db.get(`SELECT enabled,league_overrides AS leagueOverrides FROM efl_club_admissions
     WHERE season_id=:season ORDER BY updated_at DESC,id DESC LIMIT 1`,
     {':season':seasonId});
   if(!admission?.enabled)throw Error('CLUB_CLAIM_CLOSED');
@@ -37,9 +37,24 @@ export async function claimClub(db,uid,input){
   if(!candidate||candidate.seasonId!==seasonId||candidate.leagueStatus!=='OPEN'||
     !['ACTIVE','UPCOMING'].includes(candidate.seasonStatus))
     throw Error('CLUB_CLAIM_CLOSED');
+  // The source uses global league IDs, while converted clubs are
+  // season-scoped. Never ignore an explicit per-league admission override.
+  const prefix='s'+seasonId.length+':'+seasonId+':';
+  const sourceLeagueId=candidate.leagueId.startsWith(prefix)
+    ?candidate.leagueId.slice(prefix.length):candidate.leagueId;
+  if(!validId(sourceLeagueId))throw Error('CLUB_CLAIM_CLOSED');
+  let overrides;
+  try{
+    overrides=typeof admission.leagueOverrides==='string'
+      ?JSON.parse(admission.leagueOverrides):admission.leagueOverrides;
+  }catch{throw Error('CLUB_CLAIM_CLOSED');}
+  if(!overrides||typeof overrides!=='object'||Array.isArray(overrides)||
+     (Object.prototype.hasOwnProperty.call(overrides,sourceLeagueId)&&
+      overrides[sourceLeagueId]!==true))
+    throw Error('CLUB_CLAIM_CLOSED');
   const id='claim:'+seasonId+':'+clubId+':'+uid+':'+requestId;
   const params={':id':id,':season':seasonId,':club':clubId,':user':uid,
-    ':telegram':user.telegram_id,':now':Date.now()};
+    ':telegram':user.telegram_id,':sourceLeague':sourceLeagueId,':now':Date.now()};
   const previous=await db.get(`SELECT id,club_id AS clubId,league_id AS leagueId,
     user_id AS userId FROM efl_club_occupancies WHERE season_id=:season
     AND club_id=:club AND status='ACTIVE' LIMIT 1`,
@@ -57,6 +72,8 @@ export async function claimClub(db,uid,input){
       AND s.status IN ('ACTIVE','UPCOMING') AND u.is_banned=0
       AND EXISTS (SELECT 1 FROM efl_club_admissions a
         WHERE a.season_id=:season AND a.enabled=1
+          AND COALESCE(json_extract(a.league_overrides,
+            '$."' || :sourceLeague || '"'),1)=1
           AND a.id=(SELECT newest.id FROM efl_club_admissions newest
             WHERE newest.season_id=:season
             ORDER BY newest.updated_at DESC,newest.id DESC LIMIT 1))
