@@ -29,6 +29,8 @@ export const IMPORT_TABLES = Object.freeze({
   notificationReadState: ['id','user_id','state'],
   matchdayLockHistory: ['id','competition_id','season_id','matchday','source_is_open','source_is_locked','override_status','updated_at','reference_status','source_record'],
   matchDeadlineHistory: ['id','fixture_id','competition_id','season_id','matchday','deadline_at','created_at','reference_status','source_record'],
+  banAuditHistory: ['id','user_id','telegram_id','is_banned','previous_is_banned','revision','updated_at','source_record','replay_policy'],
+  banControlHistory: ['id','target_user_id','expected_revision','originally_consumed','expires_at','source_record','replay_policy'],
   rawDocuments: ['id','source_space','collection_path','document_id','encoded','data','source_checksum'],
   rawDocumentParts: ['id','source_document_id','source_space','collection_path','document_id','part_index','part_count','part_data','source_checksum','part_checksum'],
   uzeflifeState: ['id','name','status','format','current_round','total_rounds','round_hours','participants_count','matches_count','source_revision'],
@@ -44,13 +46,13 @@ export const SQL_TABLES = Object.freeze({
   competitions:'efl_competitions',participants:'efl_competition_participants',
   resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
   notifications:'efl_notifications',auditLogs:'efl_audit_logs',
-  ticketBalances:'efl_ticket_balances',ticketTransactions:'efl_ticket_transactions',playerTrophies:'efl_player_trophies',retentionDecisions:'efl_retention_decisions',premiumEntitlements:'efl_premium_entitlements',clubAdmissions:'efl_club_admissions',clubSelectionBans:'efl_club_selection_bans',clubMembershipHistory:'efl_club_membership_history',userMembershipHistory:'efl_user_membership_history',uzeflifeAuditHistory:'efl_uzeflife_audit_history',uzeflifeNoticeHistory:'efl_uzeflife_notice_history',notificationReadState:'efl_notification_read_state',matchdayLockHistory:'efl_matchday_lock_history',matchDeadlineHistory:'efl_match_deadline_history',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
+  ticketBalances:'efl_ticket_balances',ticketTransactions:'efl_ticket_transactions',playerTrophies:'efl_player_trophies',retentionDecisions:'efl_retention_decisions',premiumEntitlements:'efl_premium_entitlements',clubAdmissions:'efl_club_admissions',clubSelectionBans:'efl_club_selection_bans',clubMembershipHistory:'efl_club_membership_history',userMembershipHistory:'efl_user_membership_history',uzeflifeAuditHistory:'efl_uzeflife_audit_history',uzeflifeNoticeHistory:'efl_uzeflife_notice_history',notificationReadState:'efl_notification_read_state',matchdayLockHistory:'efl_matchday_lock_history',matchDeadlineHistory:'efl_match_deadline_history',banAuditHistory:'efl_ban_audit_history',banControlHistory:'efl_ban_control_history',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
   clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
   competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
-  notifications:'id',auditLogs:'id',ticketBalances:'id',ticketTransactions:'id',playerTrophies:'id',retentionDecisions:'id',premiumEntitlements:'id',clubAdmissions:'id',clubSelectionBans:'id',clubMembershipHistory:'id',userMembershipHistory:'id',uzeflifeAuditHistory:'id',uzeflifeNoticeHistory:'id',notificationReadState:'id',matchdayLockHistory:'id',matchDeadlineHistory:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
+  notifications:'id',auditLogs:'id',ticketBalances:'id',ticketTransactions:'id',playerTrophies:'id',retentionDecisions:'id',premiumEntitlements:'id',clubAdmissions:'id',clubSelectionBans:'id',clubMembershipHistory:'id',userMembershipHistory:'id',uzeflifeAuditHistory:'id',uzeflifeNoticeHistory:'id',notificationReadState:'id',matchdayLockHistory:'id',matchDeadlineHistory:'id',banAuditHistory:'id',banControlHistory:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
