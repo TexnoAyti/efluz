@@ -240,6 +240,21 @@ export function validateImportBatch(input) {
         row.source_record.consumed!==row.originally_consumed||
         row.source_record.expiresAt!==row.expires_at))
       throw Error('INVALID_BAN_CONTROL_HISTORY_IMPORT');
+    if(table.startsWith('customTournament')&&table.endsWith('History')&&
+      (row.replay_policy!=='HISTORICAL_ONLY'||
+       typeof row.source_sha256!=='string'||!/^[a-f0-9]{64}$/.test(row.source_sha256)||
+       (table==='customTournamentHistory'&&
+         (!row.organizer_user_id||!row.name||!row.format||!row.status||
+          !Number.isSafeInteger(row.max_participants)||row.max_participants<1))||
+       (table==='customTournamentParticipantHistory'&&
+         (!row.tournament_id||!row.user_id||!row.club_id||!row.status))||
+       (table==='customTournamentFixtureHistory'&&
+         (!row.tournament_id||!row.status||!row.stage||
+          !Number.isSafeInteger(row.leg)||!Number.isSafeInteger(row.round)||
+          !Number.isSafeInteger(row.match_index)))||
+       (table==='customTournamentAuditHistory'&&
+         (!row.tournament_id||!row.action||!row.actor_user_id))))
+      throw Error('INVALID_CUSTOM_TOURNAMENT_HISTORY_IMPORT');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
