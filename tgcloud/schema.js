@@ -294,3 +294,16 @@ export const ticketTransactions=table('efl_ticket_transactions',{
  idempotencyIndex:uniqueIndex('efl_ticket_transaction_key_idx').on(t.idempotencyKey),
  userIndex:index('efl_ticket_transaction_user_idx').on(t.userId,t.createdAt)
 }));
+
+
+// Existing winners only. Award creation/voting remains disabled until parity.
+export const playerTrophies=table('efl_player_trophies',{
+ id:text('id').primaryKey(),seasonId:text('season_id').notNull(),
+ competitionId:text('competition_id').notNull(),clubId:text('club_id').notNull(),
+ winnerUserId:text('winner_user_id').notNull(),
+ winnerUsername:text('winner_username').notNull(),
+ clubName:text('club_name').notNull(),competitionName:text('competition_name').notNull(),
+ active:boolean('active').notNull(),decidedBy:text('decided_by').notNull(),
+ evaluatedAt:integer('evaluated_at').notNull(),
+ confirmedAt:integer('confirmed_at').notNull()
+},t=>({winnerIdx:index('efl_player_trophies_winner_idx').on(t.winnerUserId,t.seasonId)}));
