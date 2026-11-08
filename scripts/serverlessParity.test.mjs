@@ -5,7 +5,7 @@ import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const verifier=new URL('./verifyServerlessSnapshot.mjs',import.meta.url).pathname;
-const empty=Object.fromEntries(['users','seasons','leagues','clubs','clubOccupancies','fixtures','matchAccess','matchMessages','competitions','participants','resultSubmissions','disputes','notifications','auditLogs','rawDocuments','rawDocumentParts','uzeflifeState','uzeflifeEntrants','uzeflifeFixtures','teamsCatalog','teamMembers'].map(k=>[k,[]]));
+const empty=Object.fromEntries(['users','seasons','leagues','clubs','clubOccupancies','fixtures','matchAccess','matchMessages','competitions','participants','resultSubmissions','disputes','notifications','auditLogs','ticketBalances','ticketTransactions','rawDocuments','rawDocumentParts','uzeflifeState','uzeflifeEntrants','uzeflifeFixtures','teamsCatalog','teamMembers'].map(k=>[k,[]]));
 test('identical full snapshots pass, changed or missing rows fail closed',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'efl-parity-'));
   try {
