@@ -9,6 +9,7 @@ const allowed={
  'efl:cups':'/cups',
  'efl:uzeflife':'/uzeflife',
  'efl:bracket':'/bracket',
+ 'efl:rounds':'/rounds',
  'efl:teams':'/teams',
  'efl:inbox':'/inbox'
 };
