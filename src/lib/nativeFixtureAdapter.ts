@@ -18,9 +18,10 @@ export function normalizeNativeFixture(value:unknown):Record<string,unknown>{
  const row=value as Record<string,unknown>;
  if(typeof row.id!=='string'||!row.id||typeof row.seasonId!=='string'||
    !row.seasonId||typeof row.competitionId!=='string'||!row.competitionId||
-   typeof row.status!=='string'||!row.status||!Number.isSafeInteger(row.round)||
-   Number(row.round)<0)
+   typeof row.status!=='string'||!row.status)
   throw Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
+ if(!Number.isSafeInteger(row.round)||Number(row.round)<0)
+  throw Error('SERVERLESS_FIXTURE_ROUND_INVALID');
  if(row.homeClubId!=null&&typeof row.homeClubId!=='string'||
     row.awayClubId!=null&&typeof row.awayClubId!=='string')
   throw Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
