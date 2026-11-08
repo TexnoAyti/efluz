@@ -193,6 +193,27 @@ export function validateImportBatch(input) {
         Object.entries(row.state).some(([key,value])=>
          !key||typeof value!=='string'||value.length>256)))
       throw Error('INVALID_NOTIFICATION_READ_IMPORT_ROW');
+    if(table==='matchdayLockHistory'&&
+      (!row.source_record||typeof row.source_record!=='object'||
+       Array.isArray(row.source_record)||
+       !['RESOLVED','UNRESOLVED'].includes(row.reference_status)||
+       row.source_record.id!==row.id||
+       row.source_record.competitionId!==row.competition_id||
+       row.source_record.seasonId!==row.season_id||
+       row.source_record.matchday!==row.matchday||
+       row.source_record.isOpen!==row.source_is_open||
+       row.source_record.isLocked!==row.source_is_locked||
+       row.source_record.overrideStatus!==row.override_status))
+      throw Error('INVALID_MATCHDAY_HISTORY_ROW');
+    if(table==='matchDeadlineHistory'&&
+      (!row.source_record||typeof row.source_record!=='object'||
+       Array.isArray(row.source_record)||
+       !['RESOLVED','UNRESOLVED'].includes(row.reference_status)||
+       row.source_record.fixtureId!==row.fixture_id||
+       row.source_record.competitionId!==row.competition_id||
+       row.source_record.seasonId!==row.season_id||
+       row.source_record.matchday!==row.matchday))
+      throw Error('INVALID_MATCH_DEADLINE_HISTORY_ROW');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
