@@ -291,7 +291,7 @@ export function validateImportBatch(input) {
          (!row.competition_id||
           !Number.isSafeInteger(row.source_row_count)||row.source_row_count<0||
           !Number.isSafeInteger(row.source_played)||row.source_played<0||
-          !['RESOLVED','UNRESOLVED'].includes(row.reference_status))))
+          !['RESOLVED','UNRESOLVED'].includes(row.reference_status)))))
       throw Error('INVALID_OPERATIONAL_HISTORY_IMPORT');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
