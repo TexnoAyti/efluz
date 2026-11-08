@@ -307,3 +307,24 @@ export const playerTrophies=table('efl_player_trophies',{
  evaluatedAt:integer('evaluated_at').notNull(),
  confirmedAt:integer('confirmed_at').notNull()
 },t=>({winnerIdx:index('efl_player_trophies_winner_idx').on(t.winnerUserId,t.seasonId)}));
+
+
+// Historical season-2 club decision records. Never reselect a club on import.
+export const retentionDecisions=table('efl_retention_decisions',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ seasonId:text('season_id').notNull(),
+ sourceSeasonId:text('source_season_id').notNull(),
+ clubId:text('club_id').notNull(),choice:text('choice').notNull(),
+ decidedAt:integer('decided_at').notNull(),
+},t=>({userIdx:index('efl_retention_decisions_user_idx').on(t.userId,t.seasonId)}));
+
+// Historical premium state only. No payment or entitlement mutation endpoint.
+export const premiumEntitlements=table('efl_premium_entitlements',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ seasonId:text('season_id').notNull(),status:text('status').notNull(),
+ source:text('source').notNull(),note:text('note').notNull(),
+ paymentChargeId:text('payment_charge_id'),
+ activatedAt:integer('activated_at').notNull(),
+ revokedAt:integer('revoked_at'),revokedBy:text('revoked_by'),
+ updatedAt:integer('updated_at').notNull(),updatedBy:text('updated_by').notNull(),
+},t=>({ownerIdx:index('efl_premium_entitlements_owner_idx').on(t.userId,t.seasonId)}));
