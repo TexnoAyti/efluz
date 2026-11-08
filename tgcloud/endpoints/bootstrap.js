@@ -6,7 +6,9 @@ export default async function (_input, ctx) {
   const [activeSeason, ownerships, availableLeagues] = await Promise.all([
     db.get("SELECT id, name, status, settings FROM efl_seasons WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1"),
     db.all(`SELECT o.season_id AS seasonId, o.league_id AS leagueId, o.club_id AS clubId,
-      c.name AS clubName, c.short_name AS clubShortName, c.logo_url AS clubLogoUrl,
+      c.name AS clubName, c.short_name AS clubShortName,
+      c.country AS clubCountry, c.logo_url AS clubLogoUrl,
+      c.stadium AS clubStadium, c.created_at AS clubCreatedAt,
       l.name AS leagueName, l.logo_url AS leagueLogoUrl FROM efl_club_occupancies o
       JOIN efl_clubs c ON c.id = o.club_id JOIN efl_leagues l ON l.id = o.league_id
       WHERE o.telegram_id = :telegramId AND o.status = 'ACTIVE' ORDER BY o.joined_at DESC`, { ':telegramId': telegramId }),
