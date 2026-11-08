@@ -27,7 +27,10 @@ for(const key of [ReadModelKeys.adminFixtures(seasonId),ReadModelKeys.competitio
 await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).update({homeScore:0,awayScore:3,status:'CONFIRMED',updatedAt:'2026-10-09T00:01:00Z'});
 await refreshChangedFixtureReadModel(fixture.id);
 clearProcessMemoryCache();
-assert.equal((await redisGetFresh<any[]>(ReadModelKeys.adminFixtures(seasonId)))?.data[0].awayScore,3);
+// In Supabase mode a fixture update is durably recorded as an override delta,
+ // not written back into the old shared read-model snapshot.
+assert.equal(deltaWrites,1,'Fixture refresh writes one authoritative delta');
+assert.equal((await db.collection('durable_fixture_overrides').doc(fixture.id).get()).data()?.awayScore,3);
 await redisSetRaw(ReadModelKeys.competitions(seasonId),{data:[{id:competitionId,currentMatchday:1,name:'Serie A'}]});
 await patchCompetitionMatchdayCatalog({id:competitionId,seasonId,currentMatchday:3,updatedAt:'2026-10-09T00:01:00Z'} as any);
 assert.equal((await redisGetFresh<any[]>(ReadModelKeys.competitions(seasonId)))?.data[0].currentMatchday,3);
