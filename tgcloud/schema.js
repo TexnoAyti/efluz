@@ -491,3 +491,24 @@ export const standingsHistory=table('efl_standings_history',{
  referenceStatus:text('reference_status').notNull(),
  sourceSha256:text('source_sha256').notNull(),replayPolicy:text('replay_policy').notNull()
 },t=>({competitionIdx:index('efl_standings_history_comp_idx').on(t.competitionId)}));
+
+
+// TEAMS creation-ticket ledger: balances are authoritative snapshots and
+// transactions/idempotency receipts are imported without replay.
+export const teamTicketBalances=table('efl_team_ticket_balances',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull().unique(),
+ balance:integer('balance').notNull(),totalGranted:integer('total_granted').notNull(),
+ totalRevoked:integer('total_revoked').notNull(),totalSpent:integer('total_spent').notNull(),
+ updatedAt:integer('updated_at').notNull()
+});
+export const teamTicketTransactions=table('efl_team_ticket_transactions',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ type:text('type').notNull(),amount:integer('amount').notNull(),
+ actorId:text('actor_id').notNull(),teamId:text('team_id'),note:text('note'),
+ createdAt:integer('created_at').notNull()
+},t=>({userIdx:index('efl_team_ticket_trans_user_idx').on(t.userId,t.createdAt)}));
+export const ticketIdempotencyHistory=table('efl_ticket_idempotency_history',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ transactionId:text('transaction_id').notNull(),
+ tournamentId:text('tournament_id').notNull(),createdAt:integer('created_at').notNull()
+});
