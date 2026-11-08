@@ -1527,7 +1527,7 @@ export async function getCompetitionsFromReadModel(
   const result = await readThroughReadModel<Competition[]>({
     key: ReadModelKeys.competitions(seasonId),
     seasonId,
-    expectedCount: seasonId === 'season-2027-28' ? 0 : 17,
+    expectedCount: seasonId === 'season-2027-28' ? undefined : 17,
     firestoreFetcher: async () => {
       const snap = await buildCompetitionsSnapshot(seasonId);
       return snap.data;
