@@ -6,6 +6,7 @@ import {readUzeflifeRoundAudit} from './uzeflifeRoundAudit.js';
 import {readTeamsCatalog} from './teamsCatalogRead.js';
 import {readMyFixtures} from './myFixturesRead.js';
 import {readDomainOperationsAudit} from './domainOperationsAudit.js';
+import {readAdminRoundOverview} from './adminRoundOverview.js';
 export async function readOnlyBotExtra(db,command,{id,telegramId}){
  if(command==='/audit'){
   try{
@@ -23,6 +24,24 @@ export async function readOnlyBotExtra(db,command,{id,telegramId}){
     'O‘qilmagan bildirishnomalar: '+r.notifications.unread;
   }catch(error){
    if(error?.message==='DOMAIN_AUDIT_FORBIDDEN')return 'Bu buyruq faqat administrator uchun.';
+   throw error;
+  }
+ }
+ if(command==='/rounds'){
+  try{
+   const overview=await readAdminRoundOverview(db,telegramId);
+   if(!overview.season)return 'Turlar (sinov): faol mavsum topilmadi.';
+   if(!overview.items.length)return 'Turlar (sinov): musobaqalar topilmadi.';
+   const lines=overview.items.map(item=>{
+    const next=item.nextRound===null?'mavjud emas':String(item.nextRound);
+    const status=item.canAdvanceManually?'qo‘lda o‘tish mumkin':'tekshirish kerak';
+    return item.name+': '+item.currentRound+' → '+next+' — '+status+
+     ' (o‘ynalmagan '+item.unresolved+', nizolar '+item.disputes+')';
+   });
+   return 'Admin: turlar (sinov) — '+overview.season.name+'\n'+lines.join('\n')+
+    (overview.hasMore?'\nYana musobaqalar mavjud.':'');
+  }catch(error){
+   if(error?.message==='ROUND_PLAN_FORBIDDEN')return 'Bu buyruq faqat administrator uchun.';
    throw error;
   }
  }
