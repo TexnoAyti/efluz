@@ -127,7 +127,7 @@ test('CLI forbids running on production and keeps source secrets out of all repo
 
 test('identity probe must verify the server-side identity rather than trusting distinct token strings',async()=>{
  await withServer((req,res)=>{
-  const matches=/^Bearer stage-(\\d+)$/.exec(req.headers.authorization??'');
+  const matches=/^Bearer stage-(\d+)$/.exec(req.headers.authorization??'');
   const id=matches?'virtual-'+matches[1]:'unknown';
   res.writeHead(200,{'Content-Type':'application/json'});
   res.end(JSON.stringify({id}));
