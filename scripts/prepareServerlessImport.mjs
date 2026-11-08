@@ -38,7 +38,7 @@ for(const table of order) {
     const bytes=Buffer.byteLength(payload,'utf8');
     if(bytes>MAX_PACKET_BYTES)throw new Error('OVERSIZED_IMPORT_BATCH_'+table);
     const file=table+'-'+suffix+'.json';
-    await writeFile(join(resolve(directory),file),payload+'\\n',{flag:'wx',mode:0o600});
+    await writeFile(join(resolve(directory),file),payload+'\n',{flag:'wx',mode:0o600});
     chunks.push({batchId,file,rows:batchRows.length,bytes,sha256:createHash('sha256').update(payload).digest('hex')});
     batchRows=[];batchIndex++;
   };
