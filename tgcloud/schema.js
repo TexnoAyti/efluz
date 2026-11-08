@@ -379,5 +379,5 @@ export const uzeflifeAuditHistory=table('efl_uzeflife_audit_history',{
 export const uzeflifeNoticeHistory=table('efl_uzeflife_notice_history',{
  id:text('id').primaryKey(),sourceStatus:text('source_status').notNull(),
  createdAt:integer('created_at').notNull(),noticeCount:integer('notice_count').notNull(),
- replayPolicy:text('replay_policy').notNull(),sourceRecord:json('source_record').notNull()
+ replayPolicy:text('replay_policy').notNull(),sourceSha256:text('source_sha256').notNull()
 });
