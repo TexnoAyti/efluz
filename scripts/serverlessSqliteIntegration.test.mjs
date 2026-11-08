@@ -13,6 +13,10 @@ function fixture(){
    CREATE TABLE efl_club_selection_bans (
      id TEXT PRIMARY KEY,user_id TEXT NOT NULL,is_banned INTEGER NOT NULL
    );
+   CREATE TABLE efl_club_admissions(
+     id TEXT PRIMARY KEY,season_id TEXT NOT NULL,enabled INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   );
    CREATE TABLE efl_seasons (id TEXT PRIMARY KEY,status TEXT NOT NULL);
    CREATE TABLE efl_leagues (
      id TEXT PRIMARY KEY,season_id TEXT NOT NULL,status TEXT NOT NULL
@@ -49,6 +53,7 @@ function fixture(){
      (fixture_id,submitted_by_user_id);
    INSERT INTO efl_users VALUES ('u1','123',0),('u2','456',0),('u3','789',0);
    INSERT INTO efl_seasons VALUES ('season-2','UPCOMING');
+   INSERT INTO efl_club_admissions VALUES ('admission-1','season-2',1,1000);
    INSERT INTO efl_leagues VALUES ('league-1','season-2','OPEN');
    INSERT INTO efl_clubs VALUES ('c1','league-1'),('c2','league-1');
    INSERT INTO efl_competitions VALUES ('comp-1','season-2',3,1);
@@ -155,6 +160,34 @@ test('migrated club-selection ban blocks reservation before and during the SQL w
    async run(query,params){
     if(!raced&&query.includes('INSERT INTO efl_club_occupancies')){
      sql.exec("UPDATE efl_club_selection_bans SET is_banned=1 WHERE user_id='u1'");
+     raced=true;
+    }
+    return db.run(query,params);
+   }
+  };
+  await assert.rejects(claimClub(racingDb,'u1',claim('c1')),
+   /CLUB_CLAIM_CONFLICT/);
+  assert.equal(raced,true);
+  assert.equal(sql.prepare("SELECT count(*) as n FROM efl_club_occupancies").get().n,0);
+ }finally{sql.close();}
+});
+
+test('season admission controls forbid claims when closed and change atomically',async()=>{
+ const {sql,db}=fixture();
+ try{
+  sql.exec("UPDATE efl_club_admissions SET enabled=0 WHERE id='admission-1'");
+  await assert.rejects(claimClub(db,'u1',claim('c1')),/CLUB_CLAIM_CLOSED/);
+  sql.exec("UPDATE efl_club_admissions SET enabled=1 WHERE id='admission-1'");
+  // The most recent admission control overrides an older enabled record.
+  sql.exec("INSERT INTO efl_club_admissions VALUES ('admission-2','season-2',0,2000)");
+  await assert.rejects(claimClub(db,'u1',claim('c1')),/CLUB_CLAIM_CLOSED/);
+  sql.exec("UPDATE efl_club_admissions SET enabled=1 WHERE id='admission-2'");
+  let raced=false;
+  const racingDb={
+   get:db.get,
+   async run(query,params){
+    if(!raced&&query.includes('INSERT INTO efl_club_occupancies')){
+     sql.exec("UPDATE efl_club_admissions SET enabled=0 WHERE id='admission-2'");
      raced=true;
     }
     return db.run(query,params);
