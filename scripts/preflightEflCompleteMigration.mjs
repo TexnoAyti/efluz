@@ -71,6 +71,9 @@ if(blockers.length===0){
    match_chat_rooms:'matchChatRoomHistory',
    matchday_notification_jobs:'matchdayJobHistory',
    standings:'standingsHistory',
+   team_creation_tickets:'teamTicketBalances',
+   team_ticket_transactions:'teamTicketTransactions',
+   ticket_transactions_idempotency:'ticketIdempotencyHistory',
    uzeflife:'uzeflifeState'
   };
   let projectionComplete=true;
