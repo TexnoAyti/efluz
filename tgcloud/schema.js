@@ -381,3 +381,10 @@ export const uzeflifeNoticeHistory=table('efl_uzeflife_notice_history',{
  createdAt:integer('created_at').notNull(),noticeCount:integer('notice_count').notNull(),
  replayPolicy:text('replay_policy').notNull(),sourceSha256:text('source_sha256').notNull()
 });
+
+
+// Durable notification read markers imported without changing delivery state.
+export const notificationReadState=table('efl_notification_read_state',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull().unique(),
+ state:json('state').notNull()
+});
