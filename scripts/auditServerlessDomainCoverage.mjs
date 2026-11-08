@@ -22,7 +22,8 @@ const mapped=new Set([
  'club_admissions','club_selection_bans','club_memberships','user_memberships',
  'uzeflife_audit','uzeflife_notifications','notification_read_state',
  'matchday_locks','match_deadlines',
- 'club_selection_ban_audit','club_selection_ban_controls'
+ 'club_selection_ban_audit','club_selection_ban_controls',
+ 'custom_tournaments','custom_tournament_participants','custom_tournament_fixtures','custom_tournament_audit_logs'
 ]);
 const counts={mapped:0,unmapped:0,review:0,rebuild:0};
 const collectionCounts={mapped:0,unmapped:0,review:0,rebuild:0};
