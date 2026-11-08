@@ -50,3 +50,16 @@ test('invalid source season, duplicate identity and unsupported status fail clos
   assert.throws(()=>convertEflMembershipHistory(d));
  }
 });
+
+test('history import rejects a forged resolved status or conflicting original membership record',()=>{
+ const rows=convertEflMembershipHistory(fixture()).rows;
+ const record=rows.userMembershipHistory[0];
+ assert.throws(()=>validateImportBatch({
+  table:'userMembershipHistory',batchId:'userMembershipHistory:00000000',
+  rows:[{...record,reference_status:'ACTIVE'}]
+ }),/INVALID_HISTORICAL_MEMBERSHIP_IMPORT_ROW/);
+ assert.throws(()=>validateImportBatch({
+  table:'userMembershipHistory',batchId:'userMembershipHistory:00000000',
+  rows:[{...record,user_id:'not-source-user'}]
+ }),/INVALID_HISTORICAL_MEMBERSHIP_IMPORT_ROW/);
+});
