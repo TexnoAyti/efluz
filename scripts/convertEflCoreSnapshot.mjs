@@ -12,7 +12,7 @@ import {convertTeamsCatalog} from './lib/convertTeamsCatalog.mjs';
 import {convertEflTicketLedger} from './lib/convertEflTicketLedger.mjs';
 import {convertEflTrophies} from './lib/convertEflTrophies.mjs';
 import {convertEflSeasonEntitlements} from './lib/convertEflSeasonEntitlements.mjs';
-import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
+import {validateImportBatch,IMPORT_TABLES} from '../tgcloud/lib/importBatch.js';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
 if(!src||!dest){
@@ -67,6 +67,11 @@ if(collections.team_league_preview_teams.length){
  });
  Object.assign(result.rows,catalog.rows);
  result.report.teams=catalog.report;
+}
+// Emit every import table, even when it has no source rows. Full parity must
+// compare explicit empty tables rather than implicitly omitting them.
+for(const table of Object.keys(IMPORT_TABLES)){
+ if(!Object.prototype.hasOwnProperty.call(result.rows,table))result.rows[table]=[];
 }
 for(const [table,rows] of Object.entries(result.rows)){
  for(let index=0;index<rows.length;index+=100)
