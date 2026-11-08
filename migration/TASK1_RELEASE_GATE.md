@@ -77,6 +77,11 @@ be replayed. Archived evidence can exceed one Serverless import packet;
 - Migration-only CI run
   [42508562695](https://github.com/TexnoAyti/efluz/actions/runs/42508562695)
   passed build, TypeScript, gateway/result safety tests and backend syntax.
+- Offline transaction simulator now exercises all-or-nothing score/audit/inbox/
+  delivery commit under three injected failure points, then checks one
+  audit and two inbox/delivery records on retry and stable replay.
+  This does **not** validate the Telegram SDK's real transaction guarantees.
+  CI: https://github.com/TexnoAyti/efluz/actions/runs/42509802587
 - [ ] Verify SDK transaction semantics in isolated staging with injected
   audit/notification failure, concurrent confirmation attempts, retry and
   full rollback/readback; then review enabling the separate gate.
