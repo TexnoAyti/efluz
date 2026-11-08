@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {claimClub,validateClubClaim} from '../tgcloud/lib/clubClaim.js';
 const claim={seasonId:'season-2',clubId:'club-a',requestId:'claimreq1234'};
-function mock({banned=false,open=true,foreign=false}={}){
+function mock({banned=false,selectionBanned=false,open=true,foreign=false}={}){
  let owner=null,insertions=0;
  return {
    get insertions(){return insertions;},
    async get(sql,params){
     if(sql.startsWith('SELECT id,telegram_id'))return {id:'user-a',telegram_id:'1234',is_banned:banned?1:0};
+    if(sql.includes('FROM efl_club_selection_bans'))return selectionBanned?{banned:1}:null;
     if(sql.startsWith('SELECT c.id'))return {
       id:'club-a',leagueId:'league-1',seasonId:'season-2',
       leagueStatus:open?'OPEN':'CLOSED',seasonStatus:'UPCOMING'};
@@ -20,7 +21,7 @@ function mock({banned=false,open=true,foreign=false}={}){
     assert.match(sql,/l\.status='OPEN'/);
     assert.match(sql,/u\.is_banned=0/);
     if(foreign&&!owner)owner={uid:'user-b',id:'existing'};
-    if(banned||!open||owner)return {rowsAffected:0};
+    if(banned||selectionBanned||!open||owner)return {rowsAffected:0};
     owner={uid:params[':user'],id:params[':id']};
     insertions++;return {rowsAffected:1};
    }
@@ -40,6 +41,7 @@ test('same claim replay is idempotent, never reserves the club twice',async()=>{
 test('banned user, closed admission and second owner are denied',async()=>{
  for(const [options,code] of [
   [{banned:true},'CLUB_CLAIM_BANNED'],
+  [{selectionBanned:true},'CLUB_CLAIM_BANNED'],
   [{open:false},'CLUB_CLAIM_CLOSED'],
   [{foreign:true},'CLUB_CLAIM_CONFLICT']
  ]){
