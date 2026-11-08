@@ -36,6 +36,8 @@ printf 'Step 4/5: verifying deterministic source binding\n'
 node "$script_dir/verifyEflNormalizedSourceBinding.mjs" "$source_file" "$staging/private-archive" "$staging/normalized-source.json" > "$staging/binding-report.json"
 printf 'Step 5/5: preparing staging-only normalized import packets\n'
 node "$script_dir/prepareServerlessImport.mjs" "$staging/normalized-source.json" "$staging/normalized-import" > "$staging/packet-report.txt"
+node "$script_dir/verifyEflNormalizedPackets.mjs" "$staging/normalized-source.json" "$staging/normalized-import" > "$staging/packet-verify-report.json"
+node "$script_dir/verifyEflRawBatches.mjs" "$staging/private-archive" > "$staging/raw-verify-report.json"
 node --input-type=module - "$staging" <<'NODE'
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
