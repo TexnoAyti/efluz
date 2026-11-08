@@ -88,7 +88,7 @@ export async function proposeFixtureResult(db,uid,input){
          OR EXISTS(SELECT 1 FROM efl_fixture_score_windows w
           WHERE w.fixture_id=f.id AND w.season_id=f.season_id
            AND w.competition_id=f.competition_id AND w.is_open=1
-           AND f.round<c.current_matchday))))`,{
+           AND f.round<c.current_matchday)))`,{
       ':id':submissionId,':user':uid,':telegram':actor.telegram_id,
       ':club':occupancy.club_id,':fixture':proposal.fixtureId});
   if(!record){
