@@ -5,6 +5,10 @@
 // may require reconciliation and must not be called exactly-once here.
 const validId=x=>typeof x==='string'&&/^[A-Za-z0-9_:-]{1,160}$/.test(x);
 const validToken=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{16,128}$/.test(x);
+// No duplicate delivery is safe when the database cannot prove that an
+// UPDATE affected exactly one pending row. The SDK contract must be verified
+// in staging before a Telegram sending worker is enabled.
+const verifiedSingleWrite=result=>result?.changes===1||result?.rowsAffected===1;
 function validArgs(input,finish=false){
  if(!input||typeof input!=='object'||Array.isArray(input)||
   Object.keys(input).some(k=>!['notificationId','leaseToken','now','leaseMs','success','errorCode'].includes(k))||
@@ -34,7 +38,7 @@ export async function claimNotificationForWorker(db,input){
      last_error='LEASE_EXPIRED_UNCERTAIN'
  WHERE notification_id=:id AND status='LEASED' AND lease_until<:now`,
  {':id':notificationId,':now':now});
- await db.run(`UPDATE efl_notification_deliveries
+ const claimed=await db.run(`UPDATE efl_notification_deliveries
  SET status='LEASED',lease_token=:token,lease_until=:until,
      attempts=attempts+1
  WHERE notification_id=:id AND attempts<5 AND
@@ -45,6 +49,7 @@ export async function claimNotificationForWorker(db,input){
     AND n.user_id=efl_notification_deliveries.user_id
     AND u.is_banned=0 AND u.telegram_id IS NOT NULL
     AND u.telegram_id<>'')`,params);
+ if(!verifiedSingleWrite(claimed))throw Error('DELIVERY_NOT_CLAIMED');
  // The content and Telegram destination never leave this internal boundary.
  const row=await db.get(`SELECT d.notification_id AS notificationId,
  d.attempts,d.lease_until AS leaseUntil,
