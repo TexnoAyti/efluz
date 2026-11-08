@@ -270,3 +270,27 @@ export const teamMembers=table('efl_team_members',{
   .where(sql`status = 'LINKED'`),
  teamIdx:index('efl_team_member_team_idx').on(t.teamId,t.status)
 }));
+
+
+// Shadow-only historical ticket ledger. The source balances are snapshots,
+// not totals reconstructed from transactions. No spending/grant endpoint exists.
+export const ticketBalances=table('efl_ticket_balances',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull().unique(),
+ telegramId:text('telegram_id').notNull(),balance:integer('balance').notNull(),
+ totalGranted:integer('total_granted').notNull(),
+ totalSpent:integer('total_spent').notNull(),
+ totalRefunded:integer('total_refunded').notNull(),
+ freeTicketGrantedAt:integer('free_ticket_granted_at'),
+ updatedAt:integer('updated_at').notNull(),
+},t=>({userIndex:uniqueIndex('efl_ticket_balance_user_idx').on(t.userId)}));
+
+export const ticketTransactions=table('efl_ticket_transactions',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ type:text('type').notNull(),amount:integer('amount').notNull(),
+ idempotencyKey:text('idempotency_key').notNull().unique(),
+ note:text('note'),performedByAdminId:text('performed_by_admin_id'),
+ tournamentId:text('tournament_id'),createdAt:integer('created_at').notNull(),
+},t=>({
+ idempotencyIndex:uniqueIndex('efl_ticket_transaction_key_idx').on(t.idempotencyKey),
+ userIndex:index('efl_ticket_transaction_user_idx').on(t.userId,t.createdAt)
+}));
