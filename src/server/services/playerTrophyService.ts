@@ -196,6 +196,15 @@ async function getTrophyCabinet(activeSeasonId: string, belongsTo: (trophy: Trop
   ]);
   const saved = history.data.records.filter(record => record.active && record.seasonId === activeSeasonId);
   const current = live ? [...live.trophies, ...saved.filter(record => live.unavailableCompetitions.includes(record.competitionId))] : saved;
+  // A confirmed league title is retained from its recorded history if the
+  // standings read model is unavailable. Surface the stale state explicitly
+  // instead of silently presenting that historical trophy as fresh.
+  const leagueTitleIds = [...new Set(current
+    .filter(item => item.seasonId === activeSeasonId && DOMESTIC_LEAGUE_CONFIG[item.competitionId])
+    .map(item => item.competitionId))];
+  const staleStandings = (await Promise.all(leagueTitleIds.map(id =>
+    redisIsDirty(ReadModelKeys.standings(id, activeSeasonId)).catch(() => true)
+  ))).some(Boolean);
   const awards = awardResult?.awards.flatMap(award => award.leaders
     .filter(leader => awardBelongsTo(leader.clubId, leader.userId))
     .map(leader => ({
@@ -208,7 +217,7 @@ async function getTrophyCabinet(activeSeasonId: string, belongsTo: (trophy: Trop
       clubId: leader.clubId,
       clubName: leader.clubName,
     }))) || [];
-  return { trophies: mergeTrophies(current, history.data, activeSeasonId, belongsTo), awards, stale: history.stale || !live || !awardResult || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
+  return { trophies: mergeTrophies(current, history.data, activeSeasonId, belongsTo), awards, stale: staleStandings || history.stale || !live || !awardResult || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
 }
 
 export async function getPlayerTrophyCabinet(userId: string, activeSeasonId: string): Promise<PlayerTrophyCabinet> {
