@@ -1,366 +1,299 @@
 {
   "asOf": "2026-11-08",
   "source": "efl_runtime.documents:production read-only inventory",
-  "note": "Read-only live production inventory, observed at generation 258600. Counts are NOT a consistent exported snapshot or cutover authorization. Review collections and runtime sessions must never be blindly imported.",
-  "observedTotal": 26556,
+  "note": "Read-only counts from a single SQL statement on 2026-11-08; NOT a consistent export, live data keeps changing. New result_refresh_jobs is quarantined for review. Review collections and runtime sessions must never be blindly imported.",
+  "observedTotal": null,
   "collections": [
     {
       "collection": "ai_community_sources",
-      "observedDocuments": 2,
       "handling": "review"
     },
     {
       "collection": "android_login_challenges",
-      "observedDocuments": 1,
       "handling": "rebuild"
     },
     {
       "collection": "android_login_sessions",
-      "observedDocuments": 10,
       "handling": "rebuild"
     },
     {
       "collection": "audit_logs",
-      "observedDocuments": 1263,
       "handling": "preserve"
     },
     {
       "collection": "club_admissions",
-      "observedDocuments": 2,
       "handling": "preserve"
     },
     {
       "collection": "club_memberships",
-      "observedDocuments": 156,
       "handling": "preserve"
     },
     {
       "collection": "club_occupancies",
-      "observedDocuments": 156,
       "handling": "preserve"
     },
     {
       "collection": "club_selection_ban_audit",
-      "observedDocuments": 7,
       "handling": "preserve"
     },
     {
       "collection": "club_selection_ban_controls",
-      "observedDocuments": 10,
       "handling": "preserve"
     },
     {
       "collection": "club_selection_bans",
-      "observedDocuments": 5,
       "handling": "preserve"
     },
     {
       "collection": "clubs",
-      "observedDocuments": 96,
       "handling": "preserve"
     },
     {
       "collection": "competition_notification_intents",
-      "observedDocuments": 11,
       "handling": "review"
     },
     {
       "collection": "competition_notification_worker",
-      "observedDocuments": 1,
       "handling": "review"
     },
     {
       "collection": "competition_participants",
-      "observedDocuments": 290,
       "handling": "preserve"
     },
     {
       "collection": "competitions",
-      "observedDocuments": 18,
       "handling": "preserve"
     },
     {
       "collection": "custom_tournament_audit_logs",
-      "observedDocuments": 8,
       "handling": "preserve"
     },
     {
       "collection": "custom_tournament_claims",
-      "observedDocuments": 8,
       "handling": "preserve"
     },
     {
       "collection": "custom_tournament_fixtures",
-      "observedDocuments": 3,
       "handling": "preserve"
     },
     {
       "collection": "custom_tournament_participants",
-      "observedDocuments": 4,
       "handling": "preserve"
     },
     {
       "collection": "custom_tournaments",
-      "observedDocuments": 1,
       "handling": "preserve"
     },
     {
       "collection": "discipline_states",
-      "observedDocuments": 1,
       "handling": "preserve"
     },
     {
       "collection": "disputes",
-      "observedDocuments": 6,
       "handling": "preserve"
     },
     {
       "collection": "durable_fixture_overrides",
-      "observedDocuments": 453,
       "handling": "preserve"
     },
     {
       "collection": "durable_read_snapshots",
-      "observedDocuments": 859,
       "handling": "rebuild"
     },
     {
       "collection": "el_clasico_events",
-      "observedDocuments": 1,
       "handling": "review"
     },
     {
       "collection": "fixtures",
-      "observedDocuments": 1266,
       "handling": "preserve"
     },
     {
       "collection": "league_reminder_workers",
-      "observedDocuments": 1,
       "handling": "review"
     },
     {
       "collection": "leagues",
-      "observedDocuments": 5,
       "handling": "preserve"
     },
     {
       "collection": "legacy_recovery_archive",
-      "observedDocuments": 11,
       "handling": "review"
     },
     {
       "collection": "maintenance_operations",
-      "observedDocuments": 1,
       "handling": "review"
     },
     {
       "collection": "match_chat_rooms",
-      "observedDocuments": 15,
       "handling": "preserve"
     },
     {
       "collection": "match_deadlines",
-      "observedDocuments": 4,
       "handling": "preserve"
     },
     {
       "collection": "matchday_locks",
-      "observedDocuments": 37,
       "handling": "preserve"
     },
     {
       "collection": "matchday_notification_jobs",
-      "observedDocuments": 19,
       "handling": "preserve"
     },
     {
       "collection": "no_show_reports",
-      "observedDocuments": 3,
       "handling": "preserve"
     },
     {
       "collection": "notification_read_state",
-      "observedDocuments": 51,
       "handling": "preserve"
     },
     {
       "collection": "notifications",
-      "observedDocuments": 3055,
       "handling": "preserve"
     },
     {
       "collection": "player_trophies",
-      "observedDocuments": 3,
       "handling": "preserve"
     },
     {
       "collection": "premium_entitlements",
-      "observedDocuments": 2,
       "handling": "preserve"
     },
     {
       "collection": "recovery_backups",
-      "observedDocuments": 53,
+      "handling": "review"
+    },
+    {
+      "collection": "result_refresh_jobs",
       "handling": "review"
     },
     {
       "collection": "result_submissions",
-      "observedDocuments": 45,
       "handling": "preserve"
     },
     {
       "collection": "runtime_settings",
-      "observedDocuments": 3,
       "handling": "review"
     },
     {
       "collection": "runtime_state",
-      "observedDocuments": 292,
       "handling": "review"
     },
     {
       "collection": "season2_retention_decisions",
-      "observedDocuments": 5,
       "handling": "preserve"
     },
     {
       "collection": "seasons",
-      "observedDocuments": 2,
       "handling": "preserve"
     },
     {
       "collection": "standings",
-      "observedDocuments": 14,
       "handling": "preserve"
     },
     {
       "collection": "team_creation_tickets",
-      "observedDocuments": 2,
       "handling": "preserve"
     },
     {
       "collection": "team_league_deleted_leagues",
-      "observedDocuments": 1,
       "handling": "review"
     },
     {
       "collection": "team_league_preview_teams",
-      "observedDocuments": 4,
       "handling": "review"
     },
     {
       "collection": "team_membership_claims",
-      "observedDocuments": 2,
       "handling": "preserve"
     },
     {
       "collection": "team_membership_invitations",
-      "observedDocuments": 1,
       "handling": "preserve"
     },
     {
       "collection": "team_membership_receipts",
-      "observedDocuments": 4,
       "handling": "preserve"
     },
     {
       "collection": "team_ticket_transactions",
-      "observedDocuments": 3,
       "handling": "preserve"
     },
     {
       "collection": "telegram_ai_state",
-      "observedDocuments": 6615,
       "handling": "review"
     },
     {
       "collection": "telegram_member_tag_state",
-      "observedDocuments": 3,
       "handling": "preserve"
     },
     {
       "collection": "telegram_member_tags",
-      "observedDocuments": 95,
       "handling": "preserve"
     },
     {
       "collection": "telegram_webhook_leases",
-      "observedDocuments": 9832,
       "handling": "rebuild"
     },
     {
       "collection": "ticket_transactions",
-      "observedDocuments": 362,
       "handling": "preserve"
     },
     {
       "collection": "ticket_transactions_idempotency",
-      "observedDocuments": 1,
       "handling": "preserve"
     },
     {
       "collection": "user_memberships",
-      "observedDocuments": 206,
       "handling": "preserve"
     },
     {
       "collection": "user_tickets",
-      "observedDocuments": 357,
       "handling": "preserve"
     },
     {
       "collection": "users",
-      "observedDocuments": 367,
       "handling": "preserve"
     },
     {
       "collection": "uzeflife",
-      "observedDocuments": 1,
       "handling": "preserve"
     },
     {
       "collection": "uzeflife_audit",
-      "observedDocuments": 212,
       "handling": "preserve"
     },
     {
       "collection": "uzeflife_channel_post_repairs",
-      "observedDocuments": 3,
       "handling": "review"
     },
     {
       "collection": "uzeflife_channel_posts",
-      "observedDocuments": 2,
       "handling": "preserve"
     },
     {
       "collection": "uzeflife_config_history",
-      "observedDocuments": 1,
       "handling": "preserve"
     },
     {
       "collection": "uzeflife_evidence",
-      "observedDocuments": 1,
       "handling": "preserve"
     },
     {
       "collection": "uzeflife_notifications",
-      "observedDocuments": 177,
       "handling": "preserve"
     },
     {
       "collection": "uzeflife_topic_queue",
-      "observedDocuments": 44,
       "handling": "review"
     },
     {
       "collection": "uzeflife_worker",
-      "observedDocuments": 1,
       "handling": "review"
     }
   ],
-  "observedGeneration": 258600,
-  "observedCollectionPaths": 73,
-  "observedRootCollections": 71
+  "observedGeneration": null,
+  "observedCollectionPaths": 74,
+  "observedRootCollections": 72
 }
