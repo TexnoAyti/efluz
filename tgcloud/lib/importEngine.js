@@ -41,16 +41,22 @@ export async function applyImportBatch(db, input) {
 
   const names = columns.map(c => '"'+c+'"').join(',');
   const params = columns.map(c => ':'+c).join(',');
+  // Preflight EVERY existing row before the first mutation. Without this,
+  // a conflicting row late in the packet could leave earlier new rows written
+  // despite the batch being rejected. Crashes during writes are still handled
+  // by idempotent replay; do not claim multi-row transactional atomicity.
   let previouslyPresent = 0;
   for (const row of rows) {
     const lookup = {':pk':row[pk]};
     const existing = await db.get(
       `SELECT ${names} FROM ${sqlTable} WHERE "${pk}"=:pk`,lookup
     );
-    if (existing) {
-      if (!rowsEquivalent(existing,row,columns)) throw new Error('ROW_CONFLICT');
-      previouslyPresent++;
-    }
+    if (existing && !rowsEquivalent(existing,row,columns))
+      throw new Error('ROW_CONFLICT');
+    if (existing) previouslyPresent++;
+  }
+  for (const row of rows) {
+    const lookup = {':pk':row[pk]};
     const values = Object.fromEntries(columns.map(c => [':'+c, comparableValue(row[c],c)]));
     await db.run(
       `INSERT INTO ${sqlTable} (${names}) VALUES (${params}) ON CONFLICT DO NOTHING`,
