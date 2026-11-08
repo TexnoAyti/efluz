@@ -15,7 +15,7 @@ if ($StagingAppId -eq $ProductionAppId) { throw 'STAGING_EQUALS_PRODUCTION' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { throw 'Bun is required: https://bun.sh/' }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js is required' }
-if (-not (Get-Command npx -ErrorAction SilentlyContinue)) { throw 'npx is required' }
+if (-not (Get-Command npx.cmd -ErrorAction SilentlyContinue)) { throw 'npx.cmd is required' }
 $previousToken = [Environment]::GetEnvironmentVariable('TGCLOUD_TOKEN','Process')
 $previousStaging = [Environment]::GetEnvironmentVariable('TGCLOUD_STAGING_APP_ID','Process')
 $previousProduction = [Environment]::GetEnvironmentVariable('TGCLOUD_PRODUCTION_APP_ID','Process')
@@ -46,11 +46,11 @@ try {
     node scripts/verifyTgcloudStatic.mjs
     if ($LASTEXITCODE -ne 0) { throw 'STATIC_CHECK_FAILED' }
     Write-Host 'Deploying ONLY to verified staging app...'
-    npx --yes --package=@tgcloud/cli tgcloud push
+    npx.cmd --yes --package=@tgcloud/cli tgcloud push
     if ($LASTEXITCODE -ne 0) { throw 'STAGING_PUSH_FAILED' }
-    npx --yes --package=@tgcloud/cli tgcloud migrate --dry-run
+    npx.cmd --yes --package=@tgcloud/cli tgcloud migrate --dry-run
     if ($LASTEXITCODE -ne 0) { throw 'STAGING_SCHEMA_REVIEW_FAILED' }
-    npx --yes --package=@tgcloud/cli tgcloud migrate --safe
+    npx.cmd --yes --package=@tgcloud/cli tgcloud migrate --safe
     if ($LASTEXITCODE -ne 0) { throw 'STAGING_SAFE_MIGRATION_FAILED' }
     Write-Host 'STAGING_CODE_DEPLOYED. Data import and production cutover NOT performed.'
   } finally { Pop-Location }
