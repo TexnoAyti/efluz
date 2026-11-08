@@ -388,3 +388,23 @@ export const notificationReadState=table('efl_notification_read_state',{
  id:text('id').primaryKey(),userId:text('user_id').notNull().unique(),
  state:json('state').notNull()
 });
+
+
+// Historical matchday controls are never consulted by live admission,
+// matchday or delivery workers until source-compatibility cutover is proven.
+export const matchdayLockHistory=table('efl_matchday_lock_history',{
+ id:text('id').primaryKey(),competitionId:text('competition_id').notNull(),
+ seasonId:text('season_id').notNull(),matchday:integer('matchday').notNull(),
+ sourceIsOpen:boolean('source_is_open').notNull(),
+ sourceIsLocked:boolean('source_is_locked').notNull(),
+ overrideStatus:text('override_status').notNull(),updatedAt:integer('updated_at'),
+ referenceStatus:text('reference_status').notNull(),sourceRecord:json('source_record').notNull()
+},t=>({compIdx:index('efl_matchday_lock_history_comp_idx').on(t.competitionId,t.matchday)}));
+
+export const matchDeadlineHistory=table('efl_match_deadline_history',{
+ id:text('id').primaryKey(),fixtureId:text('fixture_id').notNull(),
+ competitionId:text('competition_id').notNull(),seasonId:text('season_id').notNull(),
+ matchday:integer('matchday').notNull(),deadlineAt:integer('deadline_at'),
+ createdAt:integer('created_at'),referenceStatus:text('reference_status').notNull(),
+ sourceRecord:json('source_record').notNull()
+},t=>({fixtureIdx:index('efl_match_deadline_history_fixture_idx').on(t.fixtureId)}));
