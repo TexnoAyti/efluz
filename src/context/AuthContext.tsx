@@ -194,7 +194,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Season selection must refresh season-scoped ownership. Do not reuse the
   // previous season's clubs while a new club admission is being displayed.
   useEffect(() => {
-    if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview || import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') return;
+    if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview) return;
+    if (import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') {
+      let cancelled = false;
+      // Clear the previous season immediately to avoid a cross-season owner
+      // showing as an eligible current club while native identity is rechecked.
+      setOwnedClubs([]);
+      setCurrentClub(null);
+      setClubUnavailable(true);
+      void loadNativeEflBootstrap(activeSeasonId).then(session => {
+        if (cancelled) return;
+        if (!session.user || session.user.id !== user.id)
+          throw Error('SERVERLESS_USER_CHANGED_DURING_REFRESH');
+        setOwnedClubs(session.ownedClubs);
+        setCurrentClub(resolveActiveClub(session.ownedClubs,session.currentClub,
+          user.id,activeSeasonId,clubPreferenceStorage()));
+        setClubUnavailable(session.currentClubStatus === 'unavailable');
+      }).catch(() => {
+        if (cancelled) return;
+        setOwnedClubs([]);
+        setCurrentClub(null);
+        setClubUnavailable(true);
+      });
+      return () => { cancelled = true; };
+    }
     setOwnedClubs([]);
     setCurrentClub(null);
     void fetchUserData(activeSeasonId);
@@ -377,7 +400,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Recover optional ownership after the account is already usable. Never turn
   // a slow club lookup into a fabricated "no club" result or another auth spinner.
   useEffect(() => {
-    if (!user || authStatus !== 'AUTHENTICATED' || !clubUnavailable || isDesignPreview) return;
+    if (!user || authStatus !== 'AUTHENTICATED' || !clubUnavailable || isDesignPreview || import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let attempts = 0;
@@ -401,7 +424,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Rotate the short-lived session token while the Telegram Mini App remains open.
   useEffect(() => {
-    if (authStatus !== 'AUTHENTICATED') return;
+    if (authStatus !== 'AUTHENTICATED' || import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') return;
     let lastRefreshAt = Date.now();
     let refreshing = false;
     let nextAttemptAt = 0;
@@ -456,7 +479,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshUserData = async () => {
-    await fetchUserData(activeSeasonId);
+    if (import.meta.env.VITE_EFL_API_TRANSPORT !== 'telegram-serverless') {
+      await fetchUserData(activeSeasonId);
+      return;
+    }
+    const session=await loadNativeEflBootstrap(activeSeasonId);
+    if (!session.user || session.user.id!==user?.id) throw Error('SERVERLESS_IDENTITY_MISMATCH');
+    setOwnedClubs(session.ownedClubs);
+    setCurrentClub(resolveActiveClub(session.ownedClubs,session.currentClub,
+      session.user.id,activeSeasonId,clubPreferenceStorage()));
+    setClubUnavailable(session.currentClubStatus==='unavailable');
+    await refreshNotifications(true);
   };
 
   const markNotificationAsRead = async (notificationId: string) => {
