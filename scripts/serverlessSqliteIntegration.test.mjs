@@ -10,6 +10,9 @@ function fixture(){
    CREATE TABLE efl_users (
      id TEXT PRIMARY KEY,telegram_id TEXT NOT NULL UNIQUE,is_banned INTEGER NOT NULL DEFAULT 0
    );
+   CREATE TABLE efl_club_selection_bans (
+     id TEXT PRIMARY KEY,user_id TEXT NOT NULL,is_banned INTEGER NOT NULL
+   );
    CREATE TABLE efl_seasons (id TEXT PRIMARY KEY,status TEXT NOT NULL);
    CREATE TABLE efl_leagues (
      id TEXT PRIMARY KEY,season_id TEXT NOT NULL,status TEXT NOT NULL
@@ -136,5 +139,30 @@ test('result proposal cannot commit if a fixture becomes a self-match during wri
   await assert.rejects(proposeFixtureResult(racingDb,'u1',input),
    /PROPOSAL_CONFLICT_OR_LOCKED/);
   assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM efl_result_submissions').get().n,0);
+ }finally{sql.close();}
+});
+
+test('migrated club-selection ban blocks reservation before and during the SQL write',async()=>{
+ const {sql,db}=fixture();
+ try{
+  sql.exec("INSERT INTO efl_club_selection_bans VALUES ('u1','u1',1)");
+  await assert.rejects(claimClub(db,'u1',claim('c1')),/CLUB_CLAIM_BANNED/);
+  assert.equal(sql.prepare("SELECT count(*) as n FROM efl_club_occupancies").get().n,0);
+  sql.exec("UPDATE efl_club_selection_bans SET is_banned=0 WHERE user_id='u1'");
+  let raced=false;
+  const racingDb={
+   get:db.get,
+   async run(query,params){
+    if(!raced&&query.includes('INSERT INTO efl_club_occupancies')){
+     sql.exec("UPDATE efl_club_selection_bans SET is_banned=1 WHERE user_id='u1'");
+     raced=true;
+    }
+    return db.run(query,params);
+   }
+  };
+  await assert.rejects(claimClub(racingDb,'u1',claim('c1')),
+   /CLUB_CLAIM_CONFLICT/);
+  assert.equal(raced,true);
+  assert.equal(sql.prepare("SELECT count(*) as n FROM efl_club_occupancies").get().n,0);
  }finally{sql.close();}
 });
