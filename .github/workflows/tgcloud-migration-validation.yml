@@ -27,6 +27,10 @@ jobs:
         run: bun run lint
       - name: Validate native signed bootstrap and fail-closed API gateway
         run: bun run test:tgcloud:gateway
+      - name: Validate Serverless backend modules and syntax (no deploy)
+        run: |
+          node scripts/checkTgcloudModules.mjs
+          find tgcloud -type f -name '*.js' -print0 | xargs -0 -n 1 node --check
       - name: Validate isolated Serverless staging smoke build
         run: |
           bun run build:tgcloud
