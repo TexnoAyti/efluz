@@ -7,8 +7,11 @@ export function normalizeSeason(row){
   if(!row||typeof row.id!=='string'||!/^season-20\d{2}-\d{2}$/.test(row.id))
     throw Error('SERVERLESS_SEASON_ROW_INVALID');
   const raw=String(row.status||'').toUpperCase();
-  const status=raw==='ACTIVE'||row.isActive===1||row.isActive===true?'active':
-    raw==='REGISTRATION'?'registration':raw==='COMPLETED'?'completed':'upcoming';
+  // Registration is not an active playing season even when a row is marked
+  // selectable; keep ongoing 2026/27 cups distinct from 2027/28 admission.
+  const status=raw==='REGISTRATION'?'registration':
+    raw==='COMPLETED'?'completed':
+    raw==='ACTIVE'?'active':'upcoming';
   const toIso=value=>{
     if(typeof value!=='number'||!Number.isFinite(value)||value<=0)return '';
     const millis=value<1e11?value*1000:value;
