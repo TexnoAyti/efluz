@@ -65,6 +65,13 @@ export async function finishNotificationForWorker(db,input){
  const {notificationId,leaseToken,now,success,errorCode}=validArgs(input,true);
  const params={':id':notificationId,':token':leaseToken,':now':now,
   ':success':success?1:0,':error':success?null:errorCode};
+ // A previous SENT/PENDING/REVIEW row must not be mistaken for the result
+ // of this acknowledgement just because status and timestamp happen to match.
+ const lease=await db.get(`SELECT status,lease_token AS leaseToken,lease_until AS leaseUntil
+  FROM efl_notification_deliveries WHERE notification_id=:id`,{':id':notificationId});
+ if(lease?.status!=='LEASED'||lease.leaseToken!==leaseToken||
+    !Number.isSafeInteger(lease.leaseUntil)||lease.leaseUntil<now)
+  throw Error('DELIVERY_ACK_CONFLICT');
  await db.run(`UPDATE efl_notification_deliveries
  SET status=CASE WHEN :success=1 THEN 'SENT'
    WHEN :error IN ('TELEGRAM_TIMEOUT','NETWORK_UNCERTAIN') THEN 'REVIEW'
