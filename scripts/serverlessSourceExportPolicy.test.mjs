@@ -30,7 +30,7 @@ test('live export accepts moving counts but preserves private snapshot and ident
   assert.notEqual(strict.status,0);
   await assert.rejects(access(join(dir,'strict.jsonl')));
   assert.doesNotMatch(normal.stdout+normal.stderr+strict.stderr,
-   /private\\.invalid/);
+   /private\.invalid/);
  });
 });
 test('export always fails on unclassified collection or duplicate document',async()=>{
@@ -40,7 +40,7 @@ test('export always fails on unclassified collection or duplicate document',asyn
    const result=run('unsafe.jsonl');
    assert.notEqual(result.status,0);
    await assert.rejects(access(join(dir,'unsafe.jsonl')));
-   assert.doesNotMatch(result.stdout+result.stderr,/private\\.invalid/);
+   assert.doesNotMatch(result.stdout+result.stderr,/private\.invalid/);
   });
  }
 });
