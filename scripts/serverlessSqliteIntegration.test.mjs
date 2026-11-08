@@ -87,3 +87,54 @@ test('real SQLite result proposal is pending, replay-safe and bounded to active 
   await assert.rejects(proposeFixtureResult(db,'u2',input),/MATCHDAY_LOCKED/);
  }finally{sql.close();}
 });
+
+test('result replay fails closed after club release or matchday closure during insert',async()=>{
+ for(const change of [
+  "UPDATE efl_club_occupancies SET status='RELEASED' WHERE user_id='u1'",
+  "UPDATE efl_competitions SET is_matchday_open=0 WHERE id='comp-1'",
+  "UPDATE efl_users SET is_banned=1 WHERE id='u1'"
+ ]){
+  const {sql,db}=fixture();
+  try{
+   await claimClub(db,'u1',claim('c1'));
+   const input={fixtureId:'f1',homeScore:2,awayScore:1};
+   await proposeFixtureResult(db,'u1',input);
+   let changed=false;
+   const racingDb={
+    get:db.get,
+    async run(query,params){
+     if(!changed && query.includes('INSERT INTO efl_result_submissions')){
+      sql.exec(change);
+      changed=true;
+     }
+     return db.run(query,params);
+    }
+   };
+   await assert.rejects(proposeFixtureResult(racingDb,'u1',input),
+    /PROPOSAL_CONFLICT_OR_LOCKED/);
+   assert.equal(changed,true);
+   assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM efl_result_submissions").get().n,1);
+  }finally{sql.close();}
+ }
+});
+test('result proposal cannot commit if a fixture becomes a self-match during write',async()=>{
+ const {sql,db}=fixture();
+ try{
+  await claimClub(db,'u1',claim('c1'));
+  const input={fixtureId:'f1',homeScore:1,awayScore:0};
+  let changed=false;
+  const racingDb={
+   get:db.get,
+   async run(query,params){
+    if(!changed && query.includes('INSERT INTO efl_result_submissions')){
+     sql.exec("UPDATE efl_fixtures SET away_club_id=home_club_id WHERE id='f1'");
+     changed=true;
+    }
+    return db.run(query,params);
+   }
+  };
+  await assert.rejects(proposeFixtureResult(racingDb,'u1',input),
+   /PROPOSAL_CONFLICT_OR_LOCKED/);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM efl_result_submissions').get().n,0);
+ }finally{sql.close();}
+});
