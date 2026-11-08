@@ -62,6 +62,7 @@ on:
       - 'scripts/serverlessCompleteSourceGate.test.mjs'
       - 'scripts/serverlessCompletePreflight.test.mjs'
       - 'scripts/preflightEflCompleteMigration.mjs'
+      - 'scripts/verifyEflNormalizedSourceBinding.mjs'
       - 'scripts/serverlessMutationGate.test.mjs'
       - 'scripts/serverlessLateResultIntegration.test.mjs'
       - 'scripts/serverlessAdvanceCupRound.test.mjs'
