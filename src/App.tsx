@@ -277,7 +277,7 @@ const AppContent: React.FC = () => {
               if (window.history.state?.publicClub) window.history.back();
               else setActiveTab('leagues');
             }} /> : <>
-            {currentTab === 'admin' && canUseGlobalAdminTools && activeSeasonId === 'season-2026-27' && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
+            {currentTab === 'admin' && canUseGlobalAdminTools && (activeSeasonId === 'season-2026-27' || isDesignPreview) && <div className="mb-5"><AdminMatchOperationsV4Panel /></div>}
 
             {/* HOME: Active Club Broadcast Hub with Hero Match Card */}
             {currentTab === 'dashboard' && (
@@ -336,7 +336,7 @@ const AppContent: React.FC = () => {
             )}
 
             {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
-            {currentTab === 'admin' && user?.isAdmin && activeSeasonId === 'season-2026-27' && <AdminView />}
+            {currentTab === 'admin' && user?.isAdmin && (activeSeasonId === 'season-2026-27' || isDesignPreview) && <AdminView />}
             </>}
           </ContentBoundary>
       </main>
