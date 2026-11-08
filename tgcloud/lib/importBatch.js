@@ -276,6 +276,23 @@ export function validateImportBatch(input) {
        (row.source_expires_at!==null&&
          (!Number.isSafeInteger(row.source_expires_at)||row.source_expires_at<0))))
       throw Error('INVALID_TELEGRAM_TAG_STATE_HISTORY_IMPORT');
+    if(['matchChatRoomHistory','matchdayJobHistory','standingsHistory'].includes(table)&&
+      (row.replay_policy!=='HISTORICAL_ONLY'||
+       !/^[a-f0-9]{64}$/.test(String(row.source_sha256))||
+       !row.season_id||
+       (table==='matchChatRoomHistory'&&
+         (!row.match_id||typeof row.source_closed!=='boolean'||
+          !Number.isSafeInteger(row.participant_count)||row.participant_count<0||
+          !Number.isSafeInteger(row.message_count)||row.message_count<0))||
+       (table==='matchdayJobHistory'&&
+         (!row.competition_id||!row.source_status||
+          !Number.isSafeInteger(row.matchday)||row.matchday<0))||
+       (table==='standingsHistory'&&
+         (!row.competition_id||
+          !Number.isSafeInteger(row.source_row_count)||row.source_row_count<0||
+          !Number.isSafeInteger(row.source_played)||row.source_played<0||
+          !['RESOLVED','UNRESOLVED'].includes(row.reference_status))))
+      throw Error('INVALID_OPERATIONAL_HISTORY_IMPORT');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
