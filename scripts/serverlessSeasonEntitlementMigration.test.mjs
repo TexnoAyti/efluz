@@ -80,3 +80,19 @@ test('main offline converter retains both collections without changing the Web A
   assert.equal(normalized.premiumEntitlements[1].status,'REVOKED');
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('import validator refuses forged retention choices or premium lifecycle',()=>{
+ const rows=convertEflSeasonEntitlements(source()).rows;
+ assert.throws(()=>validateImportBatch({
+  table:'retentionDecisions',batchId:'retentionDecisions:00000000',
+  rows:[{...rows.retentionDecisions[0],choice:'FORCE_TRANSFER'}]
+ }),/INVALID_RETENTION_IMPORT_ROW/);
+ assert.throws(()=>validateImportBatch({
+  table:'premiumEntitlements',batchId:'premiumEntitlements:00000000',
+  rows:[{...rows.premiumEntitlements[0],status:'ACTIVE',revoked_at:Date.parse(at)}]
+ }),/INVALID_PREMIUM_IMPORT_ROW/);
+ assert.throws(()=>validateImportBatch({
+  table:'premiumEntitlements',batchId:'premiumEntitlements:00000000',
+  rows:[{...rows.premiumEntitlements[1],revoked_at:null}]
+ }),/INVALID_PREMIUM_IMPORT_ROW/);
+});
