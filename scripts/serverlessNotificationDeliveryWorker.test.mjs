@@ -174,3 +174,32 @@ test('cannot acknowledge a previously failed attempt as successful',async()=>{
   assert.equal((await readNotificationDeliveryAudit(db,'999')).stats.pending,1);
  }finally{sql.close();}
 });
+
+test('repeated lease claim with the same token and timestamp is rejected',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  const first=await claimNotificationForWorker(db,lease(tokenA,100000));
+  assert.equal(first.attempt,1);
+  await assert.rejects(claimNotificationForWorker(db,lease(tokenA,100000)),
+   /DELIVERY_NOT_CLAIMED/);
+  assert.equal(sql.prepare("SELECT attempts FROM efl_notification_deliveries WHERE notification_id='n1'").get().attempts,1);
+  assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'LEASED');
+ }finally{sql.close();}
+});
+test('unverified database update result fails closed even if the lease row matches',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  const opaqueDb={
+   get:db.get,
+   async run(query,params){
+    await db.run(query,params);
+    return undefined; // SDK adapters may not promise an affected-row count.
+   }
+  };
+  await assert.rejects(claimNotificationForWorker(opaqueDb,lease(tokenA,100000)),
+   /DELIVERY_NOT_CLAIMED/);
+  assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'LEASED');
+ }finally{sql.close();}
+});
