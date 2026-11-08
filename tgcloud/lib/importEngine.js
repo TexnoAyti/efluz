@@ -1,7 +1,7 @@
 import { validateImportBatch, stableRow } from './importBatch.js';
 
 // Dependency-injected implementation for isolated testing without Telegram SDK.
-const JSON_FIELDS = new Set(['settings','format_config','data','encoded','old_value','new_value','league_overrides','source_record']);
+const JSON_FIELDS = new Set(['settings','format_config','data','encoded','old_value','new_value','league_overrides','source_record','details']);
 
 export function comparableValue(value, column) {
   if (value === undefined || value === null) return null;
