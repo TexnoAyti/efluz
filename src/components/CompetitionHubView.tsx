@@ -39,8 +39,14 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   // league section. Choosing "1-mavsumga qaytish" in ClubsView remains
   // effective until they leave and re-enter the league section.
   useEffect(() => {
-    if (subTab === 'leagues' && authStatus !== 'AUTH_LOADING') {
+    if (authStatus === 'AUTH_LOADING') return;
+    if (subTab === 'leagues') {
+      // Only the league registration view defaults to second-season clubs.
       setActiveSeasonId(EFL_SECOND_SEASON.id);
+    } else if (subTab === 'cups' || subTab === 'european') {
+      // Cups and European competitions are ongoing season-one tournaments.
+      // Avoid leaking the second-season club registration scope into their API calls.
+      setActiveSeasonId('season-2026-27');
     }
   }, [subTab, authStatus, setActiveSeasonId]);
 
