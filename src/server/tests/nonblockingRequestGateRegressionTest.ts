@@ -35,8 +35,8 @@ try {
  assert.equal((await request('/shared-a','198.51.100.1')).status,200);
  assert.equal((await request('/shared-b','198.51.100.2')).status,200);
  assert.equal((await request('/shared-a','198.51.100.3')).status,429);
- assert.equal(sharedTransactions,3,'Default/action-specific guards still use the shared PostgreSQL counter');
+ assert.equal(sharedTransactions,0,'Supabase-mode request guards must not access the shared PostgreSQL generation counter');
  (db as any).runTransaction=()=>{throw Error('DATABASE_OFFLINE');};
  for(const status of [200,200,429])assert.equal((await request('/outage','198.51.100.4')).status,status,'Outage fallback is bounded rather than fail-open');
 }finally{(db as any).runTransaction=transaction;await new Promise<void>(resolve=>guarded.close(()=>resolve()));}
-console.log('PASS database-independent global gate: real health/seasons/bootstrap/matches HTTP during outage, fast bounded local budget, untrusted header resistance, durable default/action guards and bounded outage fallback');
+console.log('PASS database-independent global gate: real health/seasons/bootstrap/matches HTTP during outage, fast bounded local budget, untrusted header resistance, bounded Supabase-mode local guards and bounded outage fallback');
