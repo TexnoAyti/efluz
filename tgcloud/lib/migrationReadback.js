@@ -18,7 +18,7 @@ export function validateMigrationReadback(input={}){
   const numeric=table==='matchMessages';
   if(cursor!==null&&(numeric?
     !Number.isSafeInteger(cursor)||cursor<1:
-    typeof cursor!=='string'||!cursor||cursor.length>160))
+    typeof cursor!=='string'||!/^[A-Za-z0-9_:-]{1,160}$/.test(cursor)))
     throw Error('INVALID_READBACK_CURSOR');
   return {table,limit,cursor};
 }
@@ -44,7 +44,7 @@ export async function readMigrationPage(db,input={}){
       throw Error('READBACK_ROW_CONTRACT_INVALID');
     const value=row[pk];
     if(numeric? !Number.isSafeInteger(value)||value<1:
-      typeof value!=='string'||!value)
+      typeof value!=='string'||!/^[A-Za-z0-9_:-]{1,160}$/.test(value))
       throw Error('READBACK_PRIMARY_KEY_INVALID');
     if(previous!==null&&
        (numeric? value<=previous: String(value)<=String(previous)))
@@ -55,7 +55,7 @@ export async function readMigrationPage(db,input={}){
   const page=rows.slice(0,limit);
   // Bound serialized output as well as row count. Oversized historic records
   // should be inspected offline, never returned through an unbounded RPC.
-  const payloadBytes=Buffer.byteLength(JSON.stringify(page),'utf8');
+  const payloadBytes=new TextEncoder().encode(JSON.stringify(page)).length;
   if(payloadBytes>65536)throw Error('READBACK_PAGE_TOO_LARGE');
   return {ok:true,table,columns,rows:page,nextCursor:hasMore?page.at(-1)[pk]:null,
     hasMore,source:'telegram-serverless-staging',cutoverReady:false};
