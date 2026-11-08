@@ -311,6 +311,15 @@ export function validateImportBatch(input) {
        (!row.user_id||!row.transaction_id||!row.tournament_id||
         !Number.isSafeInteger(row.created_at)||row.created_at<0))
       throw Error('INVALID_TICKET_IDEMPOTENCY_IMPORT');
+    if(table==='sealedLegacyHistory'&&
+       (row.source_space!=='production'||
+        typeof row.collection_path!=='string'||!row.collection_path||
+        typeof row.document_id!=='string'||!row.document_id||
+        row.handling!=='SEALED_ARCHIVE_ONLY'||
+        !/^[a-f0-9]{64}$/.test(String(row.id))||
+        !/^[a-f0-9]{64}$/.test(String(row.source_checksum))||
+        !Number.isSafeInteger(row.source_bytes)||row.source_bytes<0))
+      throw Error('INVALID_SEALED_LEGACY_HISTORY_IMPORT');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
