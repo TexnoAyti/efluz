@@ -296,6 +296,20 @@ export function validateImportBatch(input) {
           !Number.isSafeInteger(row.source_played)||row.source_played<0||
           !['RESOLVED','UNRESOLVED'].includes(row.reference_status)))))
       throw Error('INVALID_OPERATIONAL_HISTORY_IMPORT');
+    if(table==='teamTicketBalances'&&
+       (row.id!==row.user_id||
+        !['balance','total_granted','total_revoked','total_spent','updated_at'].every(
+         field=>Number.isSafeInteger(row[field])&&row[field]>=0)))
+      throw Error('INVALID_TEAM_TICKET_BALANCE_IMPORT');
+    if(table==='teamTicketTransactions'&&
+       (!row.user_id||!row.type||!row.actor_id||
+        !Number.isSafeInteger(row.amount)||row.amount<0||
+        !Number.isSafeInteger(row.created_at)||row.created_at<0))
+      throw Error('INVALID_TEAM_TICKET_TRANSACTION_IMPORT');
+    if(table==='ticketIdempotencyHistory'&&
+       (!row.user_id||!row.transaction_id||!row.tournament_id||
+        !Number.isSafeInteger(row.created_at)||row.created_at<0))
+      throw Error('INVALID_TICKET_IDEMPOTENCY_IMPORT');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
