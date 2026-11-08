@@ -134,3 +134,43 @@ test('ambiguous Telegram response is quarantined, not automatically retried',asy
     /DELIVERY_NOT_CLAIMED/);
  }finally{sql.close();}
 });
+
+test('forged or repeated acknowledgements cannot impersonate a completed delivery',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  await claimNotificationForWorker(db,lease(tokenA,100000));
+  await assert.rejects(finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenB,now:100200,success:true
+  }),/DELIVERY_ACK_CONFLICT/);
+  assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'LEASED');
+  await finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenA,now:100200,success:true
+  });
+  // An attacker who knows the successful timestamp and guesses another token
+  // must not receive a false success when the row is already SENT.
+  await assert.rejects(finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenB,now:100200,success:true
+  }),/DELIVERY_ACK_CONFLICT/);
+  await assert.rejects(finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenA,now:100200,success:true
+  }),/DELIVERY_ACK_CONFLICT/);
+  assert.equal((await readNotificationDeliveryAudit(db,'999')).stats.sent,1);
+ }finally{sql.close();}
+});
+test('cannot acknowledge a previously failed attempt as successful',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  await claimNotificationForWorker(db,lease(tokenA,100000));
+  await finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenA,now:100200,
+   success:false,errorCode:'API_RETRYABLE'
+  });
+  await assert.rejects(finishNotificationForWorker(db,{
+   notificationId:'n1',leaseToken:tokenA,now:100200,
+   success:false,errorCode:'API_RETRYABLE'
+  }),/DELIVERY_ACK_CONFLICT/);
+  assert.equal((await readNotificationDeliveryAudit(db,'999')).stats.pending,1);
+ }finally{sql.close();}
+});
