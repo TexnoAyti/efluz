@@ -24,7 +24,8 @@ const mapped=new Set([
  'matchday_locks','match_deadlines',
  'club_selection_ban_audit','club_selection_ban_controls',
  'custom_tournaments','custom_tournament_participants','custom_tournament_fixtures','custom_tournament_audit_logs',
- 'telegram_member_tags','telegram_member_tag_state'
+ 'telegram_member_tags','telegram_member_tag_state',
+ 'match_chat_rooms','matchday_notification_jobs','standings'
 ]);
 const counts={mapped:0,unmapped:0,review:0,rebuild:0};
 const collectionCounts={mapped:0,unmapped:0,review:0,rebuild:0};
