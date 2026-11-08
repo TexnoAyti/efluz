@@ -100,6 +100,10 @@ assert.throws(()=>normalizeEflReadResponse(adminScope,{...adminRaw,
  /SERVERLESS_ADMIN_CROSS_SEASON_DATA/);
 assert.throws(()=>normalizeEflReadResponse(adminScope,{...adminRaw,
  nextCursor:-1}),/SERVERLESS_ADMIN_CURSOR_INVALID/);
+assert.throws(()=>normalizeEflReadResponse(adminScope,{...adminRaw,
+ fixtures:[{id:'fixture-b',seasonId:'season-2027-28',
+ competitionId:'competition-a',status:'SCHEDULED',round:1}]}),
+ /SERVERLESS_ADMIN_CROSS_SEASON_DATA/);
 
 const bracket=mapEflReadRequest('/api/competitions/comp-fa-cup-2026/fixtures?seasonId=season-2026-27');
 assert.deepEqual(bracket,{operation:'competitionDetail',input:{
