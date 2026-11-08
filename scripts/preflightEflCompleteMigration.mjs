@@ -57,6 +57,7 @@ if(blockers.length===0){
    season2_retention_decisions:'retentionDecisions',
    premium_entitlements:'premiumEntitlements',
    club_admissions:'clubAdmissions',club_selection_bans:'clubSelectionBans',
+   club_memberships:'clubMembershipHistory',user_memberships:'userMembershipHistory',
    uzeflife:'uzeflifeState'
   };
   let projectionComplete=true;
