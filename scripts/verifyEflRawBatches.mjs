@@ -56,10 +56,24 @@ if(parts.size!==manifest.oversizedDocuments||
    manifest.partsBatches.reduce((a,b)=>a+b.rows,0)!==manifest.totalParts)
  throw Error('OVERSIZED_PART_COUNT_MISMATCH');
 const count=documents.size;
+// Quarantine must be exact and must never be mixed with import packets.
+if(!Number.isSafeInteger(manifest.reviewExcluded)||manifest.reviewExcluded<0||
+   typeof manifest.reviewSha256!=='string'||
+   !/^[a-f0-9]{64}$/.test(manifest.reviewSha256)||
+   manifest.reviewFile!=='private-review.jsonl')
+ throw Error('INVALID_REVIEW_QUARANTINE_MANIFEST');
+if(manifest.reviewExcluded){
+ const reviewContent=await readFile(join(folder,manifest.reviewFile),'utf8');
+ if(hash(reviewContent)!==manifest.reviewSha256||
+    reviewContent.split('\n').filter(Boolean).length!==manifest.reviewExcluded)
+  throw Error('REVIEW_QUARANTINE_CORRUPTED');
+}else if(hash('')!==manifest.reviewSha256){
+ throw Error('REVIEW_QUARANTINE_CORRUPTED');
+}
 if(!Number.isSafeInteger(manifest.sourceDocuments)||
    !Number.isSafeInteger(manifest.rebuildExcluded)||
    manifest.rebuildExcluded<0||
-   manifest.sourceDocuments!==count+manifest.rebuildExcluded)
+   manifest.sourceDocuments!==count+manifest.rebuildExcluded+manifest.reviewExcluded)
  throw Error('SOURCE_CLASSIFICATION_MISMATCH');
 const digest=createHash('sha256');
 for(const [id,value] of [...documents].sort((a,b)=>a[0].localeCompare(b[0])))
@@ -68,4 +82,4 @@ if(count!==manifest.count||count===0||digest.digest('hex')!==manifest.sourceSha2
  throw Error('SOURCE_MANIFEST_MISMATCH');
 console.log(JSON.stringify({verified:true,documents:count,oversized:parts.size,
  parts:manifest.totalParts,rebuildExcluded:manifest.rebuildExcluded,
- batches:manifest.batches.length}));
+ batches:manifest.batches.length,reviewExcluded:manifest.reviewExcluded}));
