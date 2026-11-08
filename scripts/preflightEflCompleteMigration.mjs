@@ -9,6 +9,7 @@ import {spawnSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
+import {SEALED_ROOTS} from './lib/convertEflSealedLegacyHistory.mjs';
 const [source,archive,normalizedSource,normalizedTarget]=process.argv.slice(2);
 if(!source||!archive||!normalizedSource||!normalizedTarget){
  console.error('Usage: node scripts/preflightEflCompleteMigration.mjs private-source.jsonl private-archive-dir private-normalized-source.json private-normalized-target.json');
@@ -83,6 +84,7 @@ if(blockers.length===0){
    const checks=Object.entries(operationalMapping).map(([root,table])=>[
      root,table,collections.get(root)??0
    ]);
+   checks.push(['sealed-roots','sealedLegacyHistory',SEALED_ROOTS.reduce((sum,root)=>sum+(collections.get(root)??0),0)]);
    checks.push(['leagues','leagues',(collections.get('leagues')??0)*seasons]);
    checks.push(['clubs','clubs',(collections.get('clubs')??0)*seasons]);
    projectionComplete=checks.every(([,table,expected])=>
