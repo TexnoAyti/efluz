@@ -62,6 +62,9 @@ export async function readCompetitionRoundPlan(db,telegramId,input={}){
   throw Error('ROUND_PLAN_INCONSISTENT');
  const reasons=[];
  if(nextRound===null)reasons.push('NO_EXISTING_NEXT_ROUND');
+ if(nextRound!==null&&nextRound!==current+1)reasons.push('NEXT_ROUND_GAP');
+ if(!['ACTIVE','RUNNING','IN_PROGRESS','PLAYING'].includes(String(competition.status).toUpperCase()))
+  reasons.push('COMPETITION_NOT_ACTIVE');
  if(summary.openDisputes)reasons.push('OPEN_DISPUTES');
  if(summary.unresolved)reasons.push('UNRESOLVED_PREVIOUS_FIXTURES');
  if(competition.leagueId&&!league)reasons.push('LEAGUE_NOT_FOUND');
@@ -75,6 +78,9 @@ export async function readCompetitionRoundPlan(db,telegramId,input={}){
   current:summary,
   next:{round:nextRound,existingFixtures:safeCount(upcoming?.futureFixtures,'FUTURE')},
   leagueRound:league?.currentRound??null,
+  // Unfinished previous fixtures are informational, not a manual-advance blocker.
+  // This preview does not enable any mutation endpoint or Telegram delivery.
+  canAdvanceManually:reasons.every(reason=>reason==='UNRESOLVED_PREVIOUS_FIXTURES'),
   requiresExplicitReview:reasons.length>0,
   reasons,
   canAdvanceAutomatically:false,
