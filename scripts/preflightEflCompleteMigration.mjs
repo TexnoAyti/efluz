@@ -38,7 +38,7 @@ const reviewedRoots=[...collections.keys()].filter(k=>policy.get(k)==='review').
 const blockers=[];
 if(unknownRoots.length)blockers.push('UNKNOWN_SOURCE_COLLECTIONS');
 if(reviewedRoots.length)blockers.push('REVIEW_SOURCE_COLLECTIONS');
-let archiveVerified=false,sourceTargetParity=false;
+let archiveVerified=false,sourceTargetParity=false,sourceNormalizedBound=false;
 if(blockers.length===0){
  try{await verifyArchiveBinding(source,archive);archiveVerified=true;}
  catch{blockers.push('SOURCE_ARCHIVE_MISMATCH_OR_MISSING');}
@@ -71,18 +71,26 @@ if(blockers.length===0){
      Array.isArray(projected[table])&&projected[table].length===expected);
   }catch{projectionComplete=false;}
   if(!projectionComplete)blockers.push('SOURCE_PROJECTION_COVERAGE_MISMATCH');
-  const run=projectionComplete?
+  if(projectionComplete){
+   const binding=fileURLToPath(new URL('./verifyEflNormalizedSourceBinding.mjs',import.meta.url));
+   const replay=spawnSync(process.execPath,[binding,resolve(source),resolve(archive),
+    resolve(normalizedSource)],{encoding:'utf8',maxBuffer:1024*1024,timeout:210000});
+   sourceNormalizedBound=replay.status===0;
+   if(!sourceNormalizedBound)blockers.push('SOURCE_NORMALIZED_BINDING_FAILED');
+  }
+  const run=projectionComplete&&sourceNormalizedBound?
    spawnSync(process.execPath,[verifier,resolve(normalizedSource),resolve(normalizedTarget)],{
-   encoding:'utf8',maxBuffer:1024*1024
-  }):null;
+    encoding:'utf8',maxBuffer:1024*1024,timeout:210000
+   }):null;
   sourceTargetParity=run!==null&&run.status===0&&run.stdout.includes('PARITY_OK:');
-  if(projectionComplete&&!sourceTargetParity)blockers.push('NORMALIZED_TARGET_PARITY_FAILED');
+  if(projectionComplete&&sourceNormalizedBound&&!sourceTargetParity)
+   blockers.push('NORMALIZED_TARGET_PARITY_FAILED');
  }
 }
 const result={
  offlineDataVerified:blockers.length===0&&archiveVerified&&sourceTargetParity,
  sourceDocuments:seen.size,sourceCollections:collections.size,
- counts,unknownRoots,reviewedRoots,archiveVerified,sourceTargetParity,
+ counts,unknownRoots,reviewedRoots,archiveVerified,sourceNormalizedBound,sourceTargetParity,
  blockers,telegramSdkVerified:false,productionWriteFreezeVerified:false,
  cutoverReady:false,
  note:'Full data parity is only an offline gate. Telegram-hosted SDK verification, application feature parity, a consistent final delta, and authorized rollback remain mandatory.'
