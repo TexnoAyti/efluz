@@ -9,7 +9,8 @@ Usage: pwsh -File scripts/deployEflStaging.ps1 -StagingAppId 123 -ProductionAppI
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[1-9][0-9]{0,19}$')][string]$StagingAppId,
   [Parameter(Mandatory=$true)][ValidatePattern('^[1-9][0-9]{0,19}$')][string]$ProductionAppId,
-  [switch]$TokenFromClipboard
+  [switch]$TokenFromClipboard,
+  [switch]$RealUi
 )
 $ErrorActionPreference = 'Stop'
 if ($StagingAppId -eq $ProductionAppId) { throw 'STAGING_EQUALS_PRODUCTION' }
@@ -53,8 +54,19 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'DEPENDENCY_INSTALL_FAILED' }
     node scripts/checkTgcloudModules.mjs
     if ($LASTEXITCODE -ne 0) { throw 'MODULE_CHECK_FAILED' }
-    bun run build:tgcloud
-    if ($LASTEXITCODE -ne 0) { throw 'BUILD_FAILED' }
+    if ($RealUi) {
+      # Staging-only real React UI. The build emits a preview HTML filename;
+      # Telegram hosting requires a root index.html SPA entry.
+      bun run build:tgcloud:real-ui
+      if ($LASTEXITCODE -ne 0) { throw 'REAL_UI_BUILD_FAILED' }
+      bun run verify:tgcloud:real-ui
+      if ($LASTEXITCODE -ne 0) { throw 'REAL_UI_VERIFY_FAILED' }
+      node scripts/stageEflRealUi.mjs
+      if ($LASTEXITCODE -ne 0) { throw 'REAL_UI_STAGE_FAILED' }
+    } else {
+      bun run build:tgcloud
+      if ($LASTEXITCODE -ne 0) { throw 'BUILD_FAILED' }
+    }
     node scripts/verifyTgcloudStatic.mjs
     if ($LASTEXITCODE -ne 0) { throw 'STATIC_CHECK_FAILED' }
     Write-Host 'Deploying ONLY to verified staging app...'
@@ -65,6 +77,7 @@ try {
     npx.cmd --yes --package=@tgcloud/cli tgcloud migrate --safe
     if ($LASTEXITCODE -ne 0) { throw 'STAGING_SAFE_MIGRATION_FAILED' }
     Write-Host 'STAGING_CODE_DEPLOYED. Data import and production cutover NOT performed.'
+    if ($RealUi) { Write-Host 'STAGING_REAL_EFLUZ_REACT_DEPLOYED: writes and auth parity not verified; no production cutover.' }
   } finally { Pop-Location }
 } finally {
   $token = $null
