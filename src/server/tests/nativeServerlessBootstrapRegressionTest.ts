@@ -20,6 +20,17 @@ assert.equal(session.ownedClubs.length,1);
 assert.equal(session.currentClub?.id,'club-arsenal');
 assert.equal(session.currentClub?.isCurrentUserClub,true);
 assert.equal(session.currentClubStatus,'resolved');
+const secondSeason=decodeNativeEflBootstrap({
+ ok:true,user:{id:'staging-user',telegramId:'1234'},
+ activeSeason:{id:'season-2026-27',status:'active'},
+ ownerships:[{seasonId:'season-2026-27',clubId:'club-one',leagueId:'league-a',
+   clubName:'One',clubShortName:'ONE',clubCountry:'Spain'}]
+},'season-2027-28');
+assert.deepEqual(secondSeason.ownedClubs,[]);
+assert.equal(secondSeason.currentClubStatus,'unavailable');
+assert.throws(()=>decodeNativeEflBootstrap({ok:true,user:{id:'x',telegramId:'1'}},'bad-season'),
+ /SERVERLESS_INVALID_SEASON/);
+
 assert.throws(()=>decodeNativeEflBootstrap({
  ok:true,user:{id:'x',telegramId:'3'},ownerships:[{clubId:'unverified-club'}]
 }),/SERVERLESS_OWNERSHIP_CONTRACT_MISMATCH/);
