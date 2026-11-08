@@ -17,7 +17,7 @@ const mapped=new Set([
  'users','seasons','leagues','clubs','club_occupancies',
  'competitions','competition_participants','fixtures',
  'result_submissions','disputes','notifications','audit_logs',
- 'durable_fixture_overrides','uzeflife'
+ 'durable_fixture_overrides','uzeflife','user_tickets','ticket_transactions'
 ]);
 const counts={mapped:0,unmapped:0,review:0,rebuild:0};
 const collectionCounts={mapped:0,unmapped:0,review:0,rebuild:0};
