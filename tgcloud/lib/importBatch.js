@@ -164,6 +164,26 @@ export function validateImportBatch(input) {
        (row.released_at!==null&&
          (!Number.isSafeInteger(row.released_at)||row.released_at<0))))
       throw Error('INVALID_HISTORICAL_MEMBERSHIP_IMPORT_ROW');
+    if(table==='uzeflifeAuditHistory'&&
+      (typeof row.action!=='string'||!row.action||
+       typeof row.actor!=='string'||!row.actor||
+       !Number.isSafeInteger(row.revision)||row.revision<0||
+       !Number.isSafeInteger(row.occurred_at)||row.occurred_at<0||
+       !row.details||typeof row.details!=='object'||Array.isArray(row.details)||
+       !row.source_record||typeof row.source_record!=='object'||
+       Array.isArray(row.source_record)||
+       row.source_record.action!==row.action||
+       row.source_record.actor!==row.actor||
+       row.source_record.revision!==row.revision))
+      throw Error('INVALID_UZEFLIFE_AUDIT_HISTORY_ROW');
+    if(table==='uzeflifeNoticeHistory'&&
+      (row.replay_policy!=='HISTORICAL_ONLY'||
+       typeof row.source_status!=='string'||!row.source_status||
+       !Number.isSafeInteger(row.notice_count)||row.notice_count<0||
+       !Number.isSafeInteger(row.created_at)||row.created_at<0||
+       typeof row.source_sha256!=='string'||
+       !/^[a-f0-9]{64}$/.test(row.source_sha256)))
+      throw Error('INVALID_UZEFLIFE_NOTICE_HISTORY_ROW');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
