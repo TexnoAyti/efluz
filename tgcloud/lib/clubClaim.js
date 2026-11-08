@@ -18,6 +18,11 @@ export async function claimClub(db,uid,input){
   const user=await db.get('SELECT id,telegram_id,is_banned FROM efl_users WHERE id=:user',
     {':user':uid});
   if(!user||user.is_banned)throw Error('CLUB_CLAIM_BANNED');
+  // Club-selection bans are independent from global profile bans in source.
+  // Importing those records must never silently lift an existing restriction.
+  const selectionBan=await db.get(`SELECT is_banned AS banned
+    FROM efl_club_selection_bans WHERE user_id=:user`,{':user':uid});
+  if(selectionBan?.banned)throw Error('CLUB_CLAIM_BANNED');
   const candidate=await db.get(`SELECT c.id,c.league_id AS leagueId,l.season_id AS seasonId,
     l.status AS leagueStatus,s.status AS seasonStatus
     FROM efl_clubs c JOIN efl_leagues l ON l.id=c.league_id
@@ -44,6 +49,8 @@ export async function claimClub(db,uid,input){
     JOIN efl_users u ON u.id=:user AND u.telegram_id=:telegram
     WHERE c.id=:club AND s.id=:season AND l.status='OPEN'
       AND s.status IN ('ACTIVE','UPCOMING') AND u.is_banned=0
+      AND NOT EXISTS (SELECT 1 FROM efl_club_selection_bans ban
+        WHERE ban.user_id=u.id AND ban.is_banned=1)
     ON CONFLICT DO NOTHING`,params);
   // Never assume an ignored INSERT means a successful claim; it could be
   // another owner, a closed window, or an existing club in the same league.
