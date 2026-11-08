@@ -56,10 +56,12 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
       ':value':auditValue,':now':now
     });
     const audit=await tx.get(`SELECT actor_user_id AS actorUserId,
+      action,entity_type AS entityType,entity_id AS entityId,
       new_value AS newValue FROM efl_audit_logs WHERE id=:id`,
       {':id':auditId});
     if(!audit||audit.actorUserId!==userId||
-       audit.newValue!==auditValue)
+       audit.action!=='RESULT_CONFIRMED'||audit.entityType!=='FIXTURE'||
+       audit.entityId!==fixtureId||audit.newValue!==auditValue)
       throw Error('RESULT_OUTBOX_AUDIT_CONFLICT');
 
     for(const owner of owners){
@@ -76,9 +78,11 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
         NULL,0,:now
        WHERE EXISTS(SELECT 1 FROM efl_users u WHERE u.id=:user AND u.is_banned=0)
        ON CONFLICT DO NOTHING`,params);
-      const saved=await tx.get(`SELECT user_id AS userId,type
+      const saved=await tx.get(`SELECT user_id AS userId,type,title,message
        FROM efl_notifications WHERE id=:id`,{':id':notificationId});
-      if(saved?.userId!==owner.userId||saved?.type!=='RESULT_CONFIRMED')
+      if(saved?.userId!==owner.userId||saved?.type!=='RESULT_CONFIRMED'||
+         saved.title!=='Uchrashuv tasdiqlandi'||
+         saved.message!=='Hisob: '+result.homeScore+':'+result.awayScore)
         throw Error('RESULT_OUTBOX_NOTIFICATION_CONFLICT');
       await tx.run(`INSERT INTO efl_notification_deliveries
        (id,notification_id,user_id,status,attempts,created_at)
