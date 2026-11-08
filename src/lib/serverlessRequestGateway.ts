@@ -4,7 +4,7 @@
 // Legacy session tokens and Telegram initData must never be forwarded.
 import {callEflTransport, type EflOperation} from './serverlessTransport';
 
-type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'seasons'|'leagues'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'};
+type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'seasons'|'leagues'|'leagueClubs'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'};
 function pathOf(endpoint:string):URL {
   if (!endpoint.startsWith('/api/') || endpoint.startsWith('//'))
     throw new Error('SERVERLESS_RELATIVE_API_ONLY');
@@ -20,6 +20,9 @@ export function mapEflReadRequest(endpoint:string,method='GET'):Mapping {
   if (path==='/api/health') return {operation:'health',input:{},shape:'health'};
   if (path==='/api/seasons') return {operation:'seasons',input:{},shape:'seasons'};
   if (path==='/api/leagues') return {operation:'leagues',input:{seasonId},shape:'leagues'};
+  const leagueClubsMatch=/^\/api\/leagues\/([a-zA-Z0-9_:-]{1,120})\/clubs$/.exec(path);
+  if(leagueClubsMatch && url.searchParams.has('seasonId'))
+    return {operation:'leagueClubs',input:{seasonId,leagueId:leagueClubsMatch[1]},shape:'leagueClubs'};
   if (path==='/api/competitions' && !url.searchParams.has('view'))
     return {operation:'competitions',input:{seasonId,limit:100},shape:'competitions'};
   // Domestic cup bracket reads have their own scoped endpoint. Do not use
@@ -65,6 +68,21 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
         tier:1,createdAt:typeof row.createdAt==='string'?row.createdAt:''};
     });
     return {leagues};
+  }
+  if(mapping.shape==='leagueClubs'){
+    if(!Array.isArray(item.clubs))throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
+    const clubs=item.clubs.map((value:unknown)=>{
+      if(!value||typeof value!=='object')throw new Error('SERVERLESS_CLUB_CONTRACT_MISMATCH');
+      const row=value as Record<string,unknown>;
+      if(typeof row.id!=='string'||!row.id||typeof row.name!=='string'||
+        typeof row.leagueId!=='string'||typeof row.country!=='string'||
+        typeof row.shortName!=='string')
+        throw new Error('SERVERLESS_CLUB_CONTRACT_MISMATCH');
+      return {...row,isTaken:row.isTaken===true,isCurrentUserClub:row.isCurrentUserClub===true,
+        active:true,logoUrl:typeof row.logoUrl==='string'?row.logoUrl:'',
+        createdAt:typeof row.createdAt==='string'?row.createdAt:''};
+    });
+    return {clubs};
   }
   if(mapping.shape==='competitionFixtures'){
     if(!Array.isArray(item.fixtures)||!item.competition||typeof item.competition!=='object')
