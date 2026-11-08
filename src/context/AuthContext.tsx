@@ -269,9 +269,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const session = await loadNativeEflBootstrap();
           if (!isMounted) return;
           if (!session.user) {
+            // Serverless bootstrap verified the Telegram launch, but its
+            // isolated staging database has no imported EFLUZ user yet.
+            // Never misreport this as "open the Mini App inside Telegram".
             setUser(null);
             setOwnedClubs([]);
             setCurrentClub(null);
+            setAuthError('SERVERLESS_ACCOUNT_NOT_IMPORTED');
             setAuthStatus('AUTH_ANONYMOUS');
             return;
           }
