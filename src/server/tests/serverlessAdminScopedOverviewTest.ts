@@ -28,7 +28,7 @@ const mkDb=(admin=true)=>({
    throw Error('UNEXPECTED_ALL');
  }
 });
-assert.rejects(readAdminScopedOverview(mkDb(false),'123',{seasonId:'season-2026-27'}),
+await assert.rejects(readAdminScopedOverview(mkDb(false),'123',{seasonId:'season-2026-27'}),
  /ADMIN_FORBIDDEN/);
 assert.equal(calls.filter(c=>c.kind==='all').length,0,'Unauthorized users never read admin catalogs');
 calls=[];
