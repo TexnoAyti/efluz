@@ -89,6 +89,22 @@ be replayed. Archived evidence can exceed one Serverless import packet;
   tie-break parity, official standings updates and Telegram delivery parity.
 - **No production result mutation or bot deployment has occurred.**
 
+## Private import bundle integrity — 2026-11-08
+
+- `prepareEflMigrationBundle.sh` now refuses to publish a completed
+  private bundle unless both `verifyEflRawBatches.mjs` and
+  `verifyEflNormalizedPackets.mjs` pass.
+- The new normalized verifier compares all imported rows and source hashes
+  against the distinct normalized snapshot, checks bounded packet envelopes,
+  sequential packet identifiers and filenames, and rejects missing/extra files.
+- CI [42510477363](https://github.com/TexnoAyti/efluz/actions/runs/42510477363)
+  passed packet tampering, omitted-row, missing-file and snapshot-drift
+  regressions, existing import replay tests, SDK gateway tests and both builds.
+- No private export was generated or transferred by this change. **Archive
+  integrity is not staging import or target parity.** Review-quarantined roots
+  still require explicit resolution. Import and mutation endpoint gates remain
+  disabled; production release remains BLOCKED.
+
 ## Live deployment / capacity blockers
 
 There is no verified Telegram Serverless staging app URL, 1,000 distinct
