@@ -82,7 +82,7 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
        FROM efl_notifications WHERE id=:id`,{':id':notificationId});
       if(saved?.userId!==owner.userId||saved?.type!=='RESULT_CONFIRMED'||
          saved.title!=='Uchrashuv tasdiqlandi'||
-         saved.message!=='Hisob: '+result.homeScore+':'+result.awayScore)
+         saved.message!==('Hisob: '+result.homeScore+':'+result.awayScore))
         throw Error('RESULT_OUTBOX_NOTIFICATION_CONFLICT');
       await tx.run(`INSERT INTO efl_notification_deliveries
        (id,notification_id,user_id,status,attempts,created_at)
