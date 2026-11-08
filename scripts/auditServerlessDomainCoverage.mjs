@@ -3,6 +3,7 @@
 // Does not access production or print document data. Counts are NOT a snapshot.
 // 'mapped' means a converter path exists, NOT verified data parity or live parity.
 import {readFile} from 'node:fs/promises';
+import {SEALED_ROOTS} from './lib/convertEflSealedLegacyHistory.mjs';
 const arg=process.argv.find(x=>x.startsWith('--manifest='));
 const manifest=arg?.slice('--manifest='.length)||
  new URL('../migration/source-collections-inventory.json',import.meta.url);
@@ -28,9 +29,10 @@ const mapped=new Set([
  'match_chat_rooms','matchday_notification_jobs','standings',
  'team_creation_tickets','team_ticket_transactions','ticket_transactions_idempotency'
 ]);
-const counts={mapped:0,unmapped:0,review:0,rebuild:0};
-const collectionCounts={mapped:0,unmapped:0,review:0,rebuild:0};
-const unmapped=[],review=[],seen=new Set();
+const sealedRoots=new Set(SEALED_ROOTS);
+const counts={mapped:0,sealed:0,unmapped:0,review:0,rebuild:0};
+const collectionCounts={mapped:0,sealed:0,unmapped:0,review:0,rebuild:0};
+const unmapped=[],sealed=[],review=[],seen=new Set();
 let total=0;
 for(const c of inventory.collections){
  if(!c||typeof c.collection!=='string'||!c.collection||
@@ -39,16 +41,17 @@ for(const c of inventory.collections){
   throw Error('INVALID_COVERAGE_COLLECTION');
  seen.add(c.collection);
  const group=c.handling==='preserve'
-  ?(mapped.has(c.collection)?'mapped':'unmapped'):c.handling;
+  ?(mapped.has(c.collection)?'mapped':sealedRoots.has(c.collection)?'sealed':'unmapped'):c.handling;
  counts[group]+=c.observedDocuments;
  collectionCounts[group]++;
  total+=c.observedDocuments;
  if(group==='unmapped')unmapped.push(c.collection);
+ if(group==='sealed')sealed.push(c.collection);
  if(group==='review')review.push(c.collection);
 }
 if(total!==inventory.observedTotal)throw Error('COVERAGE_INVENTORY_TOTAL_MISMATCH');
 // Even full coverage would not replace independent export, import, and parity.
-const normalizedCoverageComplete=counts.unmapped===0&&counts.review===0;
+const normalizedCoverageComplete=counts.unmapped===0&&counts.sealed===0&&counts.review===0;
 const result={
  ok:normalizedCoverageComplete,
  inventoryDate:inventory.asOf??null,
@@ -57,6 +60,7 @@ const result={
  collections:seen.size,
  counts,collectionCounts,
  unresolvedPreservedCollections:unmapped.sort(),
+ sealedArchiveOnlyCollections:sealed.sort(),
  unresolvedReviewCollections:review.sort(),
  normalizedCoverageComplete,
  cutoverReady:false,
