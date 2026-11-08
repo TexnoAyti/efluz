@@ -6,3 +6,10 @@ export const IMPORT_CONTROL = Object.freeze({
   enabled: false,
   ownerTelegramId: '',
 });
+
+// Readback is independently gated, even when an import operator has access.
+// Do not enable on the public production bot: the output contains private data.
+export const READBACK_CONTROL=Object.freeze({
+  enabled:false,
+  ownerTelegramId:'',
+});
