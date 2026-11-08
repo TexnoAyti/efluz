@@ -40,6 +40,10 @@ test('preview detects next real round but does not require all previous fixtures
   assert.equal(r.current.unresolved,1);
   assert.equal(r.next.round,4);
   assert.equal(r.next.existingFixtures,2);
+  sql.exec("INSERT INTO efl_fixtures VALUES('far','league','s1',5,'SCHEDULED','club1','club3')");
+  const withLater=await readCompetitionRoundPlan(db,'123',{competitionId:'league'});
+  assert.equal(withLater.next.round,4);
+  assert.equal(withLater.next.existingFixtures,2); // Never count round 5 in round 4.
   assert.ok(r.reasons.includes('UNRESOLVED_PREVIOUS_FIXTURES'));
   assert.equal(r.canAdvanceAutomatically,false);
   assert.equal(r.canAdvanceManually,true); // Unplayed games cannot block the next round.
