@@ -328,3 +328,20 @@ export const premiumEntitlements=table('efl_premium_entitlements',{
  revokedAt:integer('revoked_at'),revokedBy:text('revoked_by'),
  updatedAt:integer('updated_at').notNull(),updatedBy:text('updated_by').notNull(),
 },t=>({ownerIdx:index('efl_premium_entitlements_owner_idx').on(t.userId,t.seasonId)}));
+
+
+// Shadow-only snapshots. Runtime admission and ban enforcement remains gated.
+export const clubAdmissions=table('efl_club_admissions',{
+ id:text('id').primaryKey(),seasonId:text('season_id').notNull(),
+ enabled:boolean('enabled').notNull(),automatic:boolean('automatic'),
+ stage:integer('stage').notNull(),revision:text('revision').notNull(),
+ leagueOverrides:json('league_overrides').notNull(),
+ updatedBy:text('updated_by').notNull(),updatedAt:integer('updated_at').notNull()
+},t=>({seasonIdx:index('efl_club_admissions_season_idx').on(t.seasonId)}));
+
+export const clubSelectionBans=table('efl_club_selection_bans',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull().unique(),
+ telegramId:text('telegram_id').notNull(),isBanned:boolean('is_banned').notNull(),
+ reason:text('reason').notNull(),actorId:text('actor_id').notNull(),
+ revision:integer('revision').notNull(),updatedAt:integer('updated_at').notNull()
+},t=>({userIdx:uniqueIndex('efl_club_selection_bans_user_idx').on(t.userId)}));
