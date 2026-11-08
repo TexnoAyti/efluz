@@ -3,6 +3,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {installTelegramViewport} from './lib/telegramViewport';
+import {shouldRejectLegacyApiRequest} from './lib/serverlessNetworkBoundary';
 import App from './App';
 import './index.css';
 import './components/trophy-cabinet.css';
@@ -14,18 +15,17 @@ import './components/customTournaments/tournaments.css';
 import './components/teamLeaguePreview/teamCrest.css';
 import './components/competition-dialog-layout.css';
 
-// Network guard in the migration candidate: any forgotten direct HTTP /api
-// request is rejected locally, including absolute production Vercel URLs.
-// Telegram Serverless.call uses the signed Telegram SDK, not fetch.
+// Telegram SDK uses HTTPS POST /api/<operation> on the exact appN.tgcloud.ai
+// host. Preserve it while continuing to reject all legacy Vercel API access.
+// Do NOT forward credentials or allow unrelated HTTP routes as a fallback.
 const originalFetch=window.fetch.bind(window);
 window.fetch=((input:RequestInfo|URL,init?:RequestInit)=>{
   const target=typeof input==='string'?input:input instanceof URL?input.href:input.url;
-  try {
-    const parsed=new URL(target,window.location.href);
-    if (parsed.pathname==='/api'||parsed.pathname.startsWith('/api/')) {
-      return Promise.reject(new Error('SERVERLESS_LEGACY_HTTP_BLOCKED'));
-    }
-  } catch { return Promise.reject(new Error('SERVERLESS_INVALID_HTTP_URL')); }
+  const method=init?.method||(typeof Request!=='undefined'&&input instanceof Request?
+    input.method:'GET');
+  if(shouldRejectLegacyApiRequest(target,window.location.href,method)){
+    return Promise.reject(new Error('SERVERLESS_LEGACY_HTTP_BLOCKED'));
+  }
   return originalFetch(input,init);
 }) as typeof window.fetch;
 
