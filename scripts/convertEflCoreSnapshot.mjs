@@ -16,6 +16,7 @@ import {convertEflClubControls} from './lib/convertEflClubControls.mjs';
 import {convertEflMembershipHistory} from './lib/convertEflMembershipHistory.mjs';
 import {convertUzeflifeHistory} from './lib/convertUzeflifeHistory.mjs';
 import {convertEflNotificationReadState} from './lib/convertEflNotificationReadState.mjs';
+import {convertEflMatchdayHistory} from './lib/convertEflMatchdayHistory.mjs';
 import {validateImportBatch,IMPORT_TABLES} from '../tgcloud/lib/importBatch.js';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
@@ -32,7 +33,8 @@ const scope=new Set(['users','seasons','leagues','clubs','club_occupancies',
  'season2_retention_decisions','premium_entitlements',
  'club_admissions','club_selection_bans',
  'club_memberships','user_memberships',
- 'uzeflife_audit','uzeflife_notifications','notification_read_state']);
+ 'uzeflife_audit','uzeflife_notifications','notification_read_state',
+ 'matchday_locks','match_deadlines']);
 const collections=Object.fromEntries([...scope].map(x=>[x,[]]));
 for await(const line of createInterface({input:createReadStream(resolve(src),{encoding:'utf8'}),crlfDelay:Infinity})){
  if(!line.trim())continue;
@@ -74,6 +76,9 @@ result.report.uzeflifeHistory=uzeflifeHistory.report;
 const notificationRead=convertEflNotificationReadState(collections);
 Object.assign(result.rows,notificationRead.rows);
 result.report.notificationRead=notificationRead.report;
+const matchdayHistory=convertEflMatchdayHistory(collections);
+Object.assign(result.rows,matchdayHistory.rows);
+result.report.matchdayHistory=matchdayHistory.report;
 if(collections.uzeflife.length>1)throw Error('MULTIPLE_UZEFLIFE_ROOTS');
 if(collections.uzeflife.length===1){
  const projection=convertUzeflife(collections.uzeflife[0].data);
