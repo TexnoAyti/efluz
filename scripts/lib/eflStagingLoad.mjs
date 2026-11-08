@@ -25,7 +25,7 @@ export function validateLoadScenario(config){
  if(config.identityProbe!==undefined){
   const probe=config.identityProbe;
   if(!probe||typeof probe!=='object'||Array.isArray(probe)||
-     typeof probe.path!=='string'||!/^\\/[A-Za-z0-9/_-]*$/.test(probe.path)||
+     typeof probe.path!=='string'||!/^\/[A-Za-z0-9/_-]*$/.test(probe.path)||
      probe.path.startsWith('//')||
      !['id','userId','telegramId'].includes(probe.field))
    throw Error('INVALID_AUTH_IDENTITY_PROBE');
