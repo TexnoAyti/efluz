@@ -4,7 +4,7 @@
 // Legacy session tokens and Telegram initData must never be forwarded.
 import {callEflTransport, type EflOperation} from './serverlessTransport';
 
-type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'seasons'|'leagues'|'leagueClubs'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'};
+type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'seasons'|'leagues'|'leagueClubs'|'clubDetail'|'clubFixtures'|'fixtureDetail'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'};
 function pathOf(endpoint:string):URL {
   if (!endpoint.startsWith('/api/') || endpoint.startsWith('//'))
     throw new Error('SERVERLESS_RELATIVE_API_ONLY');
@@ -23,6 +23,15 @@ export function mapEflReadRequest(endpoint:string,method='GET'):Mapping {
   const leagueClubsMatch=/^\/api\/leagues\/([a-zA-Z0-9_:-]{1,120})\/clubs$/.exec(path);
   if(leagueClubsMatch && url.searchParams.has('seasonId'))
     return {operation:'leagueClubs',input:{seasonId,leagueId:leagueClubsMatch[1]},shape:'leagueClubs'};
+  const clubFixtureMatch=/^\/api\/clubs\/([A-Za-z0-9_:-]{1,120})\/fixtures$/.exec(path);
+  if(clubFixtureMatch && url.searchParams.has('seasonId'))
+    return {operation:'clubFixtures',input:{clubId:clubFixtureMatch[1],seasonId},shape:'clubFixtures'};
+  const clubDetailMatch=/^\/api\/clubs\/([A-Za-z0-9_:-]{1,120})$/.exec(path);
+  if(clubDetailMatch && url.searchParams.has('seasonId'))
+    return {operation:'clubDetail',input:{clubId:clubDetailMatch[1],seasonId},shape:'clubDetail'};
+  const fixtureDetailMatch=/^\/api\/fixtures\/([A-Za-z0-9_:-]{1,120})$/.exec(path);
+  if(fixtureDetailMatch)
+    return {operation:'fixtureDetail',input:{fixtureId:fixtureDetailMatch[1]},shape:'fixtureDetail'};
   if (path==='/api/competitions' && !url.searchParams.has('view'))
     return {operation:'competitions',input:{seasonId,limit:100},shape:'competitions'};
   // Domestic cup bracket reads have their own scoped endpoint. Do not use
@@ -83,6 +92,35 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
         createdAt:typeof row.createdAt==='string'?row.createdAt:''};
     });
     return {clubs};
+  }
+  if(mapping.shape==='clubDetail'){
+    const row=item.club;
+    if(!row||typeof row!=='object')throw Error('SERVERLESS_CLUB_CONTRACT_MISMATCH');
+    const club=row as Record<string,unknown>;
+    if(typeof club.id!=='string'||!club.id||typeof club.name!=='string'||
+       typeof club.leagueId!=='string'||typeof club.country!=='string'||
+       typeof club.shortName!=='string')
+      throw Error('SERVERLESS_CLUB_CONTRACT_MISMATCH');
+    return {club:{...club,
+      isTaken:club.isTaken===true,isCurrentUserClub:club.isCurrentUserClub===true,
+      active:true,logoUrl:typeof club.logoUrl==='string'?club.logoUrl:'',
+      createdAt:typeof club.createdAt==='string'?club.createdAt:''}};
+  }
+  if(mapping.shape==='clubFixtures'||mapping.shape==='fixtureDetail'){
+    const rows=mapping.shape==='fixtureDetail'?[item.fixture]:item.fixtures;
+    if(!Array.isArray(rows))throw Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
+    const fixtures=rows.map((fixture:unknown)=>{
+      if(!fixture||typeof fixture!=='object')throw Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
+      const row=fixture as Record<string,unknown>;
+      if(typeof row.id!=='string'||!row.id||typeof row.status!=='string'||
+         typeof row.seasonId!=='string'||typeof row.competitionId!=='string')
+        throw Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
+      if(!Number.isSafeInteger(row.round)||Number(row.round)<0)
+        throw Error('SERVERLESS_FIXTURE_ROUND_INVALID');
+      return {...row,matchday:row.round};
+    });
+    return mapping.shape==='fixtureDetail'?{fixture:fixtures[0]}:
+      {fixtures,stale:Boolean(item.stale),degraded:Boolean(item.degraded)};
   }
   if(mapping.shape==='competitionFixtures'){
     if(!Array.isArray(item.fixtures)||!item.competition||typeof item.competition!=='object')
