@@ -20,7 +20,8 @@ const mapped=new Set([
  'durable_fixture_overrides','uzeflife','user_tickets','ticket_transactions','player_trophies',
  'season2_retention_decisions','premium_entitlements',
  'club_admissions','club_selection_bans','club_memberships','user_memberships',
- 'uzeflife_audit','uzeflife_notifications','notification_read_state'
+ 'uzeflife_audit','uzeflife_notifications','notification_read_state',
+ 'matchday_locks','match_deadlines'
 ]);
 const counts={mapped:0,unmapped:0,review:0,rebuild:0};
 const collectionCounts={mapped:0,unmapped:0,review:0,rebuild:0};
