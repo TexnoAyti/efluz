@@ -9,6 +9,7 @@ import {resolve} from 'node:path';
 import {convertEflCore} from './lib/convertEflCore.mjs';
 import {convertUzeflife} from './lib/convertUzeflife.mjs';
 import {convertTeamsCatalog} from './lib/convertTeamsCatalog.mjs';
+import {convertEflTicketLedger} from './lib/convertEflTicketLedger.mjs';
 import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
@@ -20,7 +21,8 @@ try{await stat(resolve(dest));throw Error('DESTINATION_ALREADY_EXISTS');}
 catch(err){if(err.code!=='ENOENT')throw err;}
 const scope=new Set(['users','seasons','leagues','clubs','club_occupancies',
  'competitions','competition_participants','fixtures','result_submissions','disputes',
- 'notifications','audit_logs','durable_fixture_overrides','uzeflife','team_league_preview_teams']);
+ 'notifications','audit_logs','durable_fixture_overrides','uzeflife','team_league_preview_teams',
+ 'user_tickets','ticket_transactions']);
 const collections=Object.fromEntries([...scope].map(x=>[x,[]]));
 for await(const line of createInterface({input:createReadStream(resolve(src),{encoding:'utf8'}),crlfDelay:Infinity})){
  if(!line.trim())continue;
@@ -37,6 +39,9 @@ if(quarantineHistoricalOrphans){
  await verifyArchiveBinding(src,dir);
 }
 const result=convertEflCore(collections,{quarantineHistoricalOrphans});
+const ledger=convertEflTicketLedger(collections);
+Object.assign(result.rows,ledger.rows);
+result.report.tickets=ledger.report;
 if(collections.uzeflife.length>1)throw Error('MULTIPLE_UZEFLIFE_ROOTS');
 if(collections.uzeflife.length===1){
  const projection=convertUzeflife(collections.uzeflife[0].data);
