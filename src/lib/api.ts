@@ -1,4 +1,5 @@
 import { callEflTransport, type EflTransport } from './serverlessTransport';
+import { requestViaEflServerless } from './serverlessRequestGateway';
 import { isSeasonCompetitionEnabled } from './seasonParticipationPolicy';
 import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
 import type {AdminTaskPage,AdminTaskPriority,AdminTaskGroup} from '../types/adminTasks';
@@ -188,6 +189,11 @@ interface RequestOptions extends RequestInit {
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  // Telegram Serverless builds never issue legacy HTTP requests. Any unmapped
+  // operation fails closed; user and session credentials stay in the SDK.
+  if (import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') {
+    return requestViaEflServerless<T>(endpoint,options.method || 'GET');
+  }
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const cacheTtl = options.cacheTtlMs ?? (isGet ? 15000 : 0); // Default 15s cache for GETs to conserve free-tier quota
