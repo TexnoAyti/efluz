@@ -345,3 +345,24 @@ export const clubSelectionBans=table('efl_club_selection_bans',{
  reason:text('reason').notNull(),actorId:text('actor_id').notNull(),
  revision:integer('revision').notNull(),updatedAt:integer('updated_at').notNull()
 },t=>({userIdx:uniqueIndex('efl_club_selection_bans_user_idx').on(t.userId)}));
+
+
+// Historical-only membership records. An UNRESOLVED record must never
+// grant a club or cause a production occupancy mutation.
+export const clubMembershipHistory=table('efl_club_membership_history',{
+ id:text('id').primaryKey(),sourceId:text('source_id'),
+ userId:text('user_id').notNull(),clubId:text('club_id').notNull(),
+ seasonId:text('season_id').notNull(),sourceStatus:text('source_status').notNull(),
+ referenceStatus:text('reference_status').notNull(),
+ claimedAt:integer('claimed_at'),updatedAt:integer('updated_at'),
+ releasedAt:integer('released_at'),sourceRecord:json('source_record').notNull()
+},t=>({userIdx:index('efl_club_membership_history_user_idx').on(t.userId,t.seasonId)}));
+
+export const userMembershipHistory=table('efl_user_membership_history',{
+ id:text('id').primaryKey(),sourceId:text('source_id'),
+ userId:text('user_id').notNull(),clubId:text('club_id').notNull(),
+ seasonId:text('season_id').notNull(),sourceStatus:text('source_status').notNull(),
+ referenceStatus:text('reference_status').notNull(),
+ claimedAt:integer('claimed_at'),updatedAt:integer('updated_at'),
+ releasedAt:integer('released_at'),sourceRecord:json('source_record').notNull()
+},t=>({userIdx:index('efl_user_membership_history_user_idx').on(t.userId,t.seasonId)}));
