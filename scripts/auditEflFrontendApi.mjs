@@ -3,8 +3,9 @@
 // No credentials, no network requests, no deployments and no production writes.
 import { readdir, readFile } from 'node:fs/promises';
 import { relative, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root=resolve(new URL('../src/',import.meta.url).pathname);
+const root=resolve(fileURLToPath(new URL('../src/',import.meta.url)));
 const files=[];
 async function walk(dir){
   for(const item of await readdir(dir,{withFileTypes:true})){
