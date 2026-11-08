@@ -28,7 +28,7 @@
     "build:tgcloud": "node scripts/build-tgcloud.mjs",
     "build:tgcloud:real-ui": "node scripts/buildEflServerlessUi.mjs",
     "verify:tgcloud:real-ui": "node scripts/verifyEflServerlessUi.mjs",
-    "test:tgcloud:gateway": "node --import tsx src/server/tests/serverlessRequestGatewayRegressionTest.ts && node --import tsx src/server/tests/nativeServerlessBootstrapRegressionTest.ts",
+    "test:tgcloud:gateway": "node --import tsx src/server/tests/serverlessRequestGatewayRegressionTest.ts && node --import tsx src/server/tests/nativeServerlessBootstrapRegressionTest.ts && node --import tsx src/server/tests/serverlessAdminScopedOverviewTest.ts",
     "build:assets": "node --import tsx src/server/buildAssets.ts",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
