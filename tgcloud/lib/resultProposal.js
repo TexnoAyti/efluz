@@ -64,10 +64,33 @@ export async function proposeFixtureResult(db,uid,input){
       AND u.is_banned=0
       AND (o.club_id=f.home_club_id OR o.club_id=f.away_club_id)
       AND f.home_club_id IS NOT NULL AND f.away_club_id IS NOT NULL
+      AND f.home_club_id<>f.away_club_id
     ON CONFLICT DO NOTHING`,params);
+  // An ignored INSERT may leave behind an earlier matching submission.
+  // Recheck live eligibility before reporting success, even on exact replay.
   const record=await db.get(`SELECT id,fixture_id,submitted_by_user_id,club_id,
     home_score,away_score FROM efl_result_submissions WHERE id=:id
-      AND submitted_by_user_id=:user`,{':id':submissionId,':user':uid});
+      AND submitted_by_user_id=:user
+      AND EXISTS(SELECT 1 FROM efl_fixtures f
+       JOIN efl_competitions c ON c.id=f.competition_id
+        AND c.season_id=f.season_id
+       JOIN efl_users u ON u.id=:user AND u.telegram_id=:telegram
+        AND u.is_banned=0
+       JOIN efl_club_occupancies o ON o.user_id=u.id
+        AND o.telegram_id=u.telegram_id AND o.season_id=f.season_id
+        AND o.club_id=:club AND o.status='ACTIVE'
+       WHERE f.id=efl_result_submissions.fixture_id
+        AND f.id=:fixture AND f.status='SCHEDULED'
+        AND f.home_club_id IS NOT NULL AND f.away_club_id IS NOT NULL
+        AND f.home_club_id<>f.away_club_id
+        AND (o.club_id=f.home_club_id OR o.club_id=f.away_club_id)
+        AND ((c.is_matchday_open=1 AND f.round=c.current_matchday)
+         OR EXISTS(SELECT 1 FROM efl_fixture_score_windows w
+          WHERE w.fixture_id=f.id AND w.season_id=f.season_id
+           AND w.competition_id=f.competition_id AND w.is_open=1
+           AND f.round<c.current_matchday))))`,{
+      ':id':submissionId,':user':uid,':telegram':actor.telegram_id,
+      ':club':occupancy.club_id,':fixture':proposal.fixtureId});
   if(!record){
     // If a concurrent lock/release made the insert ineligible it must fail.
     throw Error('PROPOSAL_CONFLICT_OR_LOCKED');
