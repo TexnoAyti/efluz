@@ -20,6 +20,7 @@ import {convertEflMatchdayHistory} from './lib/convertEflMatchdayHistory.mjs';
 import {convertEflBanHistory} from './lib/convertEflBanHistory.mjs';
 import {convertEflCustomTournamentHistory} from './lib/convertEflCustomTournamentHistory.mjs';
 import {convertEflTelegramTagsHistory} from './lib/convertEflTelegramTagsHistory.mjs';
+import {convertEflOperationalHistory} from './lib/convertEflOperationalHistory.mjs';
 import {validateImportBatch,IMPORT_TABLES} from '../tgcloud/lib/importBatch.js';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
@@ -41,7 +42,8 @@ const scope=new Set(['users','seasons','leagues','clubs','club_occupancies',
  'club_selection_ban_audit','club_selection_ban_controls',
  'custom_tournaments','custom_tournament_participants',
  'custom_tournament_fixtures','custom_tournament_audit_logs',
- 'telegram_member_tags','telegram_member_tag_state']);
+ 'telegram_member_tags','telegram_member_tag_state',
+ 'match_chat_rooms','matchday_notification_jobs','standings']);
 const collections=Object.fromEntries([...scope].map(x=>[x,[]]));
 for await(const line of createInterface({input:createReadStream(resolve(src),{encoding:'utf8'}),crlfDelay:Infinity})){
  if(!line.trim())continue;
@@ -95,6 +97,9 @@ result.report.customTournamentHistory=customHistory.report;
 const tagHistory=convertEflTelegramTagsHistory(collections);
 Object.assign(result.rows,tagHistory.rows);
 result.report.tagHistory=tagHistory.report;
+const operationalHistory=convertEflOperationalHistory(collections);
+Object.assign(result.rows,operationalHistory.rows);
+result.report.operationalHistory=operationalHistory.report;
 if(collections.uzeflife.length>1)throw Error('MULTIPLE_UZEFLIFE_ROOTS');
 if(collections.uzeflife.length===1){
  const projection=convertUzeflife(collections.uzeflife[0].data);
