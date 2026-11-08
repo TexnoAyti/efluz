@@ -66,7 +66,7 @@ test('rejects malformed or cross-schema target rows',async()=>{
  await assert.rejects(readMigrationPage(disorder,{table:'users'}),/READBACK_ORDER_INVALID/);
  const extra=source([{...user('a','1'),server_secret:'not allowed'}]);
  await assert.rejects(readMigrationPage(extra,{table:'users'}),/READBACK_ROW_CONTRACT_INVALID/);
- const tooMany=source(Array.from({length:4},(_,i)=>user(String.fromCharCode(97+i),''+i)));
+ const tooMany={async all(){return Array.from({length:4},(_,i)=>user(String.fromCharCode(97+i),''+i));}};
  await assert.rejects(readMigrationPage(tooMany,{table:'users',limit:2}),/READBACK_UNBOUNDED_RESULT/);
 });
 test('oversized target payload fails instead of unbounded disclosure',async()=>{
