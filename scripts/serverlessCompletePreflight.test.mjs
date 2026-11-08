@@ -21,7 +21,7 @@ async function withFiles(fn){
   await writeFile(normalizedSource,JSON.stringify(empty));
   await writeFile(normalizedTarget,JSON.stringify(empty));
   const run=()=>spawnSync(process.execPath,[preflight,source,archive,normalizedSource,normalizedTarget],{encoding:'utf8'});
-  return await fn({source,archive,normalizedTarget,run,empty});
+  return await fn({source,archive,normalizedSource,normalizedTarget,run,empty});
  }finally{await rm(dir,{recursive:true,force:true});}
 }
 test('offline preflight verifies preserved unnormalized source with exact archive and target parity',async()=>{
@@ -55,17 +55,35 @@ test('preflight blocks unknown and review collections before any target verifica
  }
 });
 test('preflight refuses absent archive or mismatching target rows',async()=>{
- await withFiles(async({source,archive,run,normalizedTarget,empty})=>{
+ await withFiles(async({source,archive,run,normalizedSource,normalizedTarget,empty})=>{
   await writeFile(source,JSON.stringify(data('users','user-1'))+'\n');
   let x=run();assert.notEqual(x.status,0);
   assert.ok(JSON.parse(x.stdout).blockers.includes('SOURCE_ARCHIVE_MISMATCH_OR_MISSING'));
   x=spawnSync(process.execPath,[builder,source,archive],{encoding:'utf8'});
   assert.equal(x.status,0,x.stderr);
+  const verifiedUser={id:'x',telegram_id:'1',username:null,first_name:'',
+   last_name:'',is_admin:false,is_banned:false,created_at:1,updated_at:1};
+  await writeFile(normalizedSource,JSON.stringify({...empty,users:[verifiedUser]}));
   await writeFile(normalizedTarget,JSON.stringify({...empty,users:[{
    id:'x',telegram_id:'1',username:null,first_name:'',
    last_name:'',is_admin:false,is_banned:false,created_at:1,updated_at:1
   }]}));
   x=run();assert.notEqual(x.status,0);
   assert.ok(JSON.parse(x.stdout).blockers.includes('NORMALIZED_TARGET_PARITY_FAILED'));
+ });
+});
+
+test('full archive and matching empty targets cannot hide missing normalized user projections',async()=>{
+ await withFiles(async({source,archive,run})=>{
+  await writeFile(source,JSON.stringify(data('users','must-not-disappear'))+'\n');
+  const x=spawnSync(process.execPath,[builder,source,archive],{encoding:'utf8'});
+  assert.equal(x.status,0,x.stderr);
+  const result=run();
+  assert.notEqual(result.status,0);
+  const report=JSON.parse(result.stdout);
+  assert.equal(report.archiveVerified,true);
+  assert.equal(report.sourceTargetParity,false);
+  assert.ok(report.blockers.includes('SOURCE_PROJECTION_COVERAGE_MISMATCH'));
+  assert.doesNotMatch(result.stdout,/must-not-disappear/);
  });
 });
