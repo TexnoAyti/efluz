@@ -8,7 +8,7 @@ assert.deepEqual(mapEflReadRequest('/api/competitions?seasonId=season-2026-27'),
 assert.deepEqual(mapEflReadRequest('/api/me/matches?seasonId=season-2026-27'),{
  operation:'myFixtures',input:{seasonId:'season-2026-27',limit:100},shape:'fixtures'
 });
-assert.equal(normalizeEflReadResponse(mapEflReadRequest('/api/competitions'),{ok:true,competitions:[]}).competitions.length,0);
+assert.deepEqual((normalizeEflReadResponse(mapEflReadRequest('/api/competitions'),{ok:true,competitions:[]}) as {competitions:unknown[]}).competitions,[]);
 for(const [endpoint,method,code] of [
  ['/api/admin/fixtures/x/result','POST','SERVERLESS_WRITE_NOT_MIGRATED'],
  ['/api/auth/telegram','POST','SERVERLESS_WRITE_NOT_MIGRATED'],
