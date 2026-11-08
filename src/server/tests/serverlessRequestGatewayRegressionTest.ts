@@ -9,6 +9,25 @@ assert.deepEqual(mapEflReadRequest('/api/me/matches?seasonId=season-2026-27'),{
  operation:'myFixtures',input:{seasonId:'season-2026-27',limit:100},shape:'fixtures'
 });
 assert.deepEqual((normalizeEflReadResponse(mapEflReadRequest('/api/competitions'),{ok:true,competitions:[]}) as {competitions:unknown[]}).competitions,[]);
+assert.deepEqual(mapEflReadRequest('/api/seasons'),{
+ operation:'seasons',input:{},shape:'seasons'
+});
+const validSeasons=normalizeEflReadResponse(mapEflReadRequest('/api/seasons'),{
+ ok:true,seasons:[{id:'season-2026-27',name:'2026/27',status:'active',startDate:'',createdAt:''}]
+}) as {seasons:Array<{id:string}>};
+assert.equal(validSeasons.seasons[0].id,'season-2026-27');
+assert.throws(()=>normalizeEflReadResponse(mapEflReadRequest('/api/seasons'),{
+ ok:true,seasons:[{id:'invalid',name:'Other',status:'active'}]
+}),/SERVERLESS_SEASON_CONTRACT_MISMATCH/);
+assert.deepEqual(mapEflReadRequest('/api/leagues?seasonId=season-2026-27'),{
+ operation:'leagues',input:{seasonId:'season-2026-27'},shape:'leagues'
+});
+const leagues=normalizeEflReadResponse(mapEflReadRequest('/api/leagues'),{
+ ok:true,leagues:[{id:'league-a',name:'La Liga',country:'Spain',logoUrl:'',capacity:20}]
+}) as {leagues:Array<{totalClubs:number;tier:number}>};
+assert.equal(leagues.leagues[0].totalClubs,20);
+assert.equal(leagues.leagues[0].tier,1);
+
 const bracket=mapEflReadRequest('/api/competitions/comp-fa-cup-2026/fixtures?seasonId=season-2026-27');
 assert.deepEqual(bracket,{operation:'competitionDetail',input:{
   competitionId:'comp-fa-cup-2026',seasonId:'season-2026-27',limit:100
