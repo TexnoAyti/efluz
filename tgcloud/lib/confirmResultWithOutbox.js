@@ -80,10 +80,12 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
        ON CONFLICT DO NOTHING`,params);
       const saved=await tx.get(`SELECT user_id AS userId,type,title,message
        FROM efl_notifications WHERE id=:id`,{':id':notificationId});
-      if(saved?.userId!==owner.userId||saved?.type!=='RESULT_CONFIRMED'||
-         saved.title!=='Uchrashuv tasdiqlandi'||
-         saved.message!==('Hisob: '+result.homeScore+':'+result.awayScore))
+      if(saved?.userId!==owner.userId||saved?.type!=='RESULT_CONFIRMED')
         throw Error('RESULT_OUTBOX_NOTIFICATION_CONFLICT');
+      if(saved.title!=='Uchrashuv tasdiqlandi')
+        throw Error('RESULT_OUTBOX_NOTIFICATION_TITLE_CONFLICT');
+      if(saved.message!==('Hisob: '+result.homeScore+':'+result.awayScore))
+        throw Error('RESULT_OUTBOX_NOTIFICATION_BODY_CONFLICT');
       await tx.run(`INSERT INTO efl_notification_deliveries
        (id,notification_id,user_id,status,attempts,created_at)
        SELECT n.id,n.id,n.user_id,'PENDING',0,:now
