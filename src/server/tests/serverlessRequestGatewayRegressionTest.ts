@@ -44,6 +44,33 @@ assert.throws(()=>normalizeEflReadResponse(leagueClubsRequest,{
  ok:true,clubs:[{id:'club-a',name:'Example',leagueId:'league-la-liga'}]
 }),/SERVERLESS_CLUB_CONTRACT_MISMATCH/);
 
+const clubDetailRequest=mapEflReadRequest('/api/clubs/club-a?seasonId=season-2026-27');
+assert.deepEqual(clubDetailRequest,{operation:'clubDetail',
+ input:{clubId:'club-a',seasonId:'season-2026-27'},shape:'clubDetail'});
+const clubDetails=normalizeEflReadResponse(clubDetailRequest,{ok:true,
+ club:{id:'club-a',name:'Club A',shortName:'A',country:'Spain',leagueId:'league-a',isTaken:1}
+}) as {club:{id:string;isTaken:boolean}};
+assert.equal(clubDetails.club.id,'club-a');
+assert.equal(clubDetails.club.isTaken,false);
+const clubFixturesRequest=mapEflReadRequest('/api/clubs/club-a/fixtures?seasonId=season-2026-27');
+assert.deepEqual(clubFixturesRequest,{operation:'clubFixtures',
+ input:{clubId:'club-a',seasonId:'season-2026-27'},shape:'clubFixtures'});
+const readFixture={id:'fixture-one',seasonId:'season-2026-27',
+ competitionId:'cup-1',status:'SCHEDULED',round:2};
+const clubFixtures=normalizeEflReadResponse(clubFixturesRequest,
+ {ok:true,fixtures:[readFixture]}) as {fixtures:Array<{matchday:number}>};
+assert.equal(clubFixtures.fixtures[0].matchday,2);
+const fixtureDetailsRequest=mapEflReadRequest('/api/fixtures/fixture-one');
+assert.deepEqual(fixtureDetailsRequest,{operation:'fixtureDetail',
+ input:{fixtureId:'fixture-one'},shape:'fixtureDetail'});
+const fixtureDetails=normalizeEflReadResponse(fixtureDetailsRequest,
+ {ok:true,fixture:readFixture}) as {fixture:{matchday:number}};
+assert.equal(fixtureDetails.fixture.matchday,2);
+assert.throws(()=>mapEflReadRequest('/api/clubs/club-a'),/SERVERLESS_ROUTE_NOT_MIGRATED/);
+assert.throws(()=>normalizeEflReadResponse(fixtureDetailsRequest,
+ {ok:true,fixture:{id:'fixture-one',status:'SCHEDULED',round:1}}),
+ /SERVERLESS_FIXTURE_CONTRACT_MISMATCH/);
+
 const bracket=mapEflReadRequest('/api/competitions/comp-fa-cup-2026/fixtures?seasonId=season-2026-27');
 assert.deepEqual(bracket,{operation:'competitionDetail',input:{
   competitionId:'comp-fa-cup-2026',seasonId:'season-2026-27',limit:100
