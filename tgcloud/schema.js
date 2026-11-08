@@ -455,3 +455,16 @@ export const customTournamentAuditHistory=table('efl_custom_tournament_audit_his
  sourceSha256:text('source_sha256').notNull(),
  replayPolicy:text('replay_policy').notNull()
 },t=>({tournamentIdx:index('efl_custom_audit_tournament_idx').on(t.tournamentId)}));
+
+
+// Group tag history. Telegram group tags are not re-applied on import.
+export const telegramTagHistory=table('efl_telegram_tag_history',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ seasonId:text('season_id').notNull(),telegramId:text('telegram_id').notNull(),
+ appliedTag:text('applied_tag').notNull(),sourceManaged:boolean('source_managed').notNull(),
+ sourceRecord:json('source_record').notNull(),replayPolicy:text('replay_policy').notNull()
+},t=>({userIdx:index('efl_telegram_tag_user_idx').on(t.userId,t.seasonId)}));
+export const telegramTagStateHistory=table('efl_telegram_tag_state_history',{
+ id:text('id').primaryKey(),sourceValue:json('source_value').notNull(),
+ sourceExpiresAt:integer('source_expires_at'),replayPolicy:text('replay_policy').notNull()
+});
