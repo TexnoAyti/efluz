@@ -65,7 +65,7 @@ test('preflight refuses absent archive or mismatching target rows',async()=>{
    last_name:'',is_admin:false,is_banned:false,created_at:1,updated_at:1};
   await writeFile(normalizedSource,JSON.stringify({...empty,users:[verifiedUser]}));
   await writeFile(normalizedTarget,JSON.stringify({...empty,users:[{
-   id:'x',telegram_id:'1',username:null,first_name:'',
+   id:'x',telegram_id:'2',username:null,first_name:'',
    last_name:'',is_admin:false,is_banned:false,created_at:1,updated_at:1
   }]}));
   x=run();assert.notEqual(x.status,0);
