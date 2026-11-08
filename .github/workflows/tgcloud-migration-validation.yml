@@ -34,6 +34,9 @@ jobs:
       - name: Validate offline import replay, late conflict rejection and packet bounds
         run: |
           node --test scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportBoundaries.test.mjs
+      - name: Validate normalized packet source binding and raw archive tamper guards
+        run: |
+          node --test scripts/serverlessNormalizedPacketVerify.test.mjs scripts/serverlessRawBatchVerify.test.mjs
       - name: Validate isolated Serverless staging smoke build
         run: |
           bun run build:tgcloud
