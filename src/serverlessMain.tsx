@@ -14,6 +14,21 @@ import './components/customTournaments/tournaments.css';
 import './components/teamLeaguePreview/teamCrest.css';
 import './components/competition-dialog-layout.css';
 
+// Network guard in the migration candidate: any forgotten direct HTTP /api
+// request is rejected locally, including absolute production Vercel URLs.
+// Telegram Serverless.call uses the signed Telegram SDK, not fetch.
+const originalFetch=window.fetch.bind(window);
+window.fetch=((input:RequestInfo|URL,init?:RequestInit)=>{
+  const target=typeof input==='string'?input:input instanceof URL?input.href:input.url;
+  try {
+    const parsed=new URL(target,window.location.href);
+    if (parsed.pathname==='/api'||parsed.pathname.startsWith('/api/')) {
+      return Promise.reject(new Error('SERVERLESS_LEGACY_HTTP_BLOCKED'));
+    }
+  } catch { return Promise.reject(new Error('SERVERLESS_INVALID_HTTP_URL')); }
+  return originalFetch(input,init);
+}) as typeof window.fetch;
+
 installTelegramViewport();
 createRoot(document.getElementById('root')!).render(
   <StrictMode><App/></StrictMode>
