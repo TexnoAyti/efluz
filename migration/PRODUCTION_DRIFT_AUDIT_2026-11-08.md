@@ -38,4 +38,10 @@ Observed per-root count changes:
 4. Verify runtime parity and the 1,000 distinct authenticated-user staging acceptance gate; keep production webhooks and current Vercel/Supabase traffic unchanged.
 5. Do not label Task 1 complete or switch production based on this live count observation.
 
+## Additional read-only observation, 2026-11-08
+
+A subsequent live `SELECT COUNT(*)` from `efl_runtime.documents` filtered by `space='production'` returned **26,849 documents** across **71 nonempty root collections**. This is **51 more documents** than the earlier 26,798 observation, without evidence that individual records are consistent at one moment.
+
+This later observation **does not supersede the inventory policy or establish export completeness**. Never assume a fixed total during import while production remains active. A single-transaction snapshot and source/target normalized hash comparison remain mandatory.
+
 No production database writes, deployment, webhook changes or secret extraction were performed by this audit.
