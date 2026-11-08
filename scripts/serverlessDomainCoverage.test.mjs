@@ -24,7 +24,7 @@ test('unmapped preserved and unresolved review roots prevent normalizing all pro
   const res=run(file);
   assert.notEqual(res.status,0);
   const report=JSON.parse(res.stdout);
-  assert.deepEqual(report.counts,{mapped:3,unmapped:4,review:8,rebuild:10});
+  assert.deepEqual(report.counts,{mapped:3,sealed:0,unmapped:4,review:8,rebuild:10});
   assert.deepEqual(report.unresolvedPreservedCollections,['synthetic_future_preserved_domain']);
   assert.deepEqual(report.unresolvedReviewCollections,['telegram_ai_state']);
   assert.equal(report.cutoverReady,false);
@@ -53,4 +53,18 @@ test('duplicate collection, unknown handling and count drift fail closed',async(
   },rows.length===1&&rows[0].handling==='preserve'?2:
    rows.reduce((s,r)=>s+r.observedDocuments,0));
  }
+});
+
+test('sealed archive-only root is not silently treated as operational migration completeness',async()=>{
+ await withInventory([row('users','preserve',3),
+  row('uzeflife_evidence','preserve',1)],async file=>{
+  const res=run(file);
+  assert.notEqual(res.status,0);
+  const report=JSON.parse(res.stdout);
+  assert.equal(report.counts.sealed,1);
+  assert.equal(report.counts.unmapped,0);
+  assert.deepEqual(report.sealedArchiveOnlyCollections,['uzeflife_evidence']);
+  assert.equal(report.normalizedCoverageComplete,false);
+  assert.equal(report.cutoverReady,false);
+ });
 });
