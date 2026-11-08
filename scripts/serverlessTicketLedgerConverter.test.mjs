@@ -51,3 +51,15 @@ test('ticket projection permits empty history but never fabricates balance for a
  assert.deepEqual(result.rows,{ticketBalances:[],ticketTransactions:[]});
  assert.equal(result.report.cutoverReady,false);
 });
+
+test('ticket importer refuses negative balances or unsupported transaction actions',()=>{
+ const valid=convertEflTicketLedger(fixture()).rows;
+ assert.throws(()=>validateImportBatch({
+  table:'ticketBalances',batchId:'ticketBalances:00000000',
+  rows:[{...valid.ticketBalances[0],balance:-1}]
+ }),/INVALID_TICKET_BALANCE_ROW/);
+ assert.throws(()=>validateImportBatch({
+  table:'ticketTransactions',batchId:'ticketTransactions:00000000',
+  rows:[{...valid.ticketTransactions[0],type:'FREE_ADMIN_OVERRIDE'}]
+ }),/INVALID_TICKET_TRANSACTION_ROW/);
+});
