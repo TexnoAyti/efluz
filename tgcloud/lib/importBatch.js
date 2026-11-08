@@ -124,6 +124,44 @@ export function validateImportBatch(input) {
        (row.payment_charge_id!==null&&typeof row.payment_charge_id!=='string')||
        (row.revoked_by!==null&&typeof row.revoked_by!=='string')))
       throw Error('INVALID_PREMIUM_IMPORT_ROW');
+    if(table==='clubAdmissions'&&
+      (typeof row.season_id!=='string'||!row.season_id||
+       typeof row.enabled!=='boolean'||
+       (row.automatic!==null&&typeof row.automatic!=='boolean')||
+       !Number.isSafeInteger(row.stage)||row.stage<0||
+       typeof row.revision!=='string'||!row.revision||
+       !row.league_overrides||typeof row.league_overrides!=='object'||
+       Array.isArray(row.league_overrides)||
+       typeof row.updated_by!=='string'||
+       !Number.isSafeInteger(row.updated_at)||row.updated_at<0))
+      throw Error('INVALID_CLUB_ADMISSION_IMPORT_ROW');
+    if(table==='clubSelectionBans'&&
+      (row.id!==row.user_id||
+       typeof row.telegram_id!=='string'||!row.telegram_id||
+       typeof row.is_banned!=='boolean'||
+       typeof row.reason!=='string'||typeof row.actor_id!=='string'||
+       !Number.isSafeInteger(row.revision)||row.revision<0||
+       !Number.isSafeInteger(row.updated_at)||row.updated_at<0))
+      throw Error('INVALID_CLUB_BAN_IMPORT_ROW');
+    if((table==='clubMembershipHistory'||table==='userMembershipHistory')&&
+      (typeof row.user_id!=='string'||!row.user_id||
+       typeof row.club_id!=='string'||!row.club_id||
+       typeof row.season_id!=='string'||!row.season_id||
+       !['active','released'].includes(row.source_status)||
+       !['RESOLVED','UNRESOLVED'].includes(row.reference_status)||
+       !row.source_record||typeof row.source_record!=='object'||
+       Array.isArray(row.source_record)||
+       row.user_id!==row.source_record.userId||
+       row.season_id!==row.source_record.seasonId||
+       row.source_status!==row.source_record.status||
+       (row.source_id!==null&&typeof row.source_id!=='string')||
+       (row.claimed_at!==null&&
+         (!Number.isSafeInteger(row.claimed_at)||row.claimed_at<0))||
+       (row.updated_at!==null&&
+         (!Number.isSafeInteger(row.updated_at)||row.updated_at<0))||
+       (row.released_at!==null&&
+         (!Number.isSafeInteger(row.released_at)||row.released_at<0))))
+      throw Error('INVALID_HISTORICAL_MEMBERSHIP_IMPORT_ROW');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
