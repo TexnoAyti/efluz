@@ -78,6 +78,25 @@ export function validateImportBatch(input) {
       if (!['settings','format_config','data','encoded','old_value','new_value'].includes(key) &&
         (typeof value === 'object' || Array.isArray(value))) throw new Error('INVALID_VALUE');
     }
+    if(table==='ticketBalances' &&
+       (!Number.isSafeInteger(row.balance)||row.balance<0||
+        !Number.isSafeInteger(row.total_granted)||row.total_granted<0||
+        !Number.isSafeInteger(row.total_spent)||row.total_spent<0||
+        !Number.isSafeInteger(row.total_refunded)||row.total_refunded<0||
+        typeof row.user_id!=='string'||!row.user_id||
+        typeof row.telegram_id!=='string'||!row.telegram_id||
+        !Number.isSafeInteger(row.updated_at)||row.updated_at<0||
+        (row.free_ticket_granted_at!==null&&
+          (!Number.isSafeInteger(row.free_ticket_granted_at)||
+           row.free_ticket_granted_at<0))))
+      throw new Error('INVALID_TICKET_BALANCE_ROW');
+    if(table==='ticketTransactions' &&
+       (!Number.isSafeInteger(row.amount)||row.amount<0||
+        !['GRANT','SPEND','REFUND'].includes(row.type)||
+        typeof row.user_id!=='string'||!row.user_id||
+        typeof row.idempotency_key!=='string'||!row.idempotency_key||
+        !Number.isSafeInteger(row.created_at)||row.created_at<0))
+      throw new Error('INVALID_TICKET_TRANSACTION_ROW');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
