@@ -47,7 +47,8 @@ export async function readCompetitionRoundPlan(db,telegramId,input={}){
  const nextFixtures=upcoming?.nextRound===null||upcoming?.nextRound===undefined
   ?0:await db.get(`SELECT COUNT(*) AS total
     FROM efl_fixtures WHERE competition_id=:competition AND season_id=:season
-     AND round=:next`,{...params,':next':upcoming.nextRound});
+     AND round=:next`,{':competition':competitionId,
+      ':season':competition.seasonId,':next':upcoming.nextRound});
  const nextRound=upcoming?.nextRound??null;
  if(nextRound!==null&&(!Number.isSafeInteger(nextRound)||nextRound<=current))
   throw Error('INVALID_ROUND_PLAN_NEXT');
