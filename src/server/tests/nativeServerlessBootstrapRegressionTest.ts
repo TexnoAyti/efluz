@@ -9,14 +9,22 @@ assert.equal(guest.user,null);
 const session=decodeNativeEflBootstrap({
  ok:true,user:{id:'staging-user',telegramId:'1234',username:'reader',isAdmin:false},
  activeSeason:{id:'season-2026-27',name:'EFL 1-mavsum',status:'active'},
- ownerships:[{clubId:'unverified-club',ownerUserId:'staging-user'}],
+ ownerships:[{seasonId:'season-2026-27',clubId:'club-arsenal',
+ leagueId:'league-epl',clubName:'Arsenal',clubShortName:'ARS',clubCountry:'England',
+ clubLogoUrl:'https://example.org/arsenal.png',clubCreatedAt:1790000000}],
 });
 assert.equal(session.user?.telegramId,'1234');
 assert.equal(session.user?.isAdmin,false);
 assert.equal(session.season?.id,'season-2026-27');
-assert.deepEqual(session.ownedClubs,[]);
-assert.equal(session.currentClub,null);
-assert.equal(session.currentClubStatus,'unavailable');
+assert.equal(session.ownedClubs.length,1);
+assert.equal(session.currentClub?.id,'club-arsenal');
+assert.equal(session.currentClub?.isCurrentUserClub,true);
+assert.equal(session.currentClubStatus,'resolved');
+assert.throws(()=>decodeNativeEflBootstrap({
+ ok:true,user:{id:'x',telegramId:'3'},ownerships:[{clubId:'unverified-club'}]
+}),/SERVERLESS_OWNERSHIP_CONTRACT_MISMATCH/);
+const missing=decodeNativeEflBootstrap({ok:true,user:{id:'other',telegramId:'5'},ownerships:[]});
+assert.equal(missing.currentClubStatus,'unavailable');
 assert.equal(decodeNativeEflBootstrap({ok:true,user:{id:'admin',telegramId:123,isAdmin:true}}).user?.isAdmin,true);
 assert.equal(decodeNativeEflBootstrap({ok:true,user:{id:'x',telegramId:'3'},activeSeason:{id:'invalid'}}).season,null);
 console.log('PASS_NATIVE_SERVERLESS_BOOTSTRAP: signed backend identity shape and unverified ownership fail closed');
