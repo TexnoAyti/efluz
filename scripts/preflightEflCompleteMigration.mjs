@@ -62,6 +62,10 @@ if(blockers.length===0){
    notification_read_state:'notificationReadState',
    matchday_locks:'matchdayLockHistory',match_deadlines:'matchDeadlineHistory',
    club_selection_ban_audit:'banAuditHistory',club_selection_ban_controls:'banControlHistory',
+   custom_tournaments:'customTournamentHistory',
+   custom_tournament_participants:'customTournamentParticipantHistory',
+   custom_tournament_fixtures:'customTournamentFixtureHistory',
+   custom_tournament_audit_logs:'customTournamentAuditHistory',
    uzeflife:'uzeflifeState'
   };
   let projectionComplete=true;
