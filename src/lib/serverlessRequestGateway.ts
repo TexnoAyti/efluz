@@ -130,9 +130,14 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
         throw Error('SERVERLESS_ADMIN_CROSS_SEASON_DATA');
       return row;
     });
+    const fixtures=(item.fixtures as unknown[]).map(normalizeNativeFixture);
+    for(const fixture of fixtures){
+      if(fixture.seasonId!==mapping.input.seasonId)
+        throw Error('SERVERLESS_ADMIN_CROSS_SEASON_DATA');
+    }
     return {
       leagues,competitions,clubs:item.clubs,
-      fixtures:(item.fixtures as unknown[]).map(normalizeNativeFixture),
+      fixtures,
       nextCursor:item.nextCursor as number|null
     };
   }
