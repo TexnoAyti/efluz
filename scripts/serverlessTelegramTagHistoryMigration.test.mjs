@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {convertEflTelegramTagsHistory} from './lib/convertEflTelegramTagsHistory.mjs';
 import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
+import {comparableValue,rowsEquivalent} from '../tgcloud/lib/importEngine.js';
 const doc=(document_id,data)=>({document_id,data});
 const fixture=()=>({
  users:[doc('u1',{telegramId:'123'})],
@@ -54,5 +55,13 @@ test('unknown users, invalid timestamps and duplicate IDs fail closed',()=>{
  ]){
   const s=fixture();change(s);
   assert.throws(()=>convertEflTelegramTagsHistory(s));
+ }
+});
+
+test('boolean, numeric and object tag-state values survive serialized SQLite JSON round-trip',()=>{
+ for(const value of [true,false,12,{cursor:'x'}]){
+  const dbValue=comparableValue(value,'source_value');
+  assert.equal(dbValue,JSON.stringify(value));
+  assert.equal(rowsEquivalent({source_value:dbValue},{source_value:value},['source_value']),true);
  }
 });
