@@ -20,6 +20,8 @@ export const IMPORT_TABLES = Object.freeze({
   playerTrophies: ['id','season_id','competition_id','club_id','winner_user_id','winner_username','club_name','competition_name','active','decided_by','evaluated_at','confirmed_at'],
   retentionDecisions: ['id','user_id','season_id','source_season_id','club_id','choice','decided_at'],
   premiumEntitlements: ['id','user_id','season_id','status','source','note','payment_charge_id','activated_at','revoked_at','revoked_by','updated_at','updated_by'],
+  clubAdmissions: ['id','season_id','enabled','automatic','stage','revision','league_overrides','updated_by','updated_at'],
+  clubSelectionBans: ['id','user_id','telegram_id','is_banned','reason','actor_id','revision','updated_at'],
   rawDocuments: ['id','source_space','collection_path','document_id','encoded','data','source_checksum'],
   rawDocumentParts: ['id','source_document_id','source_space','collection_path','document_id','part_index','part_count','part_data','source_checksum','part_checksum'],
   uzeflifeState: ['id','name','status','format','current_round','total_rounds','round_hours','participants_count','matches_count','source_revision'],
@@ -35,13 +37,13 @@ export const SQL_TABLES = Object.freeze({
   competitions:'efl_competitions',participants:'efl_competition_participants',
   resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
   notifications:'efl_notifications',auditLogs:'efl_audit_logs',
-  ticketBalances:'efl_ticket_balances',ticketTransactions:'efl_ticket_transactions',playerTrophies:'efl_player_trophies',retentionDecisions:'efl_retention_decisions',premiumEntitlements:'efl_premium_entitlements',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
+  ticketBalances:'efl_ticket_balances',ticketTransactions:'efl_ticket_transactions',playerTrophies:'efl_player_trophies',retentionDecisions:'efl_retention_decisions',premiumEntitlements:'efl_premium_entitlements',clubAdmissions:'efl_club_admissions',clubSelectionBans:'efl_club_selection_bans',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
   clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
   competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
-  notifications:'id',auditLogs:'id',ticketBalances:'id',ticketTransactions:'id',playerTrophies:'id',retentionDecisions:'id',premiumEntitlements:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
+  notifications:'id',auditLogs:'id',ticketBalances:'id',ticketTransactions:'id',playerTrophies:'id',retentionDecisions:'id',premiumEntitlements:'id',clubAdmissions:'id',clubSelectionBans:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
@@ -78,7 +80,7 @@ export function validateImportBatch(input) {
       if (value === null) continue;
       if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint')
         throw new Error('INVALID_VALUE');
-      if (!['settings','format_config','data','encoded','old_value','new_value'].includes(key) &&
+      if (!['settings','format_config','data','encoded','old_value','new_value','league_overrides'].includes(key) &&
         (typeof value === 'object' || Array.isArray(value))) throw new Error('INVALID_VALUE');
     }
     if(table==='ticketBalances' &&
