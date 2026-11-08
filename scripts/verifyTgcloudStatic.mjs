@@ -25,13 +25,29 @@ const prohibited=assets.filter(file=>
   file.startsWith('src/server/')||file.startsWith('.env'));
 if(prohibited.length)throw Error('SERVER_OR_PRIVATE_STATIC_ASSET:'+prohibited.join(','));
 const html=await readFile(resolve(root,'index.html'),'utf8');
-if(!html.includes('id="root"')||!html.includes('Serverless sinov muhiti'))
+const realUi=process.env.EFL_VERIFY_REAL_UI==='1';
+if(!html.includes('id="root"'))throw Error('ISOLATED_STAGING_ENTRY_MISSING');
+if(realUi){
+  if(!html.includes('EFLUZ')||!html.includes('noindex,nofollow'))
+    throw Error('STAGING_REAL_UI_ENTRY_MISSING');
+}else if(!html.includes('Serverless sinov muhiti')){
   throw Error('ISOLATED_STAGING_ENTRY_MISSING');
+}
 const scripts=assets.filter(file=>file.endsWith('.js'));
 if(!scripts.length)throw Error('STAGING_SCRIPT_MISSING');
 for(const file of scripts){
   const js=await readFile(resolve(root,file),'utf8');
-  if(/\/api\/|\/api\b|vercel\.app/i.test(js))
+  if(!realUi && /\/api\/|\/api\b|vercel\.app/i.test(js))
     throw Error('LEGACY_API_IN_STAGING_BUNDLE');
 }
-console.log(JSON.stringify({ok:true,files:assets.length,isolatedStaging:true,onlyFrontend:true}));
+if(realUi){
+  const scriptsText=(await Promise.all(scripts.map(file=>
+    readFile(resolve(root,file),'utf8')))).join('\n');
+  for(const marker of [
+    'SERVERLESS_LEGACY_HTTP_BLOCKED','SERVERLESS_WRITE_NOT_MIGRATED',
+    'SERVERLESS_VERCEL_FALLBACK_FORBIDDEN']){
+    if(!scriptsText.includes(marker))throw Error('REAL_UI_GUARD_MISSING:'+marker);
+  }
+}
+console.log(JSON.stringify({ok:true,files:assets.length,isolatedStaging:true,
+  realUi,onlyFrontend:true,productionCutoverReady:false}));
