@@ -47,3 +47,8 @@ jobs:
         run: |
           bun run build:tgcloud:real-ui
           bun run verify:tgcloud:real-ui
+      - name: Verify deployable staging SPA packaging for original EFLUZ React (no deploy)
+        run: |
+          node scripts/stageEflRealUi.mjs
+          EFL_VERIFY_REAL_UI=1 node scripts/verifyTgcloudStatic.mjs
+          test -f dist-tgcloud/index.html
