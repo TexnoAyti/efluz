@@ -5,6 +5,7 @@ const JSON_FIELDS = new Set(['settings','format_config','data','encoded','old_va
 
 export function comparableValue(value, column) {
   if (value === undefined || value === null) return null;
+  if (column === 'source_value') return JSON.stringify(value);
   if (typeof value === 'boolean') return Number(value);
   if (JSON_FIELDS.has(column) && typeof value === 'object') return JSON.stringify(value);
   if (typeof value === 'object') return JSON.stringify(value);
