@@ -15,6 +15,8 @@ export const IMPORT_TABLES = Object.freeze({
   disputes: ['id','fixture_id','season_id','home_submission_id','away_submission_id','status','resolved_by_user_id','resolution_notes','created_at','resolved_at'],
   notifications: ['id','user_id','type','title','message','data','is_read','created_at'],
   auditLogs: ['id','actor_user_id','actor_username','action','entity_type','entity_id','old_value','new_value','created_at'],
+  ticketBalances: ['id','user_id','telegram_id','balance','total_granted','total_spent','total_refunded','free_ticket_granted_at','updated_at'],
+  ticketTransactions: ['id','user_id','type','amount','idempotency_key','note','performed_by_admin_id','tournament_id','created_at'],
   rawDocuments: ['id','source_space','collection_path','document_id','encoded','data','source_checksum'],
   rawDocumentParts: ['id','source_document_id','source_space','collection_path','document_id','part_index','part_count','part_data','source_checksum','part_checksum'],
   uzeflifeState: ['id','name','status','format','current_round','total_rounds','round_hours','participants_count','matches_count','source_revision'],
@@ -29,13 +31,14 @@ export const SQL_TABLES = Object.freeze({
   matchAccess:'efl_match_access',matchMessages:'efl_match_messages',
   competitions:'efl_competitions',participants:'efl_competition_participants',
   resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
-  notifications:'efl_notifications',auditLogs:'efl_audit_logs',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
+  notifications:'efl_notifications',auditLogs:'efl_audit_logs',
+  ticketBalances:'efl_ticket_balances',ticketTransactions:'efl_ticket_transactions',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
   clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
   competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
-  notifications:'id',auditLogs:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
+  notifications:'id',auditLogs:'id',ticketBalances:'id',ticketTransactions:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
