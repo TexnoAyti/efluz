@@ -100,6 +100,26 @@ export function validateImportBatch(input) {
         typeof row.idempotency_key!=='string'||!row.idempotency_key||
         !Number.isSafeInteger(row.created_at)||row.created_at<0))
       throw new Error('INVALID_TICKET_TRANSACTION_ROW');
+    if(table==='retentionDecisions'&&
+      (!['KEEP','RELEASE'].includes(row.choice)||
+       !Number.isSafeInteger(row.decided_at)||row.decided_at<0||
+       !['user_id','season_id','source_season_id','club_id'].every(
+         k=>typeof row[k]==='string'&&row[k].length>0)))
+      throw Error('INVALID_RETENTION_IMPORT_ROW');
+    if(table==='premiumEntitlements'&&
+      (!['ACTIVE','REVOKED'].includes(row.status)||
+       !['user_id','season_id','source','updated_by'].every(
+         k=>typeof row[k]==='string'&&row[k].length>0)||
+       typeof row.note!=='string'||
+       !Number.isSafeInteger(row.activated_at)||row.activated_at<0||
+       !Number.isSafeInteger(row.updated_at)||row.updated_at<row.activated_at||
+       (row.revoked_at!==null&&
+         (!Number.isSafeInteger(row.revoked_at)||row.revoked_at<row.activated_at))||
+       (row.status==='ACTIVE'&&row.revoked_at!==null)||
+       (row.status==='REVOKED'&&row.revoked_at===null)||
+       (row.payment_charge_id!==null&&typeof row.payment_charge_id!=='string')||
+       (row.revoked_by!==null&&typeof row.revoked_by!=='string')))
+      throw Error('INVALID_PREMIUM_IMPORT_ROW');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
