@@ -60,6 +60,15 @@ const readFixture={id:'fixture-one',seasonId:'season-2026-27',
 const clubFixtures=normalizeEflReadResponse(clubFixturesRequest,
  {ok:true,fixtures:[readFixture]}) as {fixtures:Array<{matchday:number}>};
 assert.equal(clubFixtures.fixtures[0].matchday,2);
+const dated=normalizeEflReadResponse(clubFixturesRequest,{ok:true,fixtures:[{
+ ...readFixture,scheduledAt:1790000000,homeScore:2,awayScore:1
+}]}) as {fixtures:Array<{scheduledAt:string;homeScore:number;awayScore:number}>};
+assert.equal(dated.fixtures[0].scheduledAt,new Date(1790000000*1000).toISOString());
+assert.equal(dated.fixtures[0].homeScore,2);
+assert.equal(dated.fixtures[0].awayScore,1);
+assert.throws(()=>normalizeEflReadResponse(clubFixturesRequest,{ok:true,fixtures:[{
+ ...readFixture,homeScore:-1
+}]}),/SERVERLESS_SCORE_CONTRACT_MISMATCH/);
 const fixtureDetailsRequest=mapEflReadRequest('/api/fixtures/fixture-one');
 assert.deepEqual(fixtureDetailsRequest,{operation:'fixtureDetail',
  input:{fixtureId:'fixture-one'},shape:'fixtureDetail'});
