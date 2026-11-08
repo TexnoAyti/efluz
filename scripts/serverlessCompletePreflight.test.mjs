@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -24,19 +24,28 @@ async function withFiles(fn){
   return await fn({source,archive,normalizedSource,normalizedTarget,run,empty});
  }finally{await rm(dir,{recursive:true,force:true});}
 }
-test('offline preflight verifies preserved unnormalized source with exact archive and target parity',async()=>{
- await withFiles(async({source,archive,run})=>{
-  await writeFile(source,JSON.stringify(data('ticket_transactions_idempotency','history-1'))+'\n');
+test('offline preflight requires real source-derived normalized projection and independent archive',async()=>{
+ await withFiles(async({source,archive,run,normalizedSource,normalizedTarget})=>{
+  await writeFile(source,JSON.stringify(data('users','user-1'))+'\n');
   let x=spawnSync(process.execPath,[builder,source,archive],{encoding:'utf8'});
   assert.equal(x.status,0,x.stderr);
+  const converter=new URL('./convertEflCoreSnapshot.mjs',import.meta.url).pathname;
+  const normalized=normalizedSource+'.replayed';
+  x=spawnSync(process.execPath,[converter,source,normalized,
+   '--require-complete-source','--verified-archive',archive],{encoding:'utf8'});
+  assert.equal(x.status,0,x.stderr);
+  const content=await readFile(normalized,'utf8');
+  await writeFile(normalizedSource,content);
+  await writeFile(normalizedTarget,content);
   x=run();assert.equal(x.status,0,x.stderr);
   const report=JSON.parse(x.stdout);
   assert.equal(report.offlineDataVerified,true);
   assert.equal(report.archiveVerified,true);
+  assert.equal(report.sourceNormalizedBound,true);
   assert.equal(report.sourceTargetParity,true);
   assert.equal(report.cutoverReady,false);
   assert.equal(report.telegramSdkVerified,false);
-  assert.doesNotMatch(x.stdout,/history-1|Synthetic/);
+  assert.doesNotMatch(x.stdout,/user-1|Synthetic/);
  });
 });
 test('preflight blocks unknown and review collections before any target verification',async()=>{
