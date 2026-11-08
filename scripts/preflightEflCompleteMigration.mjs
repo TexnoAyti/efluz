@@ -61,6 +61,7 @@ if(blockers.length===0){
    uzeflife_audit:'uzeflifeAuditHistory',uzeflife_notifications:'uzeflifeNoticeHistory',
    notification_read_state:'notificationReadState',
    matchday_locks:'matchdayLockHistory',match_deadlines:'matchDeadlineHistory',
+   club_selection_ban_audit:'banAuditHistory',club_selection_ban_controls:'banControlHistory',
    uzeflife:'uzeflifeState'
   };
   let projectionComplete=true;
