@@ -95,7 +95,7 @@ export function validateImportBatch(input) {
       if (value === null) continue;
       if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint')
         throw new Error('INVALID_VALUE');
-      if (!['settings','format_config','data','encoded','old_value','new_value','league_overrides','source_record','details','state'].includes(key) &&
+      if (!['settings','format_config','data','encoded','old_value','new_value','league_overrides','source_record','details','state','source_value'].includes(key) &&
         (typeof value === 'object' || Array.isArray(value))) throw new Error('INVALID_VALUE');
     }
     if(table==='ticketBalances' &&
