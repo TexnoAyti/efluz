@@ -13,9 +13,8 @@ async function setup(fn){
   const source=join(dir,'input.jsonl'),archive=join(dir,'archive');
   await writeFile(source,[
    doc('users','user1',{telegramId:'111',createdAt:'2026-01-01T00:00:00Z',firstName:'User'}),
-   // No relational projection exists yet for this historical collection.
-   // It must nevertheless be preserved by the independently verified archive.
-   doc('ticket_transactions_idempotency','history1',{createdAt:'2026-01-01T00:00:00Z'})
+   // Team-ticket transaction idempotency is now normalized and archived.
+   doc('ticket_transactions_idempotency','history1',{userId:'user1',transactionId:'txn1',tournamentId:'t1',createdAt:'2026-01-01T00:00:00Z'})
   ].map(JSON.stringify).join('\n')+'\n');
   return await fn({source,archive,dir});
  }finally{await rm(dir,{recursive:true,force:true});}
@@ -34,7 +33,7 @@ test('complete source mode requires independently verified private archive',asyn
   const modified=join(dir,'modified.jsonl');
   await writeFile(modified,[
    doc('users','user1',{telegramId:'111',createdAt:'2026-01-01T00:00:00Z',firstName:'Changed'}),
-   doc('ticket_transactions_idempotency','history1',{createdAt:'2026-01-01T00:00:00Z'})
+   doc('ticket_transactions_idempotency','history1',{userId:'user1',transactionId:'txn1',tournamentId:'t1',createdAt:'2026-01-01T00:00:00Z'})
   ].map(JSON.stringify).join('\n')+'\n');
   r=run(modified,join(dir,'changed.json'),['--require-complete-source','--verified-archive',archive]);
   assert.notEqual(r.status,0);
