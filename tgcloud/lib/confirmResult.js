@@ -31,6 +31,16 @@ export async function confirmFixtureResult(db,userId,input) {
       AND telegram_id=:telegram AND status='ACTIVE' LIMIT 1`,
     {':season':proposal.seasonId,':club':oppositeClub,':user':userId,':telegram':actor.telegram_id});
   if (!owner) throw Error('CONFIRM_FORBIDDEN');
+  // The proposal must still belong to the active owner of the *other* club.
+  // A stale result submitted by a released/banned player is never approved.
+  const submitter = await db.get(`SELECT o.id FROM efl_club_occupancies o
+    JOIN efl_users u ON u.id=o.user_id AND u.telegram_id=o.telegram_id
+    WHERE o.season_id=:season AND o.club_id=:club AND o.user_id=:user
+      AND o.status='ACTIVE' AND u.is_banned=0 LIMIT 1`,{
+    ':season':proposal.seasonId,':club':proposal.submitterClubId,
+    ':user':proposal.submitterId
+  });
+  if (!submitter) throw Error('SUBMISSION_INVALID_OWNER');
   const params={':submission':submissionId,':fixture':proposal.fixtureId,':season':proposal.seasonId,
     ':user':userId,':telegram':actor.telegram_id,':club':oppositeClub,
     ':homeScore':proposal.homeScore,':awayScore':proposal.awayScore,':now':Date.now()};
@@ -57,8 +67,17 @@ export async function confirmFixtureResult(db,userId,input) {
           AND o.club_id=:club AND
           (o.club_id=efl_fixtures.home_club_id OR o.club_id=efl_fixtures.away_club_id))
       AND EXISTS (SELECT 1 FROM efl_result_submissions p
+        JOIN efl_users submitter ON submitter.id=p.submitted_by_user_id
+         AND submitter.is_banned=0
+        JOIN efl_club_occupancies ownership
+         ON ownership.user_id=submitter.id
+         AND ownership.telegram_id=submitter.telegram_id
+         AND ownership.season_id=efl_fixtures.season_id
+         AND ownership.club_id=p.club_id AND ownership.status='ACTIVE'
         WHERE p.id=:submission AND p.fixture_id=efl_fixtures.id
           AND p.submitted_by_user_id<>:user AND p.club_id<>:club
+          AND (p.club_id=efl_fixtures.home_club_id
+               OR p.club_id=efl_fixtures.away_club_id)
           AND p.home_score=:homeScore AND p.away_score=:awayScore)
       AND NOT EXISTS (SELECT 1 FROM efl_result_submissions other
         WHERE other.fixture_id=efl_fixtures.id
