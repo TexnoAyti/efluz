@@ -33,6 +33,9 @@ test('1000 identities must be distinct and authorized; unknown paths and product
   /DISTINCT_STAGING_IDENTITIES_REQUIRED/);
  const bad=identities(2);bad[1].id=bad[0].id;
  assert.throws(()=>validateLoadIdentities(2,bad),/INVALID_STAGING_IDENTITY/);
+ const duplicated=identities(2);
+ duplicated[1].headers.Authorization=duplicated[0].headers.Authorization;
+ assert.throws(()=>validateLoadIdentities(2,duplicated),/DUPLICATE_STAGING_AUTH_CONTEXT/);
  assert.throws(()=>validateLoadIdentities(1,[{id:'x',headers:{Host:'malicious'}}]),
   /UNSAFE_STAGING_AUTH_HEADER/);
  assert.throws(()=>validateLoadScenario({routes:[{path:'//external.example',weight:100}]}),
@@ -120,4 +123,36 @@ test('CLI forbids running on production and keeps source secrets out of all repo
     assert.doesNotMatch(JSON.stringify(report)+stderr,/stage-0/);
    });
  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('identity probe must verify the server-side identity rather than trusting distinct token strings',async()=>{
+ await withServer((req,res)=>{
+  const matches=/^Bearer stage-(\\d+)$/.exec(req.headers.authorization??'');
+  const id=matches?'virtual-'+matches[1]:'unknown';
+  res.writeHead(200,{'Content-Type':'application/json'});
+  res.end(JSON.stringify({id}));
+ },async origin=>{
+  const result=await runStagingLoad({
+   origin,scenario:{...scenario,identityProbe:{path:'/whoami',field:'id'}},
+   users:16,identities:identities(16),durationMs:180
+  });
+  assert.equal(result.verifiedAuthContexts,16);
+  assert.equal(result.authProbeFailed,0);
+  assert.equal(result.cutoverReady,false);
+ });
+});
+test('successful HTTP responses are not counted as authenticated users without matching server identity',async()=>{
+ await withServer((req,res)=>{
+  res.writeHead(200,{'Content-Type':'application/json'});
+  res.end('{"id":"a-shared-anonymous-identity"}');
+ },async origin=>{
+  const result=await runStagingLoad({
+   origin,scenario:{...scenario,identityProbe:{path:'/whoami',field:'id'}},
+   users:10,identities:identities(10),durationMs:160
+  });
+  assert.equal(result.verifiedAuthContexts,0);
+  assert.equal(result.authProbeFailed,10);
+  assert.ok(result.success>0);
+  assert.equal(result.loadGatePassed,false);
+ });
 });
