@@ -3,6 +3,7 @@
 // Only explicitly mapped, response-validated GET operations are allowed.
 // Legacy session tokens and Telegram initData must never be forwarded.
 import {callEflTransport, type EflOperation} from './serverlessTransport';
+import {normalizeNativeFixture} from './nativeFixtureAdapter';
 
 type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'seasons'|'leagues'|'leagueClubs'|'clubDetail'|'clubFixtures'|'fixtureDetail'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'};
 function pathOf(endpoint:string):URL {
@@ -109,31 +110,19 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
   if(mapping.shape==='clubFixtures'||mapping.shape==='fixtureDetail'){
     const rows=mapping.shape==='fixtureDetail'?[item.fixture]:item.fixtures;
     if(!Array.isArray(rows))throw Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
-    const fixtures=rows.map((fixture:unknown)=>{
-      if(!fixture||typeof fixture!=='object')throw Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
-      const row=fixture as Record<string,unknown>;
-      if(typeof row.id!=='string'||!row.id||typeof row.status!=='string'||
-         typeof row.seasonId!=='string'||typeof row.competitionId!=='string')
-        throw Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
-      if(!Number.isSafeInteger(row.round)||Number(row.round)<0)
-        throw Error('SERVERLESS_FIXTURE_ROUND_INVALID');
-      return {...row,matchday:row.round};
-    });
+    const fixtures=rows.map(normalizeNativeFixture);
     return mapping.shape==='fixtureDetail'?{fixture:fixtures[0]}:
       {fixtures,stale:Boolean(item.stale),degraded:Boolean(item.degraded)};
   }
   if(mapping.shape==='competitionFixtures'){
     if(!Array.isArray(item.fixtures)||!item.competition||typeof item.competition!=='object')
       throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
-    const fixtures=item.fixtures.map((fixture:unknown)=>{
-      if(!fixture||typeof fixture!=='object')throw new Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
-      const row=fixture as Record<string,unknown>;
-      if(typeof row.id!=='string'||!row.id||typeof row.status!=='string')
-        throw new Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
-      const round=Number(row.round);
-      if(!Number.isSafeInteger(round)||round<0)
-        throw new Error('SERVERLESS_FIXTURE_ROUND_INVALID');
-      return {...row,matchday:round};
+    const fixtures=item.fixtures.map((row:unknown)=>{
+      if(!row||typeof row!=='object')
+        throw Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
+      return normalizeNativeFixture({...row,
+        seasonId:(row as Record<string,unknown>).seasonId??mapping.input.seasonId,
+        competitionId:(row as Record<string,unknown>).competitionId??mapping.input.competitionId});
     });
     return {fixtures,stale:Boolean(item.stale),degraded:Boolean(item.degraded)};
   }
@@ -155,6 +144,10 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
   }
   const prop=mapping.shape==='fixtures'?'fixtures':'notifications';
   if(!Array.isArray(item[prop]))throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
+  if(mapping.shape==='fixtures')return {
+    fixtures:item.fixtures.map(normalizeNativeFixture),
+    stale:Boolean(item.stale),degraded:Boolean(item.degraded)
+  };
   // Do not synthesize season-one records when staging data has not been imported.
   return {[prop]:item[prop],stale: Boolean(item.stale),degraded:Boolean(item.degraded)};
 }
