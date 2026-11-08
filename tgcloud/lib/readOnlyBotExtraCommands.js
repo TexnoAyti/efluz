@@ -2,6 +2,7 @@
 // The validated sender is passed in by handleReadOnlyBotCommand; never take
 // user/season/club IDs from Telegram command text.
 import {readUzeflife} from './uzeflifeRead.js';
+import {readUzeflifeRoundAudit} from './uzeflifeRoundAudit.js';
 import {readTeamsCatalog} from './teamsCatalogRead.js';
 import {readMyFixtures} from './myFixturesRead.js';
 import {readDomainOperationsAudit} from './domainOperationsAudit.js';
@@ -57,6 +58,41 @@ export async function readOnlyBotExtra(db,command,{id,telegramId}){
   return 'UZEFLIFE (sinov)\nHolat: '+String(s.status).slice(0,32)+
    '\nJoriy tur: '+Number(s.currentRound??0)+
    '\nUchrashuvlar: '+Number(s.matchesCount??0);
+ }
+ if(command==='/bracket'){
+  // Read only the actual current round. Never synthesize pairings or advance a round.
+  const overview=await readUzeflife(db,{section:'overview'});
+  if(!overview.available)return 'UZEFLIFE sinov bazasida hali mavjud emas.';
+  const current=overview.state.currentRound;
+  if(!Number.isSafeInteger(current)||current<0||current>256)
+   return 'UZEFLIFE turi ma’lumotlari tekshirilishi kerak.';
+  const result=await readUzeflife(db,{section:'playoff',round:current,limit:12});
+  const matches=result.rounds.flatMap(r=>r.matches);
+  if(!matches.length)return 'UZEFLIFE (sinov): joriy turda uchrashuv topilmadi.';
+  const name=value=>String(value??'Aniqlanmagan').replace(/[\\r\\n\\t]/g,' ').slice(0,50);
+  const lines=matches.map((m,i)=>{
+   const score=m.homeScore!=null&&m.awayScore!=null
+    ?' '+Number(m.homeScore)+':'+Number(m.awayScore):'';
+   return (i+1)+'. '+name(m.home)+' — '+name(m.away)+score+
+    (m.winner?' • yakunlangan':' • kutilmoqda');
+  });
+  return 'UZEFLIFE (sinov) — '+current+'-tur\\n'+lines.join('\\n')+
+   (result.nextCursor!==null?'\\nYana uchrashuvlar mavjud; to‘liq jadval Mini App orqali ko‘riladi.':'');
+ }
+ if(command==='/roundaudit'){
+  try{
+   const result=await readUzeflifeRoundAudit(db,telegramId,{limit:1});
+   if(!result.available)return 'UZEFLIFE sinov bazasida mavjud emas.';
+   const s=result.stats;
+   return 'UZEFLIFE admin auditi (sinov) — '+result.round+'-tur\\n'+
+    'Jami: '+s.total+'\\nYakunlangan: '+s.completed+
+    '\\nHal qilinmagan: '+s.unresolved+
+    '\\nRaqibi belgilanmagan: '+s.incompleteOpponents;
+  }catch(error){
+   if(error?.message==='UZEFLIFE_ADMIN_FORBIDDEN')
+    return 'Bu buyruq faqat administrator uchun.';
+   throw error;
+  }
  }
  if(command==='/teams'){
   const result=await readTeamsCatalog(db,{limit:8});
