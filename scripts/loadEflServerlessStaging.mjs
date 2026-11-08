@@ -17,6 +17,13 @@ for(const token of process.argv.slice(2)){
  options.set(m[1],m[2]??true);
 }
 const local=options.get('local-smoke')===true;
+if(local){
+ let candidate;
+ try{candidate=new URL(options.get('origin'));}catch{throw Error('INVALID_STAGING_ORIGIN');}
+ if(candidate.protocol!=='http:'||
+   !['localhost','127.0.0.1','[::1]'].includes(candidate.hostname))
+  throw Error('LOCAL_SMOKE_REQUIRES_LOOPBACK');
+}
 if(options.get('local-smoke')!==undefined&&!local)throw Error('INVALID_LOAD_ARGUMENT');
 if(!local&&options.get('confirm-staging')!=='I_AUTHORIZE_STAGING_LOAD')
  throw Error('STAGING_LOAD_CONFIRMATION_REQUIRED');
