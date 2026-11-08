@@ -28,6 +28,22 @@ const leagues=normalizeEflReadResponse(mapEflReadRequest('/api/leagues'),{
 assert.equal(leagues.leagues[0].totalClubs,20);
 assert.equal(leagues.leagues[0].tier,1);
 
+const leagueClubsRequest=mapEflReadRequest('/api/leagues/league-la-liga/clubs?seasonId=season-2026-27');
+assert.deepEqual(leagueClubsRequest,{operation:'leagueClubs',input:{
+ seasonId:'season-2026-27',leagueId:'league-la-liga'
+},shape:'leagueClubs'});
+const leagueClubs=normalizeEflReadResponse(leagueClubsRequest,{
+ ok:true,clubs:[{id:'club-a',name:'Example',leagueId:'league-la-liga',
+ country:'Spain',shortName:'EX',isTaken:true,isCurrentUserClub:false}]
+}) as {clubs:Array<{isTaken:boolean;isCurrentUserClub:boolean}>};
+assert.equal(leagueClubs.clubs[0].isTaken,true);
+assert.equal(leagueClubs.clubs[0].isCurrentUserClub,false);
+assert.throws(()=>mapEflReadRequest('/api/leagues/league-la-liga/clubs'),
+ /SERVERLESS_ROUTE_NOT_MIGRATED/);
+assert.throws(()=>normalizeEflReadResponse(leagueClubsRequest,{
+ ok:true,clubs:[{id:'club-a',name:'Example',leagueId:'league-la-liga'}]
+}),/SERVERLESS_CLUB_CONTRACT_MISMATCH/);
+
 const bracket=mapEflReadRequest('/api/competitions/comp-fa-cup-2026/fixtures?seasonId=season-2026-27');
 assert.deepEqual(bracket,{operation:'competitionDetail',input:{
   competitionId:'comp-fa-cup-2026',seasonId:'season-2026-27',limit:100
