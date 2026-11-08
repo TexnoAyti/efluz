@@ -5,7 +5,7 @@
 import {callEflTransport, type EflOperation} from './serverlessTransport';
 import {normalizeNativeFixture} from './nativeFixtureAdapter';
 
-type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'seasons'|'leagues'|'leagueClubs'|'clubDetail'|'clubFixtures'|'fixtureDetail'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'};
+type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'seasons'|'leagues'|'leagueClubs'|'clubDetail'|'clubFixtures'|'fixtureDetail'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'|'adminScopedOverview'};
 function pathOf(endpoint:string):URL {
   if (!endpoint.startsWith('/api/') || endpoint.startsWith('//'))
     throw new Error('SERVERLESS_RELATIVE_API_ONLY');
@@ -42,6 +42,10 @@ export function mapEflReadRequest(endpoint:string,method='GET'):Mapping {
     return {operation:'competitionDetail',input:{competitionId:cupMatch[1],seasonId,limit:100},shape:'competitionFixtures'};
   if (path==='/api/me/matches' && !url.searchParams.has('status'))
     return {operation:'myFixtures',input:{seasonId,limit:100},shape:'fixtures'};
+  if (path==='/api/admin/scoped/overview' && url.searchParams.has('seasonId') &&
+      [...url.searchParams.keys()].every(key=>key==='seasonId'))
+    return {operation:'adminScopedOverview',input:{seasonId,cursor:0,limit:100},
+      shape:'adminScopedOverview'};
   if (path==='/api/me/notifications')
     return {operation:'notifications',input:{limit:50},shape:'notifications'};
   throw new Error('SERVERLESS_ROUTE_NOT_MIGRATED');
@@ -93,6 +97,44 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
         createdAt:typeof row.createdAt==='string'?row.createdAt:''};
     });
     return {clubs};
+  }
+  if(mapping.shape==='adminScopedOverview'){
+    if(item.seasonId!==mapping.input.seasonId ||
+       !Array.isArray(item.leagues)||!Array.isArray(item.competitions)||
+       !Array.isArray(item.clubs)||!Array.isArray(item.fixtures))
+      throw Error('SERVERLESS_ADMIN_OVERVIEW_CONTRACT_MISMATCH');
+    if(item.nextCursor!==null&&
+      (!Number.isSafeInteger(item.nextCursor)||Number(item.nextCursor)<0))
+      throw Error('SERVERLESS_ADMIN_CURSOR_INVALID');
+    for(const [key,rows] of [
+      ['leagues',item.leagues],['competitions',item.competitions],
+      ['clubs',item.clubs]] as Array<[string,unknown[]]>){
+      for(const value of rows){
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+           typeof (value as {id?:unknown}).id!=='string'||
+           !(value as {id:string}).id)
+          throw Error('SERVERLESS_ADMIN_CATALOG_INVALID_'+key);
+      }
+    }
+    const competitions=(item.competitions as Array<Record<string,unknown>>).map(value=>{
+      const status=String(value.status||'').toLowerCase();
+      if(!['upcoming','active','completed'].includes(status))
+        throw Error('SERVERLESS_COMPETITION_STATUS_MISMATCH');
+      if(value.seasonId!==mapping.input.seasonId)
+        throw Error('SERVERLESS_ADMIN_CROSS_SEASON_DATA');
+      return {...value,status,formatConfig:value.formatConfig&&
+        typeof value.formatConfig==='object'?value.formatConfig:{}};
+    });
+    const leagues=(item.leagues as Array<Record<string,unknown>>).map(row=>{
+      if(row.seasonId!==mapping.input.seasonId)
+        throw Error('SERVERLESS_ADMIN_CROSS_SEASON_DATA');
+      return row;
+    });
+    return {
+      leagues,competitions,clubs:item.clubs,
+      fixtures:(item.fixtures as unknown[]).map(normalizeNativeFixture),
+      nextCursor:item.nextCursor as number|null
+    };
   }
   if(mapping.shape==='clubDetail'){
     const row=item.club;
@@ -159,5 +201,33 @@ export async function requestViaEflServerless<T>(endpoint:string,method='GET'):P
     preferred:'telegram-serverless',
     vercel:()=>Promise.reject(new Error('SERVERLESS_VERCEL_FALLBACK_FORBIDDEN')),
   });
-  return normalizeEflReadResponse(mapping,result) as T;
+  const first=normalizeEflReadResponse(mapping,result);
+  if(mapping.shape!=='adminScopedOverview')return first as T;
+  type Page={leagues:unknown[];competitions:unknown[];clubs:unknown[];
+    fixtures:Array<{id:string}>;nextCursor:number|null};
+  const initial=first as Page;
+  const combined=[...initial.fixtures],seen=new Set(initial.fixtures.map(item=>item.id));
+  if(seen.size!==combined.length)throw Error('SERVERLESS_ADMIN_DUPLICATE_FIXTURE');
+  const stable=JSON.stringify([initial.leagues,initial.competitions,initial.clubs]);
+  let cursor=initial.nextCursor,previousCursor=0;
+  for(let page=1;cursor!==null;page++){
+    if(page>=50)throw Error('SERVERLESS_ADMIN_PAGINATION_LIMIT');
+    if(cursor<=previousCursor)throw Error('SERVERLESS_ADMIN_CURSOR_NOT_ADVANCING');
+    previousCursor=cursor;
+    const input={...mapping.input,cursor};
+    const nextRaw=await callEflTransport<unknown>({
+      operation:mapping.operation,input,preferred:'telegram-serverless',
+      vercel:()=>Promise.reject(new Error('SERVERLESS_VERCEL_FALLBACK_FORBIDDEN'))
+    });
+    const next=normalizeEflReadResponse({...mapping,input},nextRaw) as Page;
+    if(JSON.stringify([next.leagues,next.competitions,next.clubs])!==stable)
+      throw Error('SERVERLESS_ADMIN_CATALOG_CHANGED_DURING_PAGING');
+    if(next.fixtures.length===0)throw Error('SERVERLESS_ADMIN_EMPTY_PAGE');
+    for(const fixture of next.fixtures){
+      if(seen.has(fixture.id))throw Error('SERVERLESS_ADMIN_DUPLICATE_FIXTURE');
+      seen.add(fixture.id);combined.push(fixture);
+    }
+    cursor=next.nextCursor;
+  }
+  return {...initial,fixtures:combined,nextCursor:null} as T;
 }
