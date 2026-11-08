@@ -8,6 +8,7 @@ const allowed={
  'efl:leagues':'/leagues',
  'efl:cups':'/cups',
  'efl:uzeflife':'/uzeflife',
+ 'efl:bracket':'/bracket',
  'efl:teams':'/teams',
  'efl:inbox':'/inbox'
 };
