@@ -216,6 +216,26 @@ export function validateImportBatch(input) {
        row.source_record.seasonId!==row.season_id||
        row.source_record.matchday!==row.matchday))
       throw Error('INVALID_MATCH_DEADLINE_HISTORY_ROW');
+    if(table==='banAuditHistory'&&
+       (row.replay_policy!=='HISTORICAL_ONLY'||
+        !row.source_record||typeof row.source_record!=='object'||
+        Array.isArray(row.source_record)||
+        row.source_record.userId!==row.user_id||
+        row.source_record.telegramId!==row.telegram_id||
+        row.source_record.isBanned!==row.is_banned||
+        row.source_record.previousIsBanned!==row.previous_is_banned||
+        row.source_record.revision!==row.revision||
+        !Number.isSafeInteger(row.updated_at)||row.updated_at<0))
+      throw Error('INVALID_BAN_AUDIT_HISTORY_IMPORT');
+    if(table==='banControlHistory'&&
+       (row.replay_policy!=='HISTORICAL_ONLY'||
+        !row.source_record||typeof row.source_record!=='object'||
+        Array.isArray(row.source_record)||
+        row.source_record.targetId!==row.target_user_id||
+        row.source_record.expectedRevision!==row.expected_revision||
+        row.source_record.consumed!==row.originally_consumed||
+        row.source_record.expiresAt!==row.expires_at))
+      throw Error('INVALID_BAN_CONTROL_HISTORY_IMPORT');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
