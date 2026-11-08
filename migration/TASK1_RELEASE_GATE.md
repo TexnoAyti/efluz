@@ -105,6 +105,26 @@ be replayed. Archived evidence can exceed one Serverless import packet;
   still require explicit resolution. Import and mutation endpoint gates remain
   disabled; production release remains BLOCKED.
 
+## Target staging readback gate — 2026-11-08
+
+- Added `tgcloud/endpoints/migrationReadback.js` and pure paginated
+  `tgcloud/lib/migrationReadback.js`. A separately disabled
+  `READBACK_CONTROL` demands an explicitly configured staging operator's
+  server-verified Telegram ID. Existing import access does NOT grant readback.
+- Readback accepts an exact allowlisted logical table, bounded keyset cursor
+  and at most 20 rows per request. It explicitly lists known columns;
+  rejects oversized responses, invalid keys, missing columns and nonascending
+  rows. **It can contain private records; never enable it on production.**
+- No target data has been read back yet. An actual staging export using the
+  explicitly enabled operator-only endpoint, independent persisted target
+  content, row hash parity, and checked provenance is still mandatory.
+  A successful count-only `migrationAudit` is insufficient proof of parity.
+- Offline CI [42511822457](https://github.com/TexnoAyti/efluz/actions/runs/42511822457)
+  passed readback authorization/limit/keyset tests, migration packet checks,
+  frontend TypeScript, backend parsing and both staging/React builds.
+- Both import and readback controls remain `false`. Live production and
+  staging data are unchanged; cutover stays BLOCKED.
+
 ## Live deployment / capacity blockers
 
 There is no verified Telegram Serverless staging app URL, 1,000 distinct
