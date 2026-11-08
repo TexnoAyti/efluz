@@ -71,3 +71,15 @@ test('main offline converter carries both source controls into operational table
   assert.equal(result.clubSelectionBans[0].is_banned,true);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('forged admission opening and ban state fail at packet import boundary',()=>{
+ const rows=convertEflClubControls(fixture()).rows;
+ assert.throws(()=>validateImportBatch({
+  table:'clubAdmissions',batchId:'clubAdmissions:00000000',
+  rows:[{...rows.clubAdmissions[0],enabled:'true'}]
+ }),/INVALID_CLUB_ADMISSION_IMPORT_ROW/);
+ assert.throws(()=>validateImportBatch({
+  table:'clubSelectionBans',batchId:'clubSelectionBans:00000000',
+  rows:[{...rows.clubSelectionBans[0],user_id:'other'}]
+ }),/INVALID_CLUB_BAN_IMPORT_ROW/);
+});
