@@ -6,6 +6,7 @@ import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitDa
 import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
 import { premiumApi } from '../lib/premiumApi';
 import { loadLoginBootstrap } from '../lib/loginBootstrap';
+import { loadNativeEflBootstrap } from '../lib/nativeServerlessBootstrap';
 import { sessionRefreshDue } from '../lib/sessionRefresh';
 import { isDesignPreview } from '../designPreview';
 
@@ -106,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string>('season-2026-27');
   useEffect(() => {
-    if (!user?.isAdmin) { setPremiumClubIds([]); return; }
+    if (import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless' || !user?.isAdmin) { setPremiumClubIds([]); return; }
     let mounted = true;
     premiumApi.getBadgeClubIds(activeSeasonId).then((result) => {
       if (mounted) setPremiumClubIds(result.clubIds || []);
@@ -193,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Season selection must refresh season-scoped ownership. Do not reuse the
   // previous season's clubs while a new club admission is being displayed.
   useEffect(() => {
-    if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview) return;
+    if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview || import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') return;
     setOwnedClubs([]);
     setCurrentClub(null);
     void fetchUserData(activeSeasonId);
@@ -237,6 +238,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
+        if (import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') {
+          // Native signed Telegram session. No legacy token, dev login, or
+          // fallback to an unrelated Vercel production account.
+          setSessionToken(null);
+          setTelegramInitData(null);
+          const session = await loadNativeEflBootstrap();
+          if (!isMounted) return;
+          if (!session.user) {
+            setUser(null);
+            setOwnedClubs([]);
+            setCurrentClub(null);
+            setAuthStatus('AUTH_ANONYMOUS');
+            return;
+          }
+          setUser(session.user);
+          setOwnedClubs(session.ownedClubs);
+          setCurrentClub(session.currentClub);
+          setClubUnavailable(true);
+          if (session.season) {
+            setSeasons([session.season]);
+            setCurrentSeason(session.season);
+            setActiveSeasonId(session.season.id);
+          }
+          setIsDevMode(false);
+          setAuthStatus('AUTHENTICATED');
+          setTelegramDiagnostics(prev => ({
+            ...prev, authStatus:'AUTHENTICATED', authHttpStatus:200,
+            telegramId:session.user!.telegramId,
+            username:session.user!.username||null,
+            isAdmin:session.user!.isAdmin,
+          }));
+          void refreshNotifications(false);
+          return;
+        }
         // 1. Resolve Telegram Context
         const hasSession = Boolean(getSessionToken()) || isAndroidApp;
         // URL/SDK launch data is checked synchronously even with an existing session.
