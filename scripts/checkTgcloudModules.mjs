@@ -38,6 +38,6 @@ for(const full of paths){
  if((file.startsWith('endpoints/')||file.startsWith('handlers/')) &&
     !/export\s+default\s+/.test(source))errors.push(file+':missing_default_export');
 }
-if(!paths.some(x=>x.endsWith('/schema.js')))errors.push('schema_missing');
+if(!paths.some(x=>relative(root,x).replaceAll(sep,'/')==='schema.js'))errors.push('schema_missing');
 if(errors.length){console.error(JSON.stringify({ok:false,files:paths.length,errors},null,2));process.exitCode=1;}
 else console.log(JSON.stringify({ok:true,files:paths.length,deploy:false}));
