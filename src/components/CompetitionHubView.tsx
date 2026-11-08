@@ -39,8 +39,11 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   // league section. Choosing "1-mavsumga qaytish" in ClubsView remains
   // effective until they leave and re-enter the league section.
   useEffect(() => {
-    if (subTab === 'leagues' && authStatus !== 'AUTH_LOADING') {
+    if (authStatus === 'AUTH_LOADING') return;
+    if (subTab === 'leagues') {
       setActiveSeasonId(EFL_SECOND_SEASON.id);
+    } else if (subTab === 'cups' || subTab === 'european') {
+      setActiveSeasonId('season-2026-27');
     }
   }, [subTab, authStatus, setActiveSeasonId]);
 
