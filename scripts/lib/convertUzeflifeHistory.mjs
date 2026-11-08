@@ -1,6 +1,8 @@
 // Historical UZEFLIFE audit and notification queue migration.
 // This is a forensic archive, not a live notification outbox.
 // Old leases, retries and delivery cursors MUST NOT be resumed on import.
+import {createHash} from 'node:crypto';
+import {stableRow} from '../../tgcloud/lib/importBatch.js';
 function string(value){return typeof value==='string'&&value.length>0&&value.length<=240;}
 function millis(value){
  if(typeof value!=='string')throw Error('INVALID_UZEFLIFE_HISTORY_TIME');
@@ -40,7 +42,8 @@ export function convertUzeflifeHistory(collections){
      typeof data.lease!=='string')
    throw Error('INVALID_UZEFLIFE_NOTICE_HISTORY');
   return {id,source_status:data.status,created_at:millis(data.createdAt),
-   notice_count:data.notices.length,source_record:data,
+   notice_count:data.notices.length,
+   source_sha256:createHash('sha256').update(stableRow(data,Object.keys(data).sort())).digest('hex'),
    replay_policy:'HISTORICAL_ONLY'};
  });
  return {rows:{uzeflifeAuditHistory:auditHistory,uzeflifeNoticeHistory:noticeHistory},
