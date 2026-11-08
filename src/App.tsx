@@ -56,9 +56,16 @@ function getInitialTab(): TabType {
 }
 
 const AppContent: React.FC = () => {
-  const { isLoading, user, toastMessage, authStatus, authError, activeSeasonId, currentClub } = useAuth();
+  const { isLoading, user, toastMessage, authStatus, authError, activeSeasonId, setActiveSeasonId, currentClub } = useAuth();
   const { t } = useI18n();
   const [activeTab, setActiveTabState] = useState<TabType>(getInitialTab);
+  useEffect(() => {
+    // The ongoing season-one admin panel must not inherit the second-season
+    // league registration scope. This also covers direct /admin launches.
+    if (activeTab === 'admin' && activeSeasonId === 'season-2027-28') {
+      setActiveSeasonId('season-2026-27');
+    }
+  }, [activeTab, activeSeasonId, setActiveSeasonId]);
   useEffect(() => {
     // Download the home view alongside identity verification, rather than before it.
     if (activeTab === 'dashboard') void loadHome().catch(() => {});
