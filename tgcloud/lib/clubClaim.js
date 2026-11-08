@@ -23,6 +23,12 @@ export async function claimClub(db,uid,input){
   const selectionBan=await db.get(`SELECT is_banned AS banned
     FROM efl_club_selection_bans WHERE user_id=:user`,{':user':uid});
   if(selectionBan?.banned)throw Error('CLUB_CLAIM_BANNED');
+  // A league being OPEN does not override a closed season admission gate.
+  // The latest reviewed season control is required; unknown means closed.
+  const admission=await db.get(`SELECT enabled FROM efl_club_admissions
+    WHERE season_id=:season ORDER BY updated_at DESC,id DESC LIMIT 1`,
+    {':season':seasonId});
+  if(!admission?.enabled)throw Error('CLUB_CLAIM_CLOSED');
   const candidate=await db.get(`SELECT c.id,c.league_id AS leagueId,l.season_id AS seasonId,
     l.status AS leagueStatus,s.status AS seasonStatus
     FROM efl_clubs c JOIN efl_leagues l ON l.id=c.league_id
@@ -49,6 +55,11 @@ export async function claimClub(db,uid,input){
     JOIN efl_users u ON u.id=:user AND u.telegram_id=:telegram
     WHERE c.id=:club AND s.id=:season AND l.status='OPEN'
       AND s.status IN ('ACTIVE','UPCOMING') AND u.is_banned=0
+      AND EXISTS (SELECT 1 FROM efl_club_admissions a
+        WHERE a.season_id=:season AND a.enabled=1
+          AND a.id=(SELECT newest.id FROM efl_club_admissions newest
+            WHERE newest.season_id=:season
+            ORDER BY newest.updated_at DESC,newest.id DESC LIMIT 1))
       AND NOT EXISTS (SELECT 1 FROM efl_club_selection_bans ban
         WHERE ban.user_id=u.id AND ban.is_banned=1)
     ON CONFLICT DO NOTHING`,params);
