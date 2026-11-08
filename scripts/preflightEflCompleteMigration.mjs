@@ -66,6 +66,8 @@ if(blockers.length===0){
    custom_tournament_participants:'customTournamentParticipantHistory',
    custom_tournament_fixtures:'customTournamentFixtureHistory',
    custom_tournament_audit_logs:'customTournamentAuditHistory',
+   telegram_member_tags:'telegramTagHistory',
+   telegram_member_tag_state:'telegramTagStateHistory',
    uzeflife:'uzeflifeState'
   };
   let projectionComplete=true;
