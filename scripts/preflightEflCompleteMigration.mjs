@@ -68,6 +68,9 @@ if(blockers.length===0){
    custom_tournament_audit_logs:'customTournamentAuditHistory',
    telegram_member_tags:'telegramTagHistory',
    telegram_member_tag_state:'telegramTagStateHistory',
+   match_chat_rooms:'matchChatRoomHistory',
+   matchday_notification_jobs:'matchdayJobHistory',
+   standings:'standingsHistory',
    uzeflife:'uzeflifeState'
   };
   let projectionComplete=true;
