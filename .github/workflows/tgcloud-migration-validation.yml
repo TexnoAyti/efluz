@@ -1,0 +1,37 @@
+name: EFLUZ Telegram Serverless migration validation (no deploy)
+on:
+  push:
+    branches:
+      - feat/telegram-serverless-full-migration-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tgcloud-migration-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install frozen dependencies
+        run: bun install --frozen-lockfile
+      - name: Type check real EFLUZ frontend and adapters
+        run: bun run lint
+      - name: Validate native signed bootstrap and fail-closed API gateway
+        run: bun run test:tgcloud:gateway
+      - name: Validate isolated Serverless staging smoke build
+        run: |
+          bun run build:tgcloud
+          node scripts/verifyTgcloudStatic.mjs
+      - name: Build the actual EFLUZ React UI for Serverless, without deployment
+        run: |
+          bun run build:tgcloud:real-ui
+          bun run verify:tgcloud:real-ui
