@@ -4,7 +4,7 @@
 // Legacy session tokens and Telegram initData must never be forwarded.
 import {callEflTransport, type EflOperation} from './serverlessTransport';
 
-type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'competitions'|'fixtures'|'notifications'};
+type Mapping = {operation:EflOperation; input:Record<string,unknown>; shape:'health'|'competitions'|'fixtures'|'notifications'|'competitionFixtures'};
 function pathOf(endpoint:string):URL {
   if (!endpoint.startsWith('/api/') || endpoint.startsWith('//'))
     throw new Error('SERVERLESS_RELATIVE_API_ONLY');
@@ -20,6 +20,11 @@ export function mapEflReadRequest(endpoint:string,method='GET'):Mapping {
   if (path==='/api/health') return {operation:'health',input:{},shape:'health'};
   if (path==='/api/competitions' && !url.searchParams.has('view'))
     return {operation:'competitions',input:{seasonId,limit:100},shape:'competitions'};
+  // Domestic cup bracket reads have their own scoped endpoint. Do not use
+  // the general fixtures feed because its schema and pagination differ.
+  const cupMatch=/^\/api\/competitions\/([a-zA-Z0-9_:-]{1,120})\/fixtures$/.exec(path);
+  if(cupMatch && !url.searchParams.has('status') && !url.searchParams.has('matchday'))
+    return {operation:'competitionDetail',input:{competitionId:cupMatch[1],seasonId,limit:100},shape:'competitionFixtures'};
   if (path==='/api/me/matches' && !url.searchParams.has('status'))
     return {operation:'myFixtures',input:{seasonId,limit:100},shape:'fixtures'};
   if (path==='/api/me/notifications')
@@ -33,6 +38,21 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
   if(mapping.shape==='health') {
     if(item.service!=='efluz-serverless')throw new Error('SERVERLESS_WRONG_SERVICE');
     return item;
+  }
+  if(mapping.shape==='competitionFixtures'){
+    if(!Array.isArray(item.fixtures)||!item.competition||typeof item.competition!=='object')
+      throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
+    const fixtures=item.fixtures.map((fixture:unknown)=>{
+      if(!fixture||typeof fixture!=='object')throw new Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
+      const row=fixture as Record<string,unknown>;
+      if(typeof row.id!=='string'||!row.id||typeof row.status!=='string')
+        throw new Error('SERVERLESS_FIXTURE_CONTRACT_MISMATCH');
+      const round=Number(row.round);
+      if(!Number.isSafeInteger(round)||round<0)
+        throw new Error('SERVERLESS_FIXTURE_ROUND_INVALID');
+      return {...row,matchday:round};
+    });
+    return {fixtures,stale:Boolean(item.stale),degraded:Boolean(item.degraded)};
   }
   const prop=mapping.shape==='competitions'?'competitions':mapping.shape==='fixtures'?'fixtures':'notifications';
   if(!Array.isArray(item[prop]))throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
