@@ -33,14 +33,16 @@ function expectedTeamsForCup(cup?: Competition | null): number {
 }
 
 export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab }) => {
-  const { user, currentClub, ownedClubs = [], activeSeasonId } = useAuth();
+  const { user, currentClub, ownedClubs = [] } = useAuth();
+  // Ongoing season one cup fixtures must not inherit season two registration.
+  const cupSeasonId = 'season-2026-27';
   const { t } = useI18n();
 
   const fixtureRequest = useRef(0);
 
   const [cupCompetitions, setCupCompetitions] = useState<Competition[]>([]);
   const [selectedCupId, setSelectedCupId] = useState('');
-  const fixtureScope = `${activeSeasonId}:${selectedCupId}`;
+  const fixtureScope = `${cupSeasonId}:${selectedCupId}`;
   const currentFixtureScope = useRef(fixtureScope);
   currentFixtureScope.current = fixtureScope;
   const [cupFixtures, setCupFixtures] = useState<Fixture[]>([]);
@@ -55,7 +57,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       setIsLoading(true);
       setError(null);
       try {
-        const res = await api.getCompetitions(activeSeasonId);
+        const res = await api.getCompetitions(cupSeasonId);
         const cups = (res.competitions || []).filter((competition: Competition) => competition.type === 'KNOCKOUT');
         if (cancelled) return;
         setCupCompetitions(cups);
@@ -77,7 +79,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     return () => {
       cancelled = true;
     };
-  }, [activeSeasonId]);
+  }, [cupSeasonId]);
 
   const loadCupFixtures = useCallback(async () => {
     if (currentFixtureScope.current !== fixtureScope) return;
@@ -93,7 +95,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     setSelectedFixtureForSubmit(null);
     setError(null);
     try {
-      const res = await api.getCompetitionFixtures(selectedCupId, undefined, undefined, false, activeSeasonId);
+      const res = await api.getCompetitionFixtures(selectedCupId, undefined, undefined, false, cupSeasonId);
       if (requestId !== fixtureRequest.current || currentFixtureScope.current !== fixtureScope) return;
       setCupFixtures(res.fixtures || []);
     } catch (err) {
@@ -103,7 +105,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     } finally {
       if (requestId === fixtureRequest.current && currentFixtureScope.current === fixtureScope) setIsLoading(false);
     }
-  }, [selectedCupId, activeSeasonId, fixtureScope]);
+  }, [selectedCupId, cupSeasonId, fixtureScope]);
 
   useEffect(() => {
     loadCupFixtures();
