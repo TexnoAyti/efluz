@@ -12,7 +12,8 @@ export default async function(input={},ctx){
   if(!user)throw new EndpointError('Profil topilmadi.',{code:'PROFILE_REQUIRED'});
   // A plain UPDATE is unsafe: confirmation, audit and two notification rows
   // must commit together or be rolled back. Never silently fall back to db.run.
-  const withTransaction=typeof db.transaction==='function'
+  const withTransaction=MUTATION_CONTROL.resultConfirmationTransactionsVerified &&
+    typeof db.transaction==='function'
     ? (callback)=>db.transaction(callback) : null;
   if(!withTransaction)
     throw new EndpointError('Tasdiqlash uchun atomik tranzaksiya mavjud emas.',
