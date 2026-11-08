@@ -18,7 +18,8 @@ export async function verifyArchiveBinding(sourcePath,archiveDir){
  const inventory=JSON.parse(await readFile(new URL('../../migration/source-collections-inventory.json',import.meta.url),'utf8'));
  const policy=new Map(inventory.collections.map(({collection,handling})=>[collection,handling]));
  const entries=new Map();
- let original=0,rebuild=0;
+ let original=0,rebuild=0,review=0;
+ const reviewDigest=createHash('sha256');
  for await(const line of createInterface({input:createReadStream(resolve(sourcePath),{encoding:'utf8'}),crlfDelay:Infinity})){
   if(!line.trim())continue;
   const doc=JSON.parse(line);
@@ -29,6 +30,11 @@ export async function verifyArchiveBinding(sourcePath,archiveDir){
     throw Error('INVALID_SOURCE_DOCUMENT');
   original++;
   const handling=policy.get(doc.collection_path.split('/')[0]);
+  if(handling==='review'){
+   review++;
+   reviewDigest.update(JSON.stringify(doc)+'\n');
+   continue;
+  }
   if(handling==='rebuild'){rebuild++;continue;}
   if(handling!=='preserve')throw Error('SOURCE_COLLECTION_NOT_APPROVED');
   const identity=stableRow(doc,['space','collection_path','document_id']);
@@ -43,6 +49,8 @@ export async function verifyArchiveBinding(sourcePath,archiveDir){
  for(const [id,value] of [...entries].sort((a,b)=>a[0].localeCompare(b[0])))
   digest.update(id+':'+value+'\n');
  if(original!==manifest.sourceDocuments||rebuild!==manifest.rebuildExcluded||
+    review!==manifest.reviewExcluded||
+    reviewDigest.digest('hex')!==manifest.reviewSha256||
     entries.size!==manifest.count||digest.digest('hex')!==manifest.sourceSha256)
   throw Error('ARCHIVE_SOURCE_MISMATCH');
  // Independently verify packet and multipart checksums before allowing
@@ -53,5 +61,5 @@ export async function verifyArchiveBinding(sourcePath,archiveDir){
  });
  if(result.status!==0)throw Error('ARCHIVE_PACKET_VERIFICATION_FAILED');
  return {verified:true,sourceDocuments:original,preservedDocuments:entries.size,
-  transientExcluded:rebuild};
+  transientExcluded:rebuild,reviewQuarantined:review};
 }
