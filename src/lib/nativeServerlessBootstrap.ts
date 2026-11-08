@@ -8,7 +8,7 @@ export type NativeEflSession = {
  season:Season|null;
  ownedClubs:Club[];
  currentClub:Club|null;
- currentClubStatus:'unavailable';
+ currentClubStatus:'unavailable'|'resolved';
 };
 export function decodeNativeEflBootstrap(value:unknown):NativeEflSession {
  if(!value||typeof value!=='object'||(value as any).ok!==true)
@@ -44,9 +44,43 @@ export function decodeNativeEflBootstrap(value:unknown):NativeEflSession {
        createdAt:typeof entry.createdAt==='string'?entry.createdAt:''};
    }
  }
- // Ownerships are not yet normalized to the React Club contract.
- // Do not infer a club or role from unverified incomplete staging rows.
- return {user,season,ownedClubs:[],currentClub:null,currentClubStatus:'unavailable'};
+ // Ownership is accepted only from the authenticated backend query, which
+ // scopes records by the Serverless-signed Telegram ID. Never infer missing
+ // clubs from a displayed name, client URL or Telegram initDataUnsafe.
+ const verifiedRows=Array.isArray(result.ownerships)?result.ownerships:[];
+ const toDate=(value:unknown)=>{
+   if(typeof value!=='number'||!Number.isFinite(value)||value<=0)return '';
+   const date=new Date(value<1e11?value*1000:value);
+   return Number.isNaN(date.getTime())?'':date.toISOString();
+ };
+ const ownedClubs:Club[]=[];
+ const seen=new Set<string>();
+ for(const value of verifiedRows){
+   if(!value||typeof value!=='object')throw Error('SERVERLESS_OWNERSHIP_CONTRACT_MISMATCH');
+   const row=value as Record<string,unknown>;
+   if(typeof row.clubId!=='string'||!row.clubId||
+      typeof row.leagueId!=='string'||!row.leagueId||
+      typeof row.clubName!=='string'||!row.clubName||
+      typeof row.seasonId!=='string'||!row.seasonId||
+      typeof row.clubCountry!=='string'||typeof row.clubShortName!=='string')
+     throw Error('SERVERLESS_OWNERSHIP_CONTRACT_MISMATCH');
+   if(season && row.seasonId!==season.id)continue;
+   const uniqueKey=row.seasonId+':'+row.clubId;
+   if(seen.has(uniqueKey))throw Error('SERVERLESS_DUPLICATE_OWNERSHIP');
+   seen.add(uniqueKey);
+   ownedClubs.push({
+     id:row.clubId,name:row.clubName,leagueId:row.leagueId,
+     shortName:row.clubShortName,country:row.clubCountry,
+     leagueName:typeof row.leagueName==='string'?row.leagueName:undefined,
+     logoUrl:typeof row.clubLogoUrl==='string'?row.clubLogoUrl:'',
+     stadium:typeof row.clubStadium==='string'?row.clubStadium:undefined,
+     active:true,isTaken:true,isCurrentUserClub:true,
+     claimedByUserId:user.id,
+     createdAt:toDate(row.clubCreatedAt),
+   });
+ }
+ return {user,season,ownedClubs,currentClub:ownedClubs[0]||null,
+   currentClubStatus:ownedClubs.length?'resolved':'unavailable'};
 }
 export async function loadNativeEflBootstrap():Promise<NativeEflSession>{
  const result=await callEflTransport<unknown>({
