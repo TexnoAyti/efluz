@@ -25,7 +25,7 @@ export const IMPORT_TABLES = Object.freeze({
   clubMembershipHistory: ['id','source_id','user_id','club_id','season_id','source_status','reference_status','claimed_at','updated_at','released_at','source_record'],
   userMembershipHistory: ['id','source_id','user_id','club_id','season_id','source_status','reference_status','claimed_at','updated_at','released_at','source_record'],
   uzeflifeAuditHistory: ['id','action','actor','revision','occurred_at','details','source_record'],
-  uzeflifeNoticeHistory: ['id','source_status','created_at','notice_count','replay_policy','source_record'],
+  uzeflifeNoticeHistory: ['id','source_status','created_at','notice_count','replay_policy','source_sha256'],
   rawDocuments: ['id','source_space','collection_path','document_id','encoded','data','source_checksum'],
   rawDocumentParts: ['id','source_document_id','source_space','collection_path','document_id','part_index','part_count','part_data','source_checksum','part_checksum'],
   uzeflifeState: ['id','name','status','format','current_round','total_rounds','round_hours','participants_count','matches_count','source_revision'],
