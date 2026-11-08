@@ -13,6 +13,7 @@ import {convertEflTicketLedger} from './lib/convertEflTicketLedger.mjs';
 import {convertEflTrophies} from './lib/convertEflTrophies.mjs';
 import {convertEflSeasonEntitlements} from './lib/convertEflSeasonEntitlements.mjs';
 import {convertEflClubControls} from './lib/convertEflClubControls.mjs';
+import {convertEflMembershipHistory} from './lib/convertEflMembershipHistory.mjs';
 import {validateImportBatch,IMPORT_TABLES} from '../tgcloud/lib/importBatch.js';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
@@ -27,7 +28,8 @@ const scope=new Set(['users','seasons','leagues','clubs','club_occupancies',
  'notifications','audit_logs','durable_fixture_overrides','uzeflife','team_league_preview_teams',
  'user_tickets','ticket_transactions','player_trophies',
  'season2_retention_decisions','premium_entitlements',
- 'club_admissions','club_selection_bans']);
+ 'club_admissions','club_selection_bans',
+ 'club_memberships','user_memberships']);
 const collections=Object.fromEntries([...scope].map(x=>[x,[]]));
 for await(const line of createInterface({input:createReadStream(resolve(src),{encoding:'utf8'}),crlfDelay:Infinity})){
  if(!line.trim())continue;
@@ -60,6 +62,9 @@ result.report.historicalRights=historicalRights.report;
 const controlHistory=convertEflClubControls(collections);
 Object.assign(result.rows,controlHistory.rows);
 result.report.clubControls=controlHistory.report;
+const membershipHistory=convertEflMembershipHistory(collections);
+Object.assign(result.rows,membershipHistory.rows);
+result.report.membershipHistory=membershipHistory.report;
 if(collections.uzeflife.length>1)throw Error('MULTIPLE_UZEFLIFE_ROOTS');
 if(collections.uzeflife.length===1){
  const projection=convertUzeflife(collections.uzeflife[0].data);
