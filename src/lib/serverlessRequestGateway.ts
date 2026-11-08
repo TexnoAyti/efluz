@@ -99,6 +99,22 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
     });
     return {fixtures,stale:Boolean(item.stale),degraded:Boolean(item.degraded)};
   }
+  if(mapping.shape==='competitions'){
+    if(!Array.isArray(item.competitions))throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
+    const competitions=item.competitions.map((value:unknown)=>{
+      if(!value||typeof value!=='object')throw new Error('SERVERLESS_COMPETITION_CONTRACT_MISMATCH');
+      const row=value as Record<string,unknown>;
+      if(typeof row.id!=='string'||!row.id||typeof row.seasonId!=='string'||
+        typeof row.name!=='string'||typeof row.type!=='string')
+        throw new Error('SERVERLESS_COMPETITION_CONTRACT_MISMATCH');
+      const status=String(row.status||'').toLowerCase();
+      if(!['upcoming','active','completed'].includes(status))
+        throw new Error('SERVERLESS_COMPETITION_STATUS_MISMATCH');
+      return {...row,status,
+        formatConfig:row.formatConfig&&typeof row.formatConfig==='object'?row.formatConfig:{}};
+    });
+    return {competitions,stale:Boolean(item.stale),degraded:Boolean(item.degraded)};
+  }
   const prop=mapping.shape==='competitions'?'competitions':mapping.shape==='fixtures'?'fixtures':'notifications';
   if(!Array.isArray(item[prop]))throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
   // Do not synthesize season-one records when staging data has not been imported.
