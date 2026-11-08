@@ -6,7 +6,7 @@ import {resolve,join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {validateImportBatch,IMPORT_TABLES,PRIMARY_KEYS,stableRow} from '../tgcloud/lib/importBatch.js';
 
-const order=['users','seasons','leagues','clubs','competitions','participants','clubOccupancies','fixtures','resultSubmissions','disputes','notifications','auditLogs','notificationReadState','matchdayLockHistory','matchDeadlineHistory','ticketBalances','ticketTransactions','playerTrophies','retentionDecisions','premiumEntitlements','clubAdmissions','clubSelectionBans','clubMembershipHistory','userMembershipHistory','matchAccess','matchMessages','uzeflifeState','uzeflifeEntrants','uzeflifeFixtures','uzeflifeAuditHistory','uzeflifeNoticeHistory','teamsCatalog','teamMembers','rawDocuments','rawDocumentParts'];
+const order=['users','seasons','leagues','clubs','competitions','participants','clubOccupancies','fixtures','resultSubmissions','disputes','notifications','auditLogs','notificationReadState','matchdayLockHistory','matchDeadlineHistory','ticketBalances','ticketTransactions','playerTrophies','retentionDecisions','premiumEntitlements','clubAdmissions','clubSelectionBans','banAuditHistory','banControlHistory','clubMembershipHistory','userMembershipHistory','matchAccess','matchMessages','uzeflifeState','uzeflifeEntrants','uzeflifeFixtures','uzeflifeAuditHistory','uzeflifeNoticeHistory','teamsCatalog','teamMembers','rawDocuments','rawDocumentParts'];
 const input=process.argv[2], directory=process.argv[3];
 if(!input || !directory) {
   console.error('Usage: node scripts/prepareServerlessImport.mjs normalized-snapshot.json output-folder');
