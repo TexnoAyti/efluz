@@ -59,6 +59,23 @@ test('conflicting existing row cannot be overwritten',async()=>{
   await assert.rejects(applyImportBatch(db,one([{...base,first_name:'Changed'}],'users:000002')),/ROW_CONFLICT/);
   assert.equal(db.records.get('efl_users:u1').first_name,'Test');
 });
+test('late conflicting row aborts before any new row is imported',async()=>{
+  const db=makeDb();
+  const old={...base,id:'u-old',telegram_id:'111',first_name:'Original'};
+  await applyImportBatch(db,one([old],'users:seed-old'));
+  const before=new Map(db.records);
+  const statesBefore=new Map(db.states);
+  const newRow={...base,id:'u-new',telegram_id:'222'};
+  const conflict={...old,first_name:'Unauthorized rewrite'};
+  await assert.rejects(
+    applyImportBatch(db,one([newRow,conflict],'users:late-conflict')),
+    /ROW_CONFLICT/
+  );
+  assert.deepEqual([...db.records],[...before],
+    'Import must not write the first new row if a later row conflicts');
+  assert.deepEqual([...db.states],[...statesBefore],
+    'Failed batch must not be recorded as complete');
+});
 test('reused batch identifier with modified content fails',async()=>{
   const db=makeDb();await applyImportBatch(db,one());
   await assert.rejects(applyImportBatch(db,one([{...base,id:'u2',telegram_id:'456'}])),/BATCH_CONFLICT/);
