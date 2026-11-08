@@ -16,7 +16,7 @@ import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
 if(!src||!dest){
- console.error('Usage: node scripts/convertEflCoreSnapshot.mjs private-source.jsonl private-normalized.json [--quarantine-historical --verified-archive private-archive-directory]');
+ console.error('Usage: node scripts/convertEflCoreSnapshot.mjs private-source.jsonl private-normalized.json [--quarantine-historical --verified-archive private-archive-directory] [--require-complete-source]');
  process.exit(2);
 }
 try{await stat(resolve(dest));throw Error('DESTINATION_ALREADY_EXISTS');}
@@ -35,7 +35,11 @@ for await(const line of createInterface({input:createReadStream(resolve(src),{en
  if(scope.has(collection))collections[collection].push(doc);
 }
 const quarantineHistoricalOrphans=process.argv.includes('--quarantine-historical');
-if(quarantineHistoricalOrphans){
+const requireCompleteSource=process.argv.includes('--require-complete-source');
+// Production migration must prove that the independent private archive
+// contains every preserved document, including unnormalized domains.
+// The legacy permissive mode is retained for isolated synthetic fixtures only.
+if(quarantineHistoricalOrphans||requireCompleteSource){
  const option=process.argv.indexOf('--verified-archive');
  const dir=option>=0?process.argv[option+1]:null;
  if(!dir||dir.startsWith('--'))throw Error('VERIFIED_ARCHIVE_REQUIRED');
