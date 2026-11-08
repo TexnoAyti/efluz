@@ -67,14 +67,14 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
     for(const owner of owners){
       const notificationId='fixture_confirmed:'+fixtureId+
         (owner.clubId===source.homeClub?':home':':away');
+      const expectedBody='Hisob: '+result.homeScore+':'+result.awayScore;
       const params={':id':notificationId,':user':owner.userId,
-       ':now':now,':homeScore':result.homeScore,
-       ':awayScore':result.awayScore};
+       ':now':now,':body':expectedBody};
       // Each inbox record has a deterministic ID; safe on replay.
       await tx.run(`INSERT INTO efl_notifications
        (id,user_id,type,title,message,data,is_read,created_at)
        SELECT :id,:user,'RESULT_CONFIRMED','Uchrashuv tasdiqlandi',
-        'Hisob: '||:homeScore||':'||:awayScore,
+        :body,
         NULL,0,:now
        WHERE EXISTS(SELECT 1 FROM efl_users u WHERE u.id=:user AND u.is_banned=0)
        ON CONFLICT DO NOTHING`,params);
@@ -84,7 +84,7 @@ export async function confirmFixtureResultWithOutbox(db,userId,input,withTransac
         throw Error('RESULT_OUTBOX_NOTIFICATION_CONFLICT');
       if(saved.title!=='Uchrashuv tasdiqlandi')
         throw Error('RESULT_OUTBOX_NOTIFICATION_TITLE_CONFLICT');
-      if(saved.message!==('Hisob: '+result.homeScore+':'+result.awayScore))
+      if(saved.message!==expectedBody)
         throw Error('RESULT_OUTBOX_NOTIFICATION_BODY_CONFLICT');
       await tx.run(`INSERT INTO efl_notification_deliveries
        (id,notification_id,user_id,status,attempts,created_at)
