@@ -41,7 +41,7 @@ export function validateLoadIdentities(users,identities){
  if(!integer(users,1,1000))throw Error('INVALID_LOAD_USER_COUNT');
  if(!Array.isArray(identities)||identities.length!==users)
   throw Error('DISTINCT_STAGING_IDENTITIES_REQUIRED');
- const seen=new Set();
+ const seen=new Set(),seenCredentials=new Set();
  return identities.map(row=>{
   if(!row||typeof row.id!=='string'||!row.id||seen.has(row.id)||
    !row.headers||typeof row.headers!=='object'||Array.isArray(row.headers))
@@ -55,6 +55,10 @@ export function validateLoadIdentities(users,identities){
    headers[key]=value;
   }
   if(!Object.keys(headers).length)throw Error('STAGING_AUTH_REQUIRED');
+  const signature=JSON.stringify(Object.entries(headers)
+   .map(([k,v])=>[k.toLowerCase(),v]).sort((a,b)=>a[0].localeCompare(b[0])));
+  if(seenCredentials.has(signature))throw Error('DUPLICATE_STAGING_AUTH_CONTEXT');
+  seenCredentials.add(signature);
   return {headers};
  });
 }
