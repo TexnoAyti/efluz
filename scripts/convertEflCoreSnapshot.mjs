@@ -11,6 +11,7 @@ import {convertUzeflife} from './lib/convertUzeflife.mjs';
 import {convertTeamsCatalog} from './lib/convertTeamsCatalog.mjs';
 import {convertEflTicketLedger} from './lib/convertEflTicketLedger.mjs';
 import {convertEflTrophies} from './lib/convertEflTrophies.mjs';
+import {convertEflSeasonEntitlements} from './lib/convertEflSeasonEntitlements.mjs';
 import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
 import {verifyArchiveBinding} from './lib/verifyArchiveBinding.mjs';
 const [src,dest]=process.argv.slice(2);
@@ -23,7 +24,8 @@ catch(err){if(err.code!=='ENOENT')throw err;}
 const scope=new Set(['users','seasons','leagues','clubs','club_occupancies',
  'competitions','competition_participants','fixtures','result_submissions','disputes',
  'notifications','audit_logs','durable_fixture_overrides','uzeflife','team_league_preview_teams',
- 'user_tickets','ticket_transactions','player_trophies']);
+ 'user_tickets','ticket_transactions','player_trophies',
+ 'season2_retention_decisions','premium_entitlements']);
 const collections=Object.fromEntries([...scope].map(x=>[x,[]]));
 for await(const line of createInterface({input:createReadStream(resolve(src),{encoding:'utf8'}),crlfDelay:Infinity})){
  if(!line.trim())continue;
@@ -46,6 +48,9 @@ result.report.tickets=ledger.report;
 const trophyProjection=convertEflTrophies(collections);
 Object.assign(result.rows,trophyProjection.rows);
 result.report.trophies=trophyProjection.report;
+const historicalRights=convertEflSeasonEntitlements(collections);
+Object.assign(result.rows,historicalRights.rows);
+result.report.historicalRights=historicalRights.report;
 if(collections.uzeflife.length>1)throw Error('MULTIPLE_UZEFLIFE_ROOTS');
 if(collections.uzeflife.length===1){
  const projection=convertUzeflife(collections.uzeflife[0].data);
