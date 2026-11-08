@@ -44,11 +44,39 @@ if(blockers.length===0){
  catch{blockers.push('SOURCE_ARCHIVE_MISMATCH_OR_MISSING');}
  if(archiveVerified){
   const verifier=fileURLToPath(new URL('./verifyServerlessSnapshot.mjs',import.meta.url));
-  const run=spawnSync(process.execPath,[verifier,resolve(normalizedSource),resolve(normalizedTarget)],{
+  // Archive completeness is not normalized domain completeness. A source user,
+  // fixture or payment must also exist in the corresponding operational table.
+  const operationalMapping={
+   users:'users',seasons:'seasons',competitions:'competitions',fixtures:'fixtures',
+   club_occupancies:'clubOccupancies',
+   competition_participants:'participants',
+   result_submissions:'resultSubmissions',disputes:'disputes',
+   notifications:'notifications',audit_logs:'auditLogs',
+   user_tickets:'ticketBalances',ticket_transactions:'ticketTransactions',
+   player_trophies:'playerTrophies',
+   season2_retention_decisions:'retentionDecisions',
+   premium_entitlements:'premiumEntitlements',
+   uzeflife:'uzeflifeState'
+  };
+  let projectionComplete=true;
+  try{
+   const projected=JSON.parse(await readFile(resolve(normalizedSource),'utf8'));
+   const seasons=collections.get('seasons')??0;
+   const checks=Object.entries(operationalMapping).map(([root,table])=>[
+     root,table,collections.get(root)??0
+   ]);
+   checks.push(['leagues','leagues',(collections.get('leagues')??0)*seasons]);
+   checks.push(['clubs','clubs',(collections.get('clubs')??0)*seasons]);
+   projectionComplete=checks.every(([,table,expected])=>
+     Array.isArray(projected[table])&&projected[table].length===expected);
+  }catch{projectionComplete=false;}
+  if(!projectionComplete)blockers.push('SOURCE_PROJECTION_COVERAGE_MISMATCH');
+  const run=projectionComplete?
+   spawnSync(process.execPath,[verifier,resolve(normalizedSource),resolve(normalizedTarget)],{
    encoding:'utf8',maxBuffer:1024*1024
-  });
-  sourceTargetParity=run.status===0&&run.stdout.includes('PARITY_OK:');
-  if(!sourceTargetParity)blockers.push('NORMALIZED_TARGET_PARITY_FAILED');
+  }):null;
+  sourceTargetParity=run!==null&&run.status===0&&run.stdout.includes('PARITY_OK:');
+  if(projectionComplete&&!sourceTargetParity)blockers.push('NORMALIZED_TARGET_PARITY_FAILED');
  }
 }
 const result={
