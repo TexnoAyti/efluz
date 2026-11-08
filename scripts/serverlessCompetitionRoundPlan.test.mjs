@@ -42,6 +42,7 @@ test('preview detects next real round but does not require all previous fixtures
   assert.equal(r.next.existingFixtures,2);
   assert.ok(r.reasons.includes('UNRESOLVED_PREVIOUS_FIXTURES'));
   assert.equal(r.canAdvanceAutomatically,false);
+  assert.equal(r.canAdvanceManually,true); // Unplayed games cannot block the next round.
   const after=sql.prepare('SELECT * FROM efl_competitions WHERE id=?').get('league');
   assert.deepEqual(after,before);
   assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM efl_fixtures').get().n,6);
@@ -57,6 +58,7 @@ test('cup displays incomplete participants and outstanding disputes safely',asyn
   assert.equal(r.next.round,3);
   assert.equal(r.leagueRound,null);
   assert.ok(r.reasons.includes('OPEN_DISPUTES'));
+  assert.equal(r.canAdvanceManually,false);
  }finally{sql.close();}
 });
 test('no future round is reported instead of inventing fixtures',async()=>{
@@ -66,6 +68,7 @@ test('no future round is reported instead of inventing fixtures',async()=>{
   const r=await readCompetitionRoundPlan(db,'123',{competitionId:'league'});
   assert.equal(r.next.round,null);
   assert.ok(r.reasons.includes('NO_EXISTING_NEXT_ROUND'));
+  assert.equal(r.canAdvanceManually,false);
  }finally{sql.close();}
 });
 test('detects mismatch between league and competition rounds',async()=>{
@@ -74,6 +77,7 @@ test('detects mismatch between league and competition rounds',async()=>{
   sql.exec("UPDATE efl_leagues SET current_round=2");
   const r=await readCompetitionRoundPlan(db,'123',{competitionId:'league'});
   assert.ok(r.reasons.includes('LEAGUE_ROUND_MISMATCH'));
+  assert.equal(r.canAdvanceManually,false);
  }finally{sql.close();}
 });
 test('only signed unbanned admins can preview and cannot inject SQL or arbitrary fields',async()=>{
@@ -85,5 +89,25 @@ test('only signed unbanned admins can preview and cannot inject SQL or arbitrary
   await assert.rejects(readCompetitionRoundPlan(db,'123 OR 1=1',{competitionId:'league'}),/AUTH_REQUIRED/);
   await assert.rejects(readCompetitionRoundPlan(db,'123',{competitionId:'x\' OR 1=1'}),/INVALID_ROUND_PLAN_COMPETITION/);
   await assert.rejects(readCompetitionRoundPlan(db,'123',{competitionId:'unknown'}),/ROUND_PLAN_COMPETITION_NOT_FOUND/);
+ }finally{sql.close();}
+});
+
+test('nonconsecutive future fixtures cannot bypass an absent round',async()=>{
+ const {sql,db}=setup();
+ try{
+  sql.exec("UPDATE efl_fixtures SET round=5 WHERE competition_id='league' AND round=4");
+  const plan=await readCompetitionRoundPlan(db,'123',{competitionId:'league'});
+  assert.equal(plan.next.round,5);
+  assert.equal(plan.canAdvanceManually,false);
+  assert.ok(plan.reasons.includes('NEXT_ROUND_GAP'));
+ }finally{sql.close();}
+});
+test('inactive competition cannot be manually advanced despite future fixtures',async()=>{
+ const {sql,db}=setup();
+ try{
+  sql.exec("UPDATE efl_competitions SET status='CLOSED' WHERE id='league'");
+  const plan=await readCompetitionRoundPlan(db,'123',{competitionId:'league'});
+  assert.equal(plan.canAdvanceManually,false);
+  assert.ok(plan.reasons.includes('COMPETITION_NOT_ACTIVE'));
  }finally{sql.close();}
 });
