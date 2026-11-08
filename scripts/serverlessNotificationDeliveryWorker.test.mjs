@@ -203,3 +203,45 @@ test('unverified database update result fails closed even if the lease row match
   assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'LEASED');
  }finally{sql.close();}
 });
+
+test('acknowledgement must prove a single row was changed',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  await claimNotificationForWorker(db,lease(tokenA,100000));
+  const opaqueDb={
+   get:db.get,
+   async run(query,params){
+    await db.run(query,params);
+    return undefined;
+   }
+  };
+  await assert.rejects(finishNotificationForWorker(opaqueDb,{
+   notificationId:'n1',leaseToken:tokenA,now:100200,success:true
+  }),/DELIVERY_ACK_CONFLICT/);
+  assert.equal(sql.prepare("SELECT status FROM efl_notification_deliveries WHERE notification_id='n1'").get().status,'SENT');
+ }finally{sql.close();}
+});
+test('late concurrent ack never pretends the already finished lease was its own',async()=>{
+ const {sql,db}=setup();
+ try{
+  await queueNotificationDelivery(db,'999',{notificationId:'n1'});
+  await claimNotificationForWorker(db,lease(tokenA,100000));
+  let raced=false;
+  const racingDb={
+   get:db.get,
+   async run(query,params){
+    if(!raced&&query.includes('SET status=CASE WHEN :success')){
+     raced=true;
+     await db.run(query,params);
+    }
+    return db.run(query,params);
+   }
+  };
+  await assert.rejects(finishNotificationForWorker(racingDb,{
+   notificationId:'n1',leaseToken:tokenA,now:100200,success:true
+  }),/DELIVERY_ACK_CONFLICT/);
+  assert.equal(raced,true);
+  assert.equal((await readNotificationDeliveryAudit(db,'999')).stats.sent,1);
+ }finally{sql.close();}
+});
