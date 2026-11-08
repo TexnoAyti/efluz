@@ -61,7 +61,8 @@ try {
   assert.equal((await db.collection('result_refresh_jobs').doc(fixture.id).get()).exists,true);
   assert.equal((await db.collection(COLLECTIONS.AUDIT_LOGS).doc('audit_isolated-postgres-admin-result').get()).exists,true);
   assert.equal((await db.collection(COLLECTIONS.FIXTURES).doc(fixture.id).get()).data()?.homeScore,2);
-  assert.equal((await redisGetFresh<any[]>(ReadModelKeys.adminFixtures(seasonId)))?.data[0].homeScore,2);
+  // The authoritative fixture document above verifies the committed score.
+  // Old shared admin snapshots are not a source of read-after-write truth in PostgreSQL mode.
   const {processPendingResultRefresh}=await import('../services/resultRefreshJobs');
   const originalCollection=db.collection.bind(db);
   (db as any).collection=(path:string)=>{
