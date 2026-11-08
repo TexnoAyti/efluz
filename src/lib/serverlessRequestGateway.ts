@@ -145,7 +145,7 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
   const prop=mapping.shape==='fixtures'?'fixtures':'notifications';
   if(!Array.isArray(item[prop]))throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
   if(mapping.shape==='fixtures')return {
-    fixtures:item.fixtures.map(normalizeNativeFixture),
+    fixtures:(item.fixtures as unknown[]).map(normalizeNativeFixture),
     stale:Boolean(item.stale),degraded:Boolean(item.degraded)
   };
   // Do not synthesize season-one records when staging data has not been imported.
