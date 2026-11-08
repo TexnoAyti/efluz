@@ -37,6 +37,8 @@ jobs:
       - name: Validate normalized packet source binding and raw archive tamper guards
         run: |
           node --test scripts/serverlessNormalizedPacketVerify.test.mjs scripts/serverlessRawBatchVerify.test.mjs
+      - name: Validate private staging target readback gates and bounded pagination
+        run: node --test scripts/serverlessMigrationReadback.test.mjs
       - name: Validate isolated Serverless staging smoke build
         run: |
           bun run build:tgcloud
