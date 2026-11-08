@@ -468,3 +468,26 @@ export const telegramTagStateHistory=table('efl_telegram_tag_state_history',{
  id:text('id').primaryKey(),sourceValue:json('source_value').notNull(),
  sourceExpiresAt:integer('source_expires_at'),replayPolicy:text('replay_policy').notNull()
 });
+
+
+// Historical-only match chat rooms. No content is exposed by these tables.
+export const matchChatRoomHistory=table('efl_match_chat_room_history',{
+ id:text('id').primaryKey(),matchId:text('match_id').notNull(),
+ seasonId:text('season_id').notNull(),sourceClosed:boolean('source_closed').notNull(),
+ participantCount:integer('participant_count').notNull(),
+ messageCount:integer('message_count').notNull(),sourceSha256:text('source_sha256').notNull(),
+ replayPolicy:text('replay_policy').notNull()
+},t=>({matchIdx:index('efl_chat_room_history_match_idx').on(t.matchId)}));
+export const matchdayJobHistory=table('efl_matchday_job_history',{
+ id:text('id').primaryKey(),competitionId:text('competition_id').notNull(),
+ seasonId:text('season_id').notNull(),matchday:integer('matchday').notNull(),
+ sourceStatus:text('source_status').notNull(),
+ sourceSha256:text('source_sha256').notNull(),replayPolicy:text('replay_policy').notNull()
+},t=>({competitionIdx:index('efl_matchday_job_history_comp_idx').on(t.competitionId)}));
+export const standingsHistory=table('efl_standings_history',{
+ id:text('id').primaryKey(),competitionId:text('competition_id').notNull(),
+ seasonId:text('season_id').notNull(),sourceRowCount:integer('source_row_count').notNull(),
+ sourcePlayed:integer('source_played').notNull(),
+ referenceStatus:text('reference_status').notNull(),
+ sourceSha256:text('source_sha256').notNull(),replayPolicy:text('replay_policy').notNull()
+},t=>({competitionIdx:index('efl_standings_history_comp_idx').on(t.competitionId)}));
