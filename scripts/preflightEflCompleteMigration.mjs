@@ -60,6 +60,7 @@ if(blockers.length===0){
    club_memberships:'clubMembershipHistory',user_memberships:'userMembershipHistory',
    uzeflife_audit:'uzeflifeAuditHistory',uzeflife_notifications:'uzeflifeNoticeHistory',
    notification_read_state:'notificationReadState',
+   matchday_locks:'matchdayLockHistory',match_deadlines:'matchDeadlineHistory',
    uzeflife:'uzeflifeState'
   };
   let projectionComplete=true;
