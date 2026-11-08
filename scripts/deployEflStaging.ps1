@@ -8,7 +8,8 @@ Usage: pwsh -File scripts/deployEflStaging.ps1 -StagingAppId 123 -ProductionAppI
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[1-9][0-9]{0,19}$')][string]$StagingAppId,
-  [Parameter(Mandatory=$true)][ValidatePattern('^[1-9][0-9]{0,19}$')][string]$ProductionAppId
+  [Parameter(Mandatory=$true)][ValidatePattern('^[1-9][0-9]{0,19}$')][string]$ProductionAppId,
+  [switch]$TokenFromClipboard
 )
 $ErrorActionPreference = 'Stop'
 if ($StagingAppId -eq $ProductionAppId) { throw 'STAGING_EQUALS_PRODUCTION' }
@@ -22,12 +23,23 @@ $previousProduction = [Environment]::GetEnvironmentVariable('TGCLOUD_PRODUCTION_
 $previousConfirmation = [Environment]::GetEnvironmentVariable('CONFIRM_TGCLOUD_STAGING_DEPLOY','Process')
 $token = $null
 try {
-  $secure = Read-Host 'Paste separate staging bot SERVERLESS CLI access token (not bot API token)' -AsSecureString
-  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-  try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
-  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+  if ($TokenFromClipboard) {
+    # Read the locally copied staging CLI token without console paste or history.
+    # Clear the clipboard immediately, including on validation failure.
+    try {
+      $token = Get-Clipboard -Raw
+    } finally {
+      Set-Clipboard -Value ''
+    }
+    if ($null -ne $token) { $token = $token.Trim() }
+  } else {
+    $secure = Read-Host 'Paste separate staging bot SERVERLESS CLI access token (not bot API token)' -AsSecureString
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+  }
   if (-not $token -or $token -notmatch '^app([1-9][0-9]*):\S{10,}$' -or $Matches[1] -ne $StagingAppId) {
-    throw 'INVALID_STAGING_APP_TOKEN'
+    throw 'INVALID_STAGING_APP_TOKEN: check that clipboard contains the full app<ID>:<secret> CLI token for the staging bot (no quotes)'
   }
   $env:TGCLOUD_TOKEN = $token
   $env:TGCLOUD_STAGING_APP_ID = $StagingAppId
