@@ -49,7 +49,7 @@ test('preview detects next real round but does not require all previous fixtures
   assert.equal(r.canAdvanceManually,true); // Unplayed games cannot block the next round.
   const after=sql.prepare('SELECT * FROM efl_competitions WHERE id=?').get('league');
   assert.deepEqual(after,before);
-  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM efl_fixtures').get().n,6);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM efl_fixtures').get().n,7);
  }finally{sql.close();}
 });
 test('cup displays incomplete participants and outstanding disputes safely',async()=>{
