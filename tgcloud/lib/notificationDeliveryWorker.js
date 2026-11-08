@@ -77,7 +77,7 @@ export async function finishNotificationForWorker(db,input){
  if(lease?.status!=='LEASED'||lease.leaseToken!==leaseToken||
     !Number.isSafeInteger(lease.leaseUntil)||lease.leaseUntil<now)
   throw Error('DELIVERY_ACK_CONFLICT');
- await db.run(`UPDATE efl_notification_deliveries
+ const acknowledged=await db.run(`UPDATE efl_notification_deliveries
  SET status=CASE WHEN :success=1 THEN 'SENT'
    WHEN :error IN ('TELEGRAM_TIMEOUT','NETWORK_UNCERTAIN') THEN 'REVIEW'
    WHEN attempts>=5 THEN 'FAILED' ELSE 'PENDING' END,
@@ -86,6 +86,7 @@ export async function finishNotificationForWorker(db,input){
   last_error=:error,lease_token=NULL,lease_until=NULL
  WHERE notification_id=:id AND lease_token=:token AND status='LEASED'
   AND lease_until>=:now`,params);
+ if(!verifiedSingleWrite(acknowledged))throw Error('DELIVERY_ACK_CONFLICT');
  const row=await db.get(`SELECT status,lease_token AS leaseToken,
   attempts,sent_at AS sentAt,last_error AS lastError
  FROM efl_notification_deliveries WHERE notification_id=:id`,{':id':notificationId});
