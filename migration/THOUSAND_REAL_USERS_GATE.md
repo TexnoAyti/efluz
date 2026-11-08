@@ -50,11 +50,19 @@ HTTP GET and therefore must not be assumed to work:
     {"path": "/fixtures", "weight": 20},
     {"path": "/profile", "weight": 10}
   ],
+  "identityProbe": {"path": "/whoami", "field": "id"},
   "thinkMs": 400,
   "requestTimeoutMs": 5000,
   "thresholds": {"successRate": 0.999, "p95Ms": 500}
 }
 ```
+
+The `/whoami` probe above is only an illustration: the isolated staging
+backend must expose a read-only endpoint returning the current *authenticated*
+test user's unique `id` (or `userId`/`telegramId`) matching the private
+identity fixture. Without a configured working identity probe,
+`loadGatePassed` is always false, even when every request returns HTTP 200.
+Merely providing different authorization-header strings is insufficient.
 
 This initial runner performs authenticated GET requests only. SDK-specific
 authenticated RPC calls, result writes, bot update handling and Mini App
@@ -85,7 +93,7 @@ The local CI smoke exercises real localhost HTTP only. It is intentionally
 marked `loadGatePassed:false`. The 60-minute staging acceptance requires
 all of these:
 
-1. 1,000 **unique authenticated test identities**, with overlapping
+1. 1,000 **unique, server-verified authenticated test identities**, with overlapping
    activity (not 1,000 sequential requests).
 2. 60 minutes of sustained traffic, with mixed league, fixtures, profile
    and standings scenarios, **including actual SDK endpoint adapters**.
@@ -104,7 +112,7 @@ all of these:
 `virtualUsers` describes concurrent **client loops**, not physically
 distinct human users. `maxInflight` is the maximum overlapping HTTP calls.
 `loadGatePassed` only checks the quantitative HTTP acceptance condition
-with 1,000 distinct staging auth contexts over at least 60 minutes.
+with 1,000 distinct, server-verified staging identities over at least 60 minutes.
 `cutoverReady` intentionally remains false; remaining migration checks
 cannot be inferred from one HTTP benchmark.
 
