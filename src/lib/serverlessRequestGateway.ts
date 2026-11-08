@@ -115,7 +115,7 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
     });
     return {competitions,stale:Boolean(item.stale),degraded:Boolean(item.degraded)};
   }
-  const prop=mapping.shape==='competitions'?'competitions':mapping.shape==='fixtures'?'fixtures':'notifications';
+  const prop=mapping.shape==='fixtures'?'fixtures':'notifications';
   if(!Array.isArray(item[prop]))throw new Error('SERVERLESS_RESPONSE_CONTRACT_MISMATCH');
   // Do not synthesize season-one records when staging data has not been imported.
   return {[prop]:item[prop],stale: Boolean(item.stale),degraded:Boolean(item.degraded)};
