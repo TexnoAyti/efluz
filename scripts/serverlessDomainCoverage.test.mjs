@@ -18,14 +18,14 @@ const row=(collection,handling,observedDocuments)=>({collection,handling,observe
 const run=file=>spawnSync(process.execPath,[script,'--manifest='+file],{encoding:'utf8'});
 test('unmapped preserved and unresolved review roots prevent normalizing all production domains',async()=>{
  await withInventory([
-  row('users','preserve',3),row('ticket_transactions','preserve',4),
+  row('users','preserve',3),row('club_admissions','preserve',4),
   row('telegram_ai_state','review',8),row('telegram_webhook_leases','rebuild',10)
  ],async file=>{
   const res=run(file);
   assert.notEqual(res.status,0);
   const report=JSON.parse(res.stdout);
   assert.deepEqual(report.counts,{mapped:3,unmapped:4,review:8,rebuild:10});
-  assert.deepEqual(report.unresolvedPreservedCollections,['ticket_transactions']);
+  assert.deepEqual(report.unresolvedPreservedCollections,['club_admissions']);
   assert.deepEqual(report.unresolvedReviewCollections,['telegram_ai_state']);
   assert.equal(report.cutoverReady,false);
   assert.doesNotMatch(res.stdout,/private-data|telegram_id|userId/);
