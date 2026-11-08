@@ -42,7 +42,7 @@ test('streaming import refuses duplicate document identities',async()=>{
   }finally{await rm(dir,{recursive:true,force:true});}
 });
 
-test('transient login/webhook documents excluded, review collections block migration',async()=>{
+test('transient login/webhook excluded, reviewed sources privately quarantined',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'efl-policy-'));
  try{
   const input=join(dir,'source.jsonl'),output=join(dir,'packets');
@@ -60,9 +60,16 @@ test('transient login/webhook documents excluded, review collections block migra
   const packageData=await readFile(join(output,manifest.batches[0].file),'utf8');
   assert.doesNotMatch(packageData,/private|lease-1/);
   const reviewInput=join(dir,'review.jsonl'),reviewOutput=join(dir,'review-packets');
-  await writeFile(reviewInput,JSON.stringify({...durable,collection_path:'telegram_ai_state'})+'\n');
+  await writeFile(reviewInput,[durable,{...durable,collection_path:'telegram_ai_state'}]
+   .map(JSON.stringify).join('\n')+'\n');
   result=spawnSync(process.execPath,[program,reviewInput,reviewOutput],{encoding:'utf8'});
-  assert.notEqual(result.status,0);
-  assert.match(result.stderr,/SOURCE_COLLECTION_NOT_APPROVED/);
+  assert.equal(result.status,0,result.stderr);
+  const quarantineManifest=JSON.parse(await readFile(join(reviewOutput,'manifest.json'),'utf8'));
+  assert.equal(quarantineManifest.count,1);
+  assert.equal(quarantineManifest.reviewExcluded,1);
+  const privateHistory=await readFile(join(reviewOutput,quarantineManifest.reviewFile),'utf8');
+  assert.match(privateHistory,/telegram_ai_state/);
+  const reviewedPacket=await readFile(join(reviewOutput,quarantineManifest.batches[0].file),'utf8');
+  assert.doesNotMatch(reviewedPacket,/telegram_ai_state/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
