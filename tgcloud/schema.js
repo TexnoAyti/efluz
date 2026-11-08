@@ -408,3 +408,21 @@ export const matchDeadlineHistory=table('efl_match_deadline_history',{
  createdAt:integer('created_at'),referenceStatus:text('reference_status').notNull(),
  sourceRecord:json('source_record').notNull()
 },t=>({fixtureIdx:index('efl_match_deadline_history_fixture_idx').on(t.fixtureId)}));
+
+
+// Historical moderator operations must never execute from these tables.
+export const banAuditHistory=table('efl_ban_audit_history',{
+ id:text('id').primaryKey(),userId:text('user_id').notNull(),
+ telegramId:text('telegram_id').notNull(),
+ isBanned:boolean('is_banned').notNull(),previousIsBanned:boolean('previous_is_banned').notNull(),
+ revision:integer('revision').notNull(),updatedAt:integer('updated_at').notNull(),
+ sourceRecord:json('source_record').notNull(),replayPolicy:text('replay_policy').notNull()
+},t=>({userIdx:index('efl_ban_audit_user_idx').on(t.userId,t.revision)}));
+
+export const banControlHistory=table('efl_ban_control_history',{
+ id:text('id').primaryKey(),targetUserId:text('target_user_id').notNull(),
+ expectedRevision:integer('expected_revision').notNull(),
+ originallyConsumed:boolean('originally_consumed').notNull(),
+ expiresAt:integer('expires_at').notNull(),
+ sourceRecord:json('source_record').notNull(),replayPolicy:text('replay_policy').notNull()
+},t=>({targetIdx:index('efl_ban_control_target_idx').on(t.targetUserId)}));
