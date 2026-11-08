@@ -185,6 +185,12 @@ export function validateImportBatch(input) {
        typeof row.source_sha256!=='string'||
        !/^[a-f0-9]{64}$/.test(row.source_sha256)))
       throw Error('INVALID_UZEFLIFE_NOTICE_HISTORY_ROW');
+    if(table==='notificationReadState'&&
+       (row.id!==row.user_id||!row.state||
+        typeof row.state!=='object'||Array.isArray(row.state)||
+        Object.entries(row.state).some(([key,value])=>
+         !key||typeof value!=='string'||value.length>256)))
+      throw Error('INVALID_NOTIFICATION_READ_IMPORT_ROW');
     if (table === 'rawDocuments' &&
       (!row.data || typeof row.data !== 'object' || Array.isArray(row.data) ||
        !row.encoded || typeof row.encoded !== 'object' || Array.isArray(row.encoded) ||
