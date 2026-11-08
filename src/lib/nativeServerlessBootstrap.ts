@@ -10,7 +10,9 @@ export type NativeEflSession = {
  currentClub:Club|null;
  currentClubStatus:'unavailable'|'resolved';
 };
-export function decodeNativeEflBootstrap(value:unknown):NativeEflSession {
+export function decodeNativeEflBootstrap(value:unknown,selectedSeasonId?:string):NativeEflSession {
+ if(selectedSeasonId && !/^season-20\d{2}-\d{2}$/.test(selectedSeasonId))
+   throw Error('SERVERLESS_INVALID_SEASON');
  if(!value||typeof value!=='object'||(value as any).ok!==true)
    throw new Error('SERVERLESS_BOOTSTRAP_UNVERIFIED');
  const result=value as Record<string,unknown>;
@@ -48,6 +50,7 @@ export function decodeNativeEflBootstrap(value:unknown):NativeEflSession {
  // scopes records by the Serverless-signed Telegram ID. Never infer missing
  // clubs from a displayed name, client URL or Telegram initDataUnsafe.
  const verifiedRows=Array.isArray(result.ownerships)?result.ownerships:[];
+ const ownerSeasonId=selectedSeasonId||season?.id||null;
  const toDate=(value:unknown)=>{
    if(typeof value!=='number'||!Number.isFinite(value)||value<=0)return '';
    const date=new Date(value<1e11?value*1000:value);
@@ -64,7 +67,9 @@ export function decodeNativeEflBootstrap(value:unknown):NativeEflSession {
       typeof row.seasonId!=='string'||!row.seasonId||
       typeof row.clubCountry!=='string'||typeof row.clubShortName!=='string')
      throw Error('SERVERLESS_OWNERSHIP_CONTRACT_MISMATCH');
-   if(season && row.seasonId!==season.id)continue;
+   // No resolved season means ownership remains unavailable: never merge
+   // clubs from different seasons into one displayed current club.
+   if(!ownerSeasonId||row.seasonId!==ownerSeasonId)continue;
    const uniqueKey=row.seasonId+':'+row.clubId;
    if(seen.has(uniqueKey))throw Error('SERVERLESS_DUPLICATE_OWNERSHIP');
    seen.add(uniqueKey);
@@ -82,10 +87,10 @@ export function decodeNativeEflBootstrap(value:unknown):NativeEflSession {
  return {user,season,ownedClubs,currentClub:ownedClubs[0]||null,
    currentClubStatus:ownedClubs.length?'resolved':'unavailable'};
 }
-export async function loadNativeEflBootstrap():Promise<NativeEflSession>{
+export async function loadNativeEflBootstrap(selectedSeasonId?:string):Promise<NativeEflSession>{
  const result=await callEflTransport<unknown>({
    operation:'bootstrap',preferred:'telegram-serverless',
    vercel:()=>Promise.reject(new Error('SERVERLESS_VERCEL_FALLBACK_FORBIDDEN')),
  });
- return decodeNativeEflBootstrap(result);
+ return decodeNativeEflBootstrap(result,selectedSeasonId);
 }
