@@ -113,7 +113,7 @@ test('conflicting pre-existing notification content rolls back confirmation and 
     'Uchrashuv tasdiqlandi','Hisob: 99:99',NULL,0,100)`);
   await assert.rejects(
    confirmFixtureResultWithOutbox(db,'u2',req,transaction()),
-   /RESULT_OUTBOX_NOTIFICATION_CONFLICT/);
+   /RESULT_OUTBOX_NOTIFICATION_BODY_CONFLICT/);
   assert.equal(sql.prepare("SELECT status FROM efl_fixtures WHERE id='f1'").get().status,'SCHEDULED');
   assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM efl_audit_logs').get().n,0);
   assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM efl_notification_deliveries').get().n,0);
