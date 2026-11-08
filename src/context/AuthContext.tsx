@@ -254,8 +254,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setUser(session.user);
           setOwnedClubs(session.ownedClubs);
-          setCurrentClub(session.currentClub);
-          setClubUnavailable(true);
+          setCurrentClub(resolveActiveClub(
+            session.ownedClubs,session.currentClub,session.user.id,
+            session.season?.id||'season-2026-27',clubPreferenceStorage()
+          ));
+          setClubUnavailable(session.currentClubStatus==='unavailable');
           if (session.season) {
             setSeasons([session.season]);
             setCurrentSeason(session.season);
