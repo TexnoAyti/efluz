@@ -46,7 +46,7 @@ export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unkno
     const seasons=item.seasons.map((value:unknown)=>{
       if(!value||typeof value!=='object')throw new Error('SERVERLESS_SEASON_CONTRACT_MISMATCH');
       const row=value as Record<string,unknown>;
-      if(typeof row.id!=='string'||!/^season-20\\d{2}-\\d{2}$/.test(row.id)||
+      if(typeof row.id!=='string'||!/^season-20\d{2}-\d{2}$/.test(row.id)||
          typeof row.name!=='string'||!['active','registration','upcoming','completed'].includes(String(row.status)))
         throw new Error('SERVERLESS_SEASON_CONTRACT_MISMATCH');
       return value;
