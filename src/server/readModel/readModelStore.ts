@@ -911,7 +911,11 @@ export async function buildCompetitionsSnapshot(seasonId = 'season-2026-27'): Pr
     }
     return competition;
   }).filter(c => !c.id.includes('efl-cup') && String(c.status) !== 'inactive' && !(c as any).hidden);
-  if (!competitions.length) throw new ReadModelNotWarmedError('No authoritative competition catalog');
+  // Season two may be accepting clubs before its competitions have been
+  // created. A successful, empty authoritative query is not an outage.
+  // Keep every other season fail-closed to avoid hiding missing cups/leagues.
+  if (!competitions.length && seasonId !== 'season-2027-28')
+    throw new ReadModelNotWarmedError('No authoritative competition catalog');
   const snapshot: ReadModelSnapshot<Competition[]> = {
     schemaVersion: SCHEMA_VERSION, generatedAt: new Date().toISOString(),
     sourceVersion: 'firestore-catalog', expectedCount: competitions.length,
@@ -1523,12 +1527,12 @@ export async function getCompetitionsFromReadModel(
   const result = await readThroughReadModel<Competition[]>({
     key: ReadModelKeys.competitions(seasonId),
     seasonId,
-    expectedCount: 17,
+    expectedCount: seasonId === 'season-2027-28' ? 0 : 17,
     firestoreFetcher: async () => {
       const snap = await buildCompetitionsSnapshot(seasonId);
       return snap.data;
     },
-    validateData: (data) => Array.isArray(data) && data.length > 0,
+    validateData: (data) => Array.isArray(data) && (data.length > 0 || seasonId === 'season-2027-28'),
   });
 
   const competitions = result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId));
