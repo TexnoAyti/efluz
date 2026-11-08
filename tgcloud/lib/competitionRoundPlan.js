@@ -40,9 +40,14 @@ export async function readCompetitionRoundPlan(db,telegramId,input={}){
    FROM efl_disputes d JOIN efl_fixtures f ON f.id=d.fixture_id
    WHERE f.competition_id=:competition AND f.season_id=:season
     AND f.round=:round AND d.status IN ('OPEN','PENDING','UNDER_REVIEW')`,params);
- const upcoming=await db.get(`SELECT MIN(round) AS nextRound, COUNT(*) AS futureFixtures
+ const upcoming=await db.get(`SELECT MIN(round) AS nextRound
    FROM efl_fixtures WHERE competition_id=:competition AND season_id=:season
     AND round>:round`,params);
+ // Count only fixtures in the first stored future round, not all later rounds.
+ const nextFixtures=upcoming?.nextRound===null||upcoming?.nextRound===undefined
+  ?0:await db.get(`SELECT COUNT(*) AS total
+    FROM efl_fixtures WHERE competition_id=:competition AND season_id=:season
+     AND round=:next`,{...params,':next':upcoming.nextRound});
  const nextRound=upcoming?.nextRound??null;
  if(nextRound!==null&&(!Number.isSafeInteger(nextRound)||nextRound<=current))
   throw Error('INVALID_ROUND_PLAN_NEXT');
@@ -76,7 +81,7 @@ export async function readCompetitionRoundPlan(db,telegramId,input={}){
    currentRound:current,roundOpen:!!competition.isRoundOpen,
    scheduleMode:competition.scheduleMode},
   current:summary,
-  next:{round:nextRound,existingFixtures:safeCount(upcoming?.futureFixtures,'FUTURE')},
+  next:{round:nextRound,existingFixtures:safeCount(nextFixtures?.total,'FUTURE')},
   leagueRound:league?.currentRound??null,
   // Unfinished previous fixtures are informational, not a manual-advance blocker.
   // This preview does not enable any mutation endpoint or Telegram delivery.
