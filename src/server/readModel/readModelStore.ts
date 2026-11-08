@@ -691,13 +691,17 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   // main club/leagues screens on every revisit.
   const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
   if (!cleanKey.endsWith(':fixtures') && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < Math.min(ttlSeconds * 1000, PROCESS_MEMORY_TTL_MS)) {
+    // Fast L1 reads must respect an OPEN circuit breaker: the same cached
+    // bytes remain usable but are no longer verified fresh.
+    const breaker = firestoreCircuitBreaker.getStatus();
+    const breakerDegraded = breaker.state !== 'CLOSED' || Boolean(breaker.softLimitExceeded);
     return {
       data: memoryHit.data,
-      source: 'memory',
+      source: breakerDegraded ? 'memory_stale' : 'memory',
       generatedAt: memoryHit.generatedAt,
       sourceVersion: memoryHit.sourceVersion,
-      stale: Boolean(memoryHit.stale),
-      degraded: Boolean(memoryHit.degraded),
+      stale: breakerDegraded || Boolean(memoryHit.stale),
+      degraded: breakerDegraded || Boolean(memoryHit.degraded),
     };
   }
 
