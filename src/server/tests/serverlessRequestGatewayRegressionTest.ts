@@ -80,6 +80,27 @@ assert.throws(()=>normalizeEflReadResponse(fixtureDetailsRequest,
  {ok:true,fixture:{id:'fixture-one',status:'SCHEDULED',round:1}}),
  /SERVERLESS_FIXTURE_CONTRACT_MISMATCH/);
 
+const adminScope=mapEflReadRequest('/api/admin/scoped/overview?seasonId=season-2026-27');
+assert.deepEqual(adminScope,{operation:'adminScopedOverview',
+ input:{seasonId:'season-2026-27',cursor:0,limit:100},shape:'adminScopedOverview'});
+const adminRaw={ok:true,seasonId:'season-2026-27',
+ leagues:[{id:'league-a',seasonId:'season-2026-27',name:'La Liga'}],
+ competitions:[{id:'competition-a',seasonId:'season-2026-27',status:'ACTIVE'}],
+ clubs:[{id:'club-a',leagueId:'league-a',name:'Example'}],
+ fixtures:[{id:'fixture-a',seasonId:'season-2026-27',competitionId:'competition-a',
+   status:'SCHEDULED',round:1}],nextCursor:null};
+const adminResult=normalizeEflReadResponse(adminScope,adminRaw) as
+ {fixtures:Array<{matchday:number}>;competitions:Array<{status:string}>};
+assert.equal(adminResult.fixtures[0].matchday,1);
+assert.equal(adminResult.competitions[0].status,'active');
+assert.throws(()=>normalizeEflReadResponse(adminScope,{...adminRaw,
+ seasonId:'season-2027-28'}),/SERVERLESS_ADMIN_OVERVIEW_CONTRACT_MISMATCH/);
+assert.throws(()=>normalizeEflReadResponse(adminScope,{...adminRaw,
+ competitions:[{id:'competition-a',seasonId:'season-2027-28',status:'ACTIVE'}]}),
+ /SERVERLESS_ADMIN_CROSS_SEASON_DATA/);
+assert.throws(()=>normalizeEflReadResponse(adminScope,{...adminRaw,
+ nextCursor:-1}),/SERVERLESS_ADMIN_CURSOR_INVALID/);
+
 const bracket=mapEflReadRequest('/api/competitions/comp-fa-cup-2026/fixtures?seasonId=season-2026-27');
 assert.deepEqual(bracket,{operation:'competitionDetail',input:{
   competitionId:'comp-fa-cup-2026',seasonId:'season-2026-27',limit:100
