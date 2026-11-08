@@ -512,3 +512,12 @@ export const ticketIdempotencyHistory=table('efl_ticket_idempotency_history',{
  transactionId:text('transaction_id').notNull(),
  tournamentId:text('tournament_id').notNull(),createdAt:integer('created_at').notNull()
 });
+
+
+// Private archive binding only. These domains are NOT operationally migrated.
+export const sealedLegacyHistory=table('efl_sealed_legacy_history',{
+ id:text('id').primaryKey(),sourceSpace:text('source_space').notNull(),
+ collectionPath:text('collection_path').notNull(),documentId:text('document_id').notNull(),
+ sourceChecksum:text('source_checksum').notNull(),sourceBytes:integer('source_bytes').notNull(),
+ handling:text('handling').notNull()
+},t=>({identityIdx:uniqueIndex('efl_sealed_legacy_identity_idx').on(t.sourceSpace,t.collectionPath,t.documentId)}));
