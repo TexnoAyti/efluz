@@ -426,3 +426,32 @@ export const banControlHistory=table('efl_ban_control_history',{
  expiresAt:integer('expires_at').notNull(),
  sourceRecord:json('source_record').notNull(),replayPolicy:text('replay_policy').notNull()
 },t=>({targetIdx:index('efl_ban_control_target_idx').on(t.targetUserId)}));
+
+
+// Private shadow-only custom tournament domain. Sensitive invite and spectator
+// tokens are deliberately excluded; source checksum binds the private archive.
+export const customTournamentHistory=table('efl_custom_tournament_history',{
+ id:text('id').primaryKey(),name:text('name').notNull(),
+ organizerUserId:text('organizer_user_id').notNull(),status:text('status').notNull(),
+ format:text('format').notNull(),maxParticipants:integer('max_participants').notNull(),
+ sourceSha256:text('source_sha256').notNull(),replayPolicy:text('replay_policy').notNull()
+});
+export const customTournamentParticipantHistory=table('efl_custom_tournament_participant_history',{
+ id:text('id').primaryKey(),tournamentId:text('tournament_id').notNull(),
+ userId:text('user_id').notNull(),clubId:text('club_id').notNull(),
+ status:text('status').notNull(),sourceSha256:text('source_sha256').notNull(),
+ replayPolicy:text('replay_policy').notNull()
+},t=>({tournamentIdx:index('efl_custom_participant_tournament_idx').on(t.tournamentId)}));
+export const customTournamentFixtureHistory=table('efl_custom_tournament_fixture_history',{
+ id:text('id').primaryKey(),tournamentId:text('tournament_id').notNull(),
+ status:text('status').notNull(),stage:text('stage').notNull(),
+ leg:integer('leg').notNull(),round:integer('round').notNull(),
+ matchIndex:integer('match_index').notNull(),sourceSha256:text('source_sha256').notNull(),
+ replayPolicy:text('replay_policy').notNull()
+},t=>({tournamentIdx:index('efl_custom_fixture_tournament_idx').on(t.tournamentId)}));
+export const customTournamentAuditHistory=table('efl_custom_tournament_audit_history',{
+ id:text('id').primaryKey(),tournamentId:text('tournament_id').notNull(),
+ action:text('action').notNull(),actorUserId:text('actor_user_id').notNull(),
+ sourceSha256:text('source_sha256').notNull(),
+ replayPolicy:text('replay_policy').notNull()
+},t=>({tournamentIdx:index('efl_custom_audit_tournament_idx').on(t.tournamentId)}));
