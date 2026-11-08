@@ -1,3 +1,4 @@
+import { callEflTransport, type EflTransport } from './serverlessTransport';
 import { isSeasonCompetitionEnabled } from './seasonParticipationPolicy';
 import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
 import type {AdminTaskPage,AdminTaskPriority,AdminTaskGroup} from '../types/adminTasks';
@@ -329,6 +330,14 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 const telegramAuthFlights = new Map<string, Promise<any>>();
 
 export const api = {
+  // Manual diagnostic only: legacy traffic remains on Vercel.
+  async probeMigrationTransport(preferred: EflTransport = 'vercel'):
+    Promise<{ok:boolean;service?:string;migrationMode?:string;source?:string}> {
+    return callEflTransport({
+      operation:'health', preferred,
+      vercel: () => request('/api/health',{skipCache:true,retries:0,timeoutMs:8000})
+    });
+  },
   async getDiscipline(userId: string, seasonId: string): Promise<{ cards: import('../types/discipline').DisciplineCard[] }> {
     return request(`/api/discipline/users/${encodeURIComponent(userId)}?seasonId=${encodeURIComponent(seasonId)}`, {skipCache:true,retries:0});
   },

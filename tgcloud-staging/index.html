@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10101A">
+  <meta name="description" content="EFLUZ Telegram Serverless xavfsiz sinov oynasi">
+  <title>EFLUZ • Serverless staging</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script type="module" src="./main.js"></script>
+</head>
+<body>
+  <main id="root" class="shell">
+    <header class="brand"><div class="mark">E</div><div><strong>EFLUZ</strong><small>SERVERLESS · SINOV</small></div></header>
+    <section class="hero">
+      <span class="eyebrow">TELEGRAM NATIVE</span>
+      <h1>Serverless sinov muhiti</h1>
+      <p>Bu alohida test oynasi. Asosiy EFLUZ bot, mavsumlar va hisoblar o‘zgarmaydi.</p>
+      <div id="state" class="state" role="status" aria-live="polite">Telegram ulanishi tekshirilmagan</div>
+    </section>
+    <section class="panel">
+      <h2>Aloqa tekshiruvi</h2>
+      <p>Telegram tomonidan tasdiqlangan sessiya bilan Serverless API chaqiriladi.</p>
+      <button id="connect" type="button">Ulanishni tekshirish</button>
+      <div id="health" class="result" aria-live="polite">Natija kutilmoqda</div>
+    </section>
+    <section class="panel">
+      <h2>Mening sinov profilim</h2>
+      <p>Faqat staging bazasidan o‘qiladi. Yozish amallari o‘chirilgan.</p>
+      <button id="profile" type="button" disabled>Profilni ko‘rish</button>
+      <div id="profileResult" class="result" aria-live="polite">Hali tekshirilmagan</div>
+    </section>
+    <section class="panel">
+      <h2>Mavsum — musobaqalar va o‘yinlar</h2>
+      <p>Import qilingan mavsum uchun faqat o‘qish. O‘z o‘yinlaringiz Telegram ID orqali tekshiriladi.</p>
+      <button id="competitions" type="button" disabled>Musobaqalar</button>
+      <button id="myFixtures" type="button" disabled>Mening uchrashuvlarim</button>
+      <div id="fixturesResult" class="result" aria-live="polite">Avval profilingizni tekshiring</div>
+    </section>
+    <section class="panel">
+      <h2>UZEFLIFE — turnir holati</h2>
+      <p>Yangi Serverless bazasidagi mavjud turlar va uchrashuvlar. Natija yuborish o‘chirilgan.</p>
+      <button id="uzeflife" type="button" disabled>Turnirni tekshirish</button>
+      <div id="uzeflifeResult" class="result" aria-live="polite">Hali tekshirilmagan</div>
+    </section>
+    <section class="panel">
+      <h2>TEAMS — jamoalar</h2>
+      <p>Faqat umumiy jamoalar katalogi. A’zolarning shaxsiy ma’lumotlari ko‘rsatilmaydi.</p>
+      <button id="teams" type="button" disabled>Jamoalarni tekshirish</button>
+      <div id="teamsResult" class="result" aria-live="polite">Hali tekshirilmagan</div>
+    </section>
+    <section class="panel">
+      <h2>Bildirishnomalar</h2>
+      <p>Faqat o‘zingizga tegishli eski xabarlarning Serverless’dagi o‘qish nusxasi.</p>
+      <button id="inbox" type="button" disabled>Bildirishnomalarni ko‘rish</button>
+      <div id="inboxResult" class="result" aria-live="polite">Hali tekshirilmagan</div>
+    </section>
+    <section class="panel">
+      <h2>TEAMS — mening arizalarim</h2>
+      <p>Shaxsiy arizalar va holati. Staging’da ariza yuborish o‘chirilgan.</p>
+      <button id="teamRequests" type="button" disabled>Arizalarim</button>
+      <div id="teamRequestsResult" class="result" aria-live="polite">Hali tekshirilmagan</div>
+    </section>
+    <section class="panel" id="staffPanel" hidden>
+      <h2>Admin kuzatuvi</h2>
+      <p>Faqat tasdiqlangan administrator uchun. Hech qanday yozish yoki tur almashishi yo‘q.</p>
+      <button id="staffOverview" type="button" disabled>Admin ko‘rsatkichlari</button>
+      <button id="roundAudit" type="button" disabled>UZEFLIFE joriy tur</button>
+      <div id="staffResult" class="result" aria-live="polite">Hali tekshirilmagan</div>
+    </section>
+    <footer>STAGING ONLY · Hech qanday klub yoki o‘yin natijasi o‘zgartirilmaydi.</footer>
+  </main>
+</body>
+</html>

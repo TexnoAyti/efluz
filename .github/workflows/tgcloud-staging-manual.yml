@@ -1,0 +1,53 @@
+name: Telegram Serverless staging deploy (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Only a separate staging bot is allowed"
+        required: true
+        type: choice
+        options:
+          - DO_NOT_DEPLOY
+          - DEPLOY_STAGING_ONLY
+        default: DO_NOT_DEPLOY
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-serverless-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    if: ${{ inputs.confirmation == 'DEPLOY_STAGING_ONLY' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: tgcloud-staging
+    env:
+      # Set only for a separate Telegram test bot. Never use a production token.
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_STAGING_TOKEN }}
+      TGCLOUD_STAGING_APP_ID: ${{ vars.TGCLOUD_STAGING_APP_ID }}
+      TGCLOUD_PRODUCTION_APP_ID: ${{ vars.TGCLOUD_PRODUCTION_APP_ID }}
+      CONFIRM_TGCLOUD_STAGING_DEPLOY: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Verify separate staging bot identity (fail closed)
+        run: node scripts/verifyTgcloudStagingGate.mjs
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate runtime modules
+        run: node scripts/checkTgcloudModules.mjs
+      - name: Build isolated Mini App
+        run: bun run build:tgcloud
+      - name: Check static output excludes backend
+        run: node scripts/verifyTgcloudStatic.mjs
+      - name: Deploy to isolated staging bot only
+        run: npx --yes --package=@tgcloud/cli tgcloud push
+      - name: Review proposed staging schema changes (read-only)
+        run: npx --yes --package=@tgcloud/cli tgcloud migrate --dry-run
+      - name: Apply additive staging schema changes only
+        run: npx --yes --package=@tgcloud/cli tgcloud migrate --safe
