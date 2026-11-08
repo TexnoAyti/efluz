@@ -366,3 +366,18 @@ export const userMembershipHistory=table('efl_user_membership_history',{
  claimedAt:integer('claimed_at'),updatedAt:integer('updated_at'),
  releasedAt:integer('released_at'),sourceRecord:json('source_record').notNull()
 },t=>({userIdx:index('efl_user_membership_history_user_idx').on(t.userId,t.seasonId)}));
+
+
+// Append-only historical UZEFLIFE records. No worker may consume these tables.
+export const uzeflifeAuditHistory=table('efl_uzeflife_audit_history',{
+ id:text('id').primaryKey(),action:text('action').notNull(),
+ actor:text('actor').notNull(),revision:integer('revision').notNull(),
+ occurredAt:integer('occurred_at').notNull(),details:json('details').notNull(),
+ sourceRecord:json('source_record').notNull()
+},t=>({revisionIdx:index('efl_uzeflife_audit_history_revision_idx').on(t.revision)}));
+
+export const uzeflifeNoticeHistory=table('efl_uzeflife_notice_history',{
+ id:text('id').primaryKey(),sourceStatus:text('source_status').notNull(),
+ createdAt:integer('created_at').notNull(),noticeCount:integer('notice_count').notNull(),
+ replayPolicy:text('replay_policy').notNull(),sourceRecord:json('source_record').notNull()
+});
