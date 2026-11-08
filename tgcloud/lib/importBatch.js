@@ -18,6 +18,8 @@ export const IMPORT_TABLES = Object.freeze({
   ticketBalances: ['id','user_id','telegram_id','balance','total_granted','total_spent','total_refunded','free_ticket_granted_at','updated_at'],
   ticketTransactions: ['id','user_id','type','amount','idempotency_key','note','performed_by_admin_id','tournament_id','created_at'],
   playerTrophies: ['id','season_id','competition_id','club_id','winner_user_id','winner_username','club_name','competition_name','active','decided_by','evaluated_at','confirmed_at'],
+  retentionDecisions: ['id','user_id','season_id','source_season_id','club_id','choice','decided_at'],
+  premiumEntitlements: ['id','user_id','season_id','status','source','note','payment_charge_id','activated_at','revoked_at','revoked_by','updated_at','updated_by'],
   rawDocuments: ['id','source_space','collection_path','document_id','encoded','data','source_checksum'],
   rawDocumentParts: ['id','source_document_id','source_space','collection_path','document_id','part_index','part_count','part_data','source_checksum','part_checksum'],
   uzeflifeState: ['id','name','status','format','current_round','total_rounds','round_hours','participants_count','matches_count','source_revision'],
@@ -33,13 +35,13 @@ export const SQL_TABLES = Object.freeze({
   competitions:'efl_competitions',participants:'efl_competition_participants',
   resultSubmissions:'efl_result_submissions',disputes:'efl_disputes',
   notifications:'efl_notifications',auditLogs:'efl_audit_logs',
-  ticketBalances:'efl_ticket_balances',ticketTransactions:'efl_ticket_transactions',playerTrophies:'efl_player_trophies',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
+  ticketBalances:'efl_ticket_balances',ticketTransactions:'efl_ticket_transactions',playerTrophies:'efl_player_trophies',retentionDecisions:'efl_retention_decisions',premiumEntitlements:'efl_premium_entitlements',rawDocuments:'efl_raw_documents',rawDocumentParts:'efl_raw_document_parts',uzeflifeState:'efl_uzeflife_state',uzeflifeEntrants:'efl_uzeflife_entrants',uzeflifeFixtures:'efl_uzeflife_fixtures',teamsCatalog:'efl_teams_catalog',teamMembers:'efl_team_members'
 });
 export const PRIMARY_KEYS = Object.freeze({
   users:'id',seasons:'id',leagues:'id',clubs:'id',
   clubOccupancies:'id',fixtures:'id',matchAccess:'match_id',matchMessages:'id',
   competitions:'id',participants:'id',resultSubmissions:'id',disputes:'id',
-  notifications:'id',auditLogs:'id',ticketBalances:'id',ticketTransactions:'id',playerTrophies:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
+  notifications:'id',auditLogs:'id',ticketBalances:'id',ticketTransactions:'id',playerTrophies:'id',retentionDecisions:'id',premiumEntitlements:'id',rawDocuments:'id',rawDocumentParts:'id',uzeflifeState:'id',uzeflifeEntrants:'id',uzeflifeFixtures:'id',teamsCatalog:'id',teamMembers:'id'
 });
 const has = (o,k) => Object.prototype.hasOwnProperty.call(o,k);
 function canonical(value) {
