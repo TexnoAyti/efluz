@@ -60,6 +60,30 @@ be replayed. Archived evidence can exceed one Serverless import packet;
 - Shadow import and mutation controls remain disabled in
   `tgcloud/lib/importControl.js` and `tgcloud/lib/mutationControl.js`.
 
+## Result confirmation atomicity gate — 2026-11-08
+
+- The original native `confirmResult` endpoint previously invoked the
+  nontransactional fixture updater directly. The migration branch now routes
+  through `confirmFixtureResultWithOutbox`, which requires one transaction
+  spanning the confirmed score, audit record, two inbox messages and two
+  delivery outbox entries.
+- The new `MUTATION_CONTROL.resultConfirmationTransactionsVerified` flag is
+  **false** independently of the global mutation switch. An SDK method named
+  `transaction` alone is NOT evidence of atomic rollback semantics.
+- Staging tests deny a missing transaction provider, invalid transaction
+  context and released-club ownership before any fixture write. These
+  offline tests cannot establish that Telegram's actual SDK rolls back
+  cross-table operations on network failure.
+- Migration-only CI run
+  [42508562695](https://github.com/TexnoAyti/efluz/actions/runs/42508562695)
+  passed build, TypeScript, gateway/result safety tests and backend syntax.
+- [ ] Verify SDK transaction semantics in isolated staging with injected
+  audit/notification failure, concurrent confirmation attempts, retry and
+  full rollback/readback; then review enabling the separate gate.
+- [ ] Prove proposer result persistence, conflict handling, season-one cup
+  tie-break parity, official standings updates and Telegram delivery parity.
+- **No production result mutation or bot deployment has occurred.**
+
 ## Live deployment / capacity blockers
 
 There is no verified Telegram Serverless staging app URL, 1,000 distinct
