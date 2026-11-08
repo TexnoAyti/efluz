@@ -21,7 +21,17 @@ export function validateLoadScenario(config){
   return {path:row.path,weight:row.weight};
  });
  if(sum!==100)throw Error('LOAD_WEIGHTS_NOT_100');
- return {routes:safeRoutes,thinkMs,requestTimeoutMs};
+ let identityProbe=null;
+ if(config.identityProbe!==undefined){
+  const probe=config.identityProbe;
+  if(!probe||typeof probe!=='object'||Array.isArray(probe)||
+     typeof probe.path!=='string'||!/^\\/[A-Za-z0-9/_-]*$/.test(probe.path)||
+     probe.path.startsWith('//')||
+     !['id','userId','telegramId'].includes(probe.field))
+   throw Error('INVALID_AUTH_IDENTITY_PROBE');
+  identityProbe={path:probe.path,field:probe.field};
+ }
+ return {routes:safeRoutes,thinkMs,requestTimeoutMs,identityProbe};
 }
 export function validateStagingTarget(origin,{stagingOrigin,productionOrigin,allowLocal=false}={}){
  let target;
@@ -78,6 +88,41 @@ export async function runStagingLoad({
  const source=validateLoadScenario(scenario);
  if(!integer(durationMs,100,3600000))throw Error('INVALID_LOAD_DURATION');
  const auth=validateLoadIdentities(users,identities);
+ let verifiedAuthContexts=0,authProbeFailed=0;
+ if(source.identityProbe){
+  // Verify actual staging responses identify each caller as the expected user.
+  // Unique header strings alone do not prove the server authenticated them.
+  // Bounded 25-client batches avoid uncontrolled auth-probe bursts.
+  for(let offset=0;offset<users;offset+=25){
+   const slice=auth.slice(offset,offset+25);
+   await Promise.all(slice.map(async(identity,index)=>{
+    const expectedId=identities[offset+index].id;
+    try{
+     const response=await fetchImpl(origin+source.identityProbe.path,{
+      method:'GET',headers:identity.headers,redirect:'manual',cache:'no-store',
+      signal:AbortSignal.timeout(source.requestTimeoutMs)
+     });
+     if(response.status<200||response.status>=300){
+      authProbeFailed++;
+      await response.body?.cancel?.();
+      return;
+     }
+     const contentLength=Number(response.headers?.get?.('content-length')??0);
+     if(contentLength>8192){
+      authProbeFailed++;
+      await response.body?.cancel?.();
+      return;
+     }
+     const raw=await response.text();
+     if(raw.length>8192){authProbeFailed++;return;}
+     const body=JSON.parse(raw);
+     if(body&&String(body[source.identityProbe.field])===expectedId)
+      verifiedAuthContexts++;
+     else authProbeFailed++;
+    }catch{authProbeFailed++;}
+   }));
+  }
+ }
  const hist=new Uint32Array(MAX_MS+1);
  const metrics={virtualUsers:users,requests:0,success:0,http4xx:0,http5xx:0,
   timeouts:0,networkErrors:0,otherHttp:0,maxInflight:0,maxResponseMs:0,
@@ -139,12 +184,13 @@ export async function runStagingLoad({
  if(!Number.isFinite(threshold.successRate)||threshold.successRate<0||
     threshold.successRate>1||!integer(threshold.p95Ms,1,MAX_MS))
   throw Error('INVALID_LOAD_THRESHOLDS');
- const loadGatePassed=users===1000&&durationMs>=3600000&&
+ const loadGatePassed=verifiedAuthContexts===users&&authProbeFailed===0&&
+   users===1000&&durationMs>=3600000&&
    metrics.requests>=1000&&successRate>=threshold.successRate&&
    p95Ms<=threshold.p95Ms;
  return {testType:'HTTP_STAGING_AUTHENTICATED_VIRTUAL_USERS',durationMs,
   elapsedMs,...metrics,p95Ms,p99Ms,successRate,
   requestsPerSecond:Number((metrics.requests/(elapsedMs/1000)).toFixed(2)),
-  loadGatePassed,cutoverReady:false,
-  note:'1000 distinct staging auth contexts and 60 minutes are required; HTTP load success alone never authorizes production cutover.'};
+  verifiedAuthContexts,authProbeFailed,loadGatePassed,cutoverReady:false,
+  note:'1000 server-verified staging identities and 60 minutes are required. Missing identityProbe means the load gate cannot pass. HTTP success alone never authorizes production cutover.'};
 }
