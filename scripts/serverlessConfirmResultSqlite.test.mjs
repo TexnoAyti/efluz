@@ -80,3 +80,40 @@ test('mismatching opponent submission or unresolved dispute prevents confirmatio
   }finally{sql.close();}
  }
 });
+
+test('released or banned original submitter cannot have their stale score confirmed',async()=>{
+ for(const mutate of [
+  sql=>sql.exec("UPDATE efl_club_occupancies SET status='RELEASED' WHERE user_id='u1'"),
+  sql=>sql.exec("UPDATE efl_users SET is_banned=1 WHERE id='u1'"),
+  sql=>sql.exec("UPDATE efl_club_occupancies SET user_id='u3',telegram_id='789' WHERE user_id='u1'")
+ ]){
+  const {sql,db}=setup();
+  try{
+   mutate(sql);
+   await assert.rejects(confirmFixtureResult(db,'u2',{submissionId:'p1'}),
+    /SUBMISSION_INVALID_OWNER/);
+   const fixture=sql.prepare("SELECT status,home_score,away_score FROM efl_fixtures WHERE id='f1'").get();
+   assert.equal(fixture.status,'SCHEDULED');
+   assert.equal(fixture.home_score,null);
+   assert.equal(fixture.away_score,null);
+  }finally{sql.close();}
+ }
+});
+test('submitter changing clubs at write time cannot bypass conditional authorization',async()=>{
+ const {sql,db}=setup();
+ try{
+  let reads=0;
+  const unstable={
+   async get(query,params={}){
+    const result=await db.get(query,params);
+    if(query.includes('SELECT o.id FROM efl_club_occupancies')&&++reads===1)
+     sql.exec("UPDATE efl_club_occupancies SET status='RELEASED' WHERE user_id='u1'");
+    return result;
+   },
+   run:db.run
+  };
+  await assert.rejects(confirmFixtureResult(unstable,'u2',{submissionId:'p1'}),
+   /CONFIRM_CONFLICT_OR_LOCKED/);
+  assert.equal(sql.prepare("SELECT status FROM efl_fixtures WHERE id='f1'").get().status,'SCHEDULED');
+ }finally{sql.close();}
+});
