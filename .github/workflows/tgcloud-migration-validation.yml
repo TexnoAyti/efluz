@@ -31,6 +31,9 @@ jobs:
         run: |
           node scripts/checkTgcloudModules.mjs
           find tgcloud -type f -name '*.js' -print0 | xargs -0 -n 1 node --check
+      - name: Validate offline import replay, late conflict rejection and packet bounds
+        run: |
+          node --test scripts/serverlessMigrationReplay.test.mjs scripts/serverlessImportBoundaries.test.mjs
       - name: Validate isolated Serverless staging smoke build
         run: |
           bun run build:tgcloud
