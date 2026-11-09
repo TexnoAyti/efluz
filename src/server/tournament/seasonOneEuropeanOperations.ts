@@ -1,10 +1,11 @@
 import {createHash} from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
 import {COLLECTIONS} from '../firebase/collections';
-import {domesticSeasonComplete,domesticEuropeanQualificationReady,europeanDrawPublished} from '../services/europeanFixtureGate';
+import {domesticSeasonComplete,domesticEuropeanQualificationReady,europeanDrawPublished,europeanManualQualification} from '../services/europeanFixtureGate';
 import {getCompetitionMatchdayControl,controlCompetitionMatchday} from '../services/competitionMatchdayService';
 import {generateCompetitionFixturesFirestore} from '../firebase/firestoreStore';
 import {generateKnockoutBracket} from './knockoutEngine';
+import {SEED_CLUBS} from '../db/seed';
 
 export const SEASON_ONE_EUROPE={
   'comp-champions-league-2026':'UEFA Champions League',
@@ -43,6 +44,7 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
  const domesticLeaguesCompleted=domesticSeasonComplete(competitions,seasonFixtures,'season-2026-27');
  const qualificationMathematicallyReady=domesticEuropeanQualificationReady(competitions,seasonFixtures,'season-2026-27');
  const qualificationFinal=comp.europeanQualificationMode==='final'&&Boolean(comp.europeanQualificationToken);
+ const manualQualification=europeanManualQualification(comp);
  const drawPublished=europeanDrawPublished(comp);
  const participants=partSnap.docs.map(d=>d.data()).filter(p=>p.seasonId==='season-2026-27');
  const uniqueIds=new Set(participants.map(p=>p.clubId));
@@ -61,7 +63,7 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
      incomplete:fixtures.filter(f=>f.status!=='CONFIRMED').length};
   });
  const blockers:string[]=[];
- if(!qualificationMathematicallyReady)blockers.push('QUALIFICATION_POSITIONS_NOT_LOCKED');
+ if(!qualificationMathematicallyReady&&!manualQualification)blockers.push('QUALIFICATION_POSITIONS_NOT_LOCKED');
  if(!qualificationFinal)blockers.push('FINAL_QUALIFICATION_REQUIRED');
  if(participants.length!==32||uniqueIds.size!==32)blockers.push('EXPECTED_32_UNIQUE_PARTICIPANTS');
  if(rows.length)blockers.push(drawPublished?'DRAW_ALREADY_PUBLISHED':'UNPUBLISHED_FIXTURES_REQUIRE_REVIEW');
@@ -70,11 +72,11 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
    participants.length===32&&uniqueIds.size===32;
  const phase:Phase=completedFinal?'COMPLETED':knockoutFixtures.length?'KNOCKOUT_PHASE':
    canGenerateKnockout?'KNOCKOUT_READY':drawPublished?'LEAGUE_PHASE':
-   rows.length?'DRAW_REVIEW_REQUIRED':!qualificationMathematicallyReady?'WAITING_LEAGUES':
+   rows.length?'DRAW_REVIEW_REQUIRED':!qualificationMathematicallyReady&&!manualQualification?'WAITING_LEAGUES':
    !qualificationFinal?'WAITING_QUALIFICATION':
    participants.length!==32||uniqueIds.size!==32?'WAITING_PARTICIPANTS':'DRAW_READY';
  const sourceToken=hash({
-  id,qualificationMathematicallyReady,domesticLeaguesCompleted,qualificationFinal,qualificationToken:comp.europeanQualificationToken||null,
+  id,qualificationMathematicallyReady,domesticLeaguesCompleted,qualificationFinal,manualQualification,qualificationToken:comp.europeanQualificationToken||null,
   participants:participants.map(p=>p.clubId).sort(),
   fixtures:rows.map(f=>[f.id,f.status,f.europeanDrawId,f.matchday,
     f.homeClubId,f.awayClubId,f.homeScore,f.awayScore,f.winnerClubId])
@@ -85,6 +87,35 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
   participants:participants.length,fixtures:rows.length,
   confirmed:rows.filter(f=>f.status==='CONFIRMED').length,
   currentMatchday:Number(comp.currentMatchday)||1,rounds,canGenerateDraw,canGenerateKnockout,sourceToken,blockReasons:blockers};
+}
+/** Admin freezes a previously registered 32-club roster. No domestic result edits.
+ * This is not an automatic claim that the league standings are final. */
+export async function finalizeSeasonOneEuropeanManualRoster(id:string,params:{
+ previewToken:string;confirmation:boolean;adminUserId:string
+}):Promise<{success:true;participants:32}>{
+ if(!isSeasonOneEuro(id))throw Error('INVALID_SEASON_ONE_EUROPEAN');
+ if(!params.confirmation)throw Error('EUROPEAN_MANUAL_CONFIRMATION_REQUIRED');
+ const before=await getSeasonOneEuropeanOverview(id);
+ if(before.sourceToken!==params.previewToken)throw Error('EUROPEAN_PREVIEW_CHANGED');
+ if(before.drawPublished||before.fixtures!==0)throw Error('EUROPEAN_ALREADY_STARTED');
+ const db=getFirestoreDb();
+ const compRef=db.collection(COLLECTIONS.COMPETITIONS).doc(id);
+ await db.runTransaction(async tx=>{
+  const comp=await tx.get(compRef);
+  const parts=await tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',id));
+  const fixtures=await tx.get(db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id));
+  if(!comp.exists||comp.data()?.seasonId!=='season-2026-27'||comp.data()?.type!=='EUROPEAN_LEAGUE_PHASE'||
+   comp.data()?.europeanDrawId||!fixtures.empty)throw Error('EUROPEAN_MANUAL_SOURCE_CHANGED');
+  const roster=parts.docs.filter(d=>d.data().seasonId==='season-2026-27').map(d=>d.data().clubId);
+  const validClubs=new Set(SEED_CLUBS.map(c=>c.id));
+  if(roster.length!==32||new Set(roster).size!==32||roster.some(id=>!validClubs.has(id)))
+   throw Error('EUROPEAN_NEEDS_32_VALID_REGISTERED_CLUBS');
+  const token='admin-manual-'+hash({id,roster:[...roster].sort(),season:'season-2026-27'});
+  tx.update(compRef,{europeanQualificationMode:'final',europeanQualificationSource:'admin-manual',
+   europeanQualificationToken:token,europeanManualFinalizedBy:params.adminUserId,
+   europeanManualFinalizedAt:new Date().toISOString()});
+ });
+ return {success:true,participants:32};
 }
 /** Never reset generated/played games. Requires global-admin confirmation. */
 export async function publishSeasonOneEuropeanDraw(id:string,options:{
