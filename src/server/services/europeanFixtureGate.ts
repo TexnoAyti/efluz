@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import { isSeasonCompetitionEnabled, CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
 import {getFirestoreDb} from '../firebase/admin';
 import {SEED_COMPETITIONS, SEED_CLUBS} from '../db/seed';
@@ -6,6 +7,11 @@ import {evaluateLeagueMathematicalLocks,lockedTopClubs} from '../tournament/leag
 import {withSeasonQualificationPolicy,seasonQualificationRanges} from '../../lib/seasonQualificationPolicy';
 
 export const isEuropeanFixtureCompetition = (id: string) => /(?:champions-league|europa-league|(?:^|-)ucl(?:-|$)|(?:^|-)uel(?:-|$))/.test(id);
+export function europeanManualRosterToken(id:string,clubs:string[]):string{
+ return 'admin-manual-'+createHash('sha256').update(JSON.stringify({
+  id,roster:[...clubs].sort(),season:'season-2026-27'
+ })).digest('hex');
+}
 export function europeanManualQualification(comp:any):boolean {\n return comp?.seasonId==='season-2026-27' && comp?.europeanQualificationMode==='final' &&\n   comp?.europeanQualificationSource==='admin-manual' && Boolean(comp?.europeanQualificationToken);\n}\nexport function europeanDrawPublished(comp: any): boolean {
   return Boolean(comp?.europeanQualificationMode === 'final' && comp.europeanQualificationToken &&
     comp.europeanDrawId && comp.europeanDrawQualificationToken === comp.europeanQualificationToken);
@@ -65,6 +71,13 @@ export async function assertEuropeanDrawReady(comp: any): Promise<void> {
     db.collection('competitions').where('seasonId','==',comp.seasonId).get(),
     db.collection('fixtures').where('seasonId','==',comp.seasonId).get(),
   ]);
+  if(europeanManualQualification(comp)){
+    const participants=await db.collection('competition_participants').where('competitionId','==',comp.id).get();
+    const roster=participants.docs.filter(d=>d.data().seasonId===comp.seasonId).map(d=>d.data().clubId);
+    if(roster.length!==32||new Set(roster).size!==32||
+      europeanManualRosterToken(comp.id,roster)!==comp.europeanQualificationToken)
+      blocked('EUROPEAN_MANUAL_ROSTER_CHANGED','Admin tasdiqlagan 32 klub ro‘yxati o‘zgargan. Qayta tasdiqlang.');
+  }
   if (!europeanManualQualification(comp) && !domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})), fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
     blocked('DOMESTIC_LEAGUES_INCOMPLETE','UCL/UEL uchun barcha ligalarda saralash o‘rinlari matematik aniq bo‘lishi yoki barcha liga o‘yinlari tugashi kerak.');
   if (comp.europeanQualificationMode !== 'final' || !comp.europeanQualificationToken)
