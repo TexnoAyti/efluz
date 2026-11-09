@@ -14,6 +14,7 @@ type Preview={
  qualifiers:Array<{clubId:string;reason:string}>;
  pairings:Array<{homeClubId:string;awayClubId:string}>;
  existingParticipants:number;
+ availableClubs:Array<{id:string;name:string}>;
 };
 const labels:Record<string,string>={
  LEAGUE_NOT_COMPLETE:'Liga o‘yinlari hali to‘liq tasdiqlanmagan',
@@ -42,19 +43,20 @@ export const AdminSupercupPanel:React.FC=()=>{
  const [loading,setLoading]=useState(false);
  const [confirmed,setConfirmed]=useState(false);
  const [busy,setBusy]=useState(false);
+ const [chosen,setChosen]=useState<string[]>([]);
  const refresh=async()=>{
-  setLoading(true);setPreview(null);setConfirmed(false);
-  try{setPreview(await guardedRequest<Preview>('/api/admin/supercups/'+cupId+'/preview'));}
+  setLoading(true);setPreview(null);setChosen([]);setConfirmed(false);
+  try{const data=await guardedRequest<Preview>('/api/admin/supercups/'+cupId+'/preview');setPreview(data);setChosen(Array(data.size).fill(''));}
   catch(err:any){showToast(err.message||'Superkubok ma’lumoti olinmadi','error');}
   finally{setLoading(false);}
  };
  useEffect(()=>{void refresh();},[cupId]);
  const create=async()=>{
-  if(!preview||!preview.canCreate||!confirmed||busy)return;
+  if(!preview||!preview.canCreate||!confirmed||busy||chosen.length!==preview.size||chosen.some(id=>!id)||new Set(chosen).size!==chosen.length)return;
   setBusy(true);
   try{
    await guardedRequest('/api/admin/supercups/'+cupId+'/create',{
-    method:'POST',body:JSON.stringify({confirmation:true,previewToken:preview.sourceToken})
+    method:'POST',body:JSON.stringify({confirmation:true,previewToken:preview.sourceToken,selectedClubIds:chosen})
    });
    showToast('Superkubok uchrashuvlari yaratildi','success');
    await refresh();
@@ -85,18 +87,24 @@ export const AdminSupercupPanel:React.FC=()=>{
     <strong>Hozir yaratib bo‘lmaydi:</strong>
     {preview.blockReasons.map(code=><p key={code}>{labels[code]||code}</p>)}
    </div>}
-   <div className="space-y-2">
-    {preview.qualifiers.map((q,i)=><div key={q.clubId}
-     className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200">
-     {i+1}. <strong>{q.clubId}</strong> — {q.reason}
-    </div>)}
-   </div>
+   {preview.canCreate&&<div className="space-y-2">
+    <p className="text-xs text-slate-300">Ishtirokchilarni tartib bilan tanlang. {preview.size===2?'Ikki klub bir final o‘ynaydi.':'1–4 va 2–3 yarim finalda uchrashadi.'}</p>
+    {chosen.map((id,i)=><label key={i} className="flex items-center gap-3 text-xs text-slate-200">
+     <span className="w-16">{i+1}-klub</span>
+     <select value={id} onChange={e=>{setChosen(old=>old.map((v,j)=>j===i?e.target.value:v));setConfirmed(false);}}
+      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white">
+      <option value="">Klubni tanlang</option>
+      {preview.availableClubs.map(club=><option key={club.id} value={club.id}>{club.name}</option>)}
+     </select>
+    </label>)}
+    {chosen.filter(Boolean).length!==new Set(chosen.filter(Boolean)).size&&<p className="text-amber-300 text-xs">Bir klub ikki marta qatnasha olmaydi.</p>}
+   </div>}
    {preview.canCreate&&<div className="space-y-3">
     <label className="flex gap-2 items-center text-xs text-slate-300">
      <input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>
      Ishtirokchilar va uchrashuvlarni yaratishni tasdiqlayman
     </label>
-    <button type="button" disabled={!confirmed||busy} onClick={()=>void create()}
+    <button type="button" disabled={!confirmed||busy||chosen.some(id=>!id)||new Set(chosen).size!==chosen.length} onClick={()=>void create()}
      className="rounded-xl bg-emerald-700 text-white px-4 py-2 text-xs font-black disabled:opacity-40">
      {busy?'Yaratilmoqda...':'Superkubokni yaratish'}
     </button>
