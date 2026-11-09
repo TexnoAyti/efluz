@@ -120,9 +120,15 @@ export async function createSeasonOneSupercup(id:string,params:{
   !sourceFinalDoc.exists||sourceFinalDoc.data()?.status!=='CONFIRMED')
   throw Error('SUPERCUP_SOURCE_CHANGED');
  await db.runTransaction(async tx=>{
-  const [competitionDoc,...fixtureDocs]=await Promise.all([
-   tx.get(compRef),...rows.map(row=>tx.get(db.collection(COLLECTIONS.FIXTURES).doc(row.id)))
+  const [competitionDoc,finalInTransaction,...fixtureDocs]=await Promise.all([
+   tx.get(compRef),tx.get(db.collection(COLLECTIONS.FIXTURES).doc(preview.sourceFinalFixtureId!)),
+   ...rows.map(row=>tx.get(db.collection(COLLECTIONS.FIXTURES).doc(row.id)))
   ]);
+  if(!finalInTransaction.exists||finalInTransaction.data()?.status!=='CONFIRMED'||
+    finalInTransaction.data()?.winnerClubId!==sourceFinalDoc.data()?.winnerClubId||
+    finalInTransaction.data()?.homeClubId!==sourceFinalDoc.data()?.homeClubId||
+    finalInTransaction.data()?.awayClubId!==sourceFinalDoc.data()?.awayClubId)
+   throw Error('SUPERCUP_FINAL_CHANGED_DURING_CREATION');
   if(!competitionDoc.exists||competitionDoc.data()?.seasonId!=='season-2026-27'||
     competitionDoc.data()?.type!=='SUPER_CUP'||competitionDoc.data()?.hasFixtures||
     fixtureDocs.some(doc=>doc.exists))throw Error('SUPERCUP_ALREADY_GENERATED');
