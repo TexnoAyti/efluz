@@ -73,6 +73,7 @@ import {
   Bot,
 } from 'lucide-react';
 import { AdminDomesticCupsTab } from './admin/AdminDomesticCupsTab';
+import { AdminSupercupPanel } from './admin/AdminSupercupPanel';
 import { AdminEuropeanTab } from './admin/AdminEuropeanTab';
 import { AdminTelegramTab } from './admin/AdminTelegramTab';
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
@@ -2368,7 +2369,10 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       {/* ========================================================================= */}
       {/* 5A. DOMESTIC CUPS SECTION */}
       {/* ========================================================================= */}
-      {activeAdminTab === 'domestic_cups' && <AdminDomesticCupsTab canUseDangerZone={canUseDangerZone} allowedCupIds={isScoped ? allowedLeagues.map(league => league.cupCompetitionId) : undefined} />}
+      {activeAdminTab === 'domestic_cups' && <>
+        <AdminDomesticCupsTab canUseDangerZone={canUseDangerZone} allowedCupIds={isScoped ? allowedLeagues.map(league => league.cupCompetitionId) : undefined} />
+        {canUseDangerZone && !isScoped && <div className="mt-6"><AdminSupercupPanel /></div>}
+      </>}
 
       {/* ========================================================================= */}
       {/* 5B. UCL / UEL STANDINGS & QUALIFICATIONS SECTION */}
