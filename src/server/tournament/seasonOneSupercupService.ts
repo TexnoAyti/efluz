@@ -126,11 +126,13 @@ export async function createSeasonOneSupercup(id:string,params:{
   if(!competitionDoc.exists||competitionDoc.data()?.seasonId!=='season-2026-27'||
     competitionDoc.data()?.type!=='SUPER_CUP'||competitionDoc.data()?.hasFixtures||
     fixtureDocs.some(doc=>doc.exists))throw Error('SUPERCUP_ALREADY_GENERATED');
+  const participantRefs=preview.qualifiers.map(q=>
+   db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(`${id}_${q.clubId}`));
+  const participantDocs=await Promise.all(participantRefs.map(ref=>tx.get(ref)));
+  if(participantDocs.some(doc=>doc.exists))
+   throw Error('SUPERCUP_PARTICIPANTS_ALREADY_REGISTERED');
   for(let i=0;i<preview.qualifiers.length;i++){
-   const q=preview.qualifiers[i];
-   const ref=db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(`${id}_${q.clubId}`);
-   const prior=await tx.get(ref);
-   if(prior.exists)throw Error('SUPERCUP_PARTICIPANTS_ALREADY_REGISTERED');
+   const q=preview.qualifiers[i],ref=participantRefs[i];
    tx.create(ref,{id:ref.id,seasonId:'season-2026-27',competitionId:id,
      clubId:q.clubId,qualificationReason:q.reason,seedNumber:i+1,createdAt:now});
   }
