@@ -34,7 +34,7 @@ export async function getSeasonOneSupercupPreview(id:string):Promise<Preview>{
  const availableClubs=SEED_CLUBS.filter(c=>c.leagueId===sourceLeague.leagueId)
   .map(c=>({id:c.id,name:c.name}));
  const pre=previewManualSeasonOneSupercup({
-  competitionId:id,selectedClubIds:[],validClubIds:availableClubs.map(c=>c.id),
+  competitionId:id,selectedClubIds:availableClubs.slice(0,cfg.size).map(c=>c.id),validClubIds:availableClubs.map(c=>c.id),
   existingFixtureCount:existing.size,existingParticipantCount:participants.size
  });
  const sourceToken=fingerprint({
@@ -138,7 +138,7 @@ export async function controlSeasonOneSupercupRound(id:string,params:{
  const currentRows=await db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id).get();
  const fixtures:Row[]=currentRows.docs.map(d=>Object.assign({},d.data() as Row,{id:d.id}) as Row)
    .filter(f=>f.seasonId==='season-2026-27');
- if(fixtures.length!==total+(total===2?1:0))
+ if(fixtures.length!==(total===2?3:1))
   throw Error('SUPERCUP_FIXTURE_STRUCTURE_MISMATCH');
  if(action==='NEXT'){
   const previous=fixtures.filter(f=>Number(f.matchday)===current);
