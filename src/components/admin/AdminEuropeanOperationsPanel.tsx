@@ -9,7 +9,7 @@ const cups=[
 type Overview={
  competitionId:string;name:string;phase:string;sourceToken:string;
  domesticLeaguesCompleted:boolean;qualificationMathematicallyReady:boolean;qualificationFinal:boolean;drawPublished:boolean;
- participants:number;fixtures:number;confirmed:number;currentMatchday:number;
+ participants:number;participantClubs:Array<{clubId:string;clubName:string}>;fixtures:number;confirmed:number;currentMatchday:number;
  canGenerateDraw:boolean;canGenerateKnockout:boolean;blockReasons:string[];
  rounds:Array<{matchday:number;count:number;confirmed:number;incomplete:number}>;
 };
@@ -141,6 +141,12 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
     Saralash o‘rinlari: <strong>{overview.qualificationMathematicallyReady?'Matematik aniq':'Hali o‘zgarishi mumkin'}</strong>.
     Barcha liga uchrashuvlari tugashi shart emas; klubning qolgan o‘yinlardan olishi mumkin bo‘lgan maksimal ochkolari tekshiriladi.
    </p>
+   {overview.participantClubs?.length>0&&overview.fixtures===0&&<details className="rounded-xl border border-slate-700 p-3">
+    <summary className="text-xs text-white font-semibold cursor-pointer">Ro‘yxatdan o‘tgan klublar ({overview.participantClubs.length})</summary>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-3 max-h-52 overflow-auto">
+     {overview.participantClubs.map((c,i)=><div key={c.clubId} className="text-xs text-slate-300">{i+1}. {c.clubName}</div>)}
+    </div>
+   </details>}
    {overview.blockReasons.length>0&&<div className="border border-amber-500/30 p-3 rounded-xl text-xs text-amber-200">
     {overview.blockReasons.map(code=><div key={code}>{messages[code]||code}</div>)}
    </div>}
