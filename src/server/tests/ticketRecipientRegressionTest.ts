@@ -17,7 +17,7 @@ import {claimDeliveryState} from '../services/telegramAiService';
 import {getAiRedisClient} from '../services/telegramAiDeadline';
 import {AI_ADMIN_PLAN_REPLACE_LUA} from '../services/telegramAiPlanRevision';
 import {createAiSnapshotReader} from '../services/telegramAiSnapshotReader';
-import {redisSetRaw,ReadModelKeys} from '../readModel/readModelStore';
+import {redisSetRaw,ReadModelKeys,invalidateDataset} from '../readModel/readModelStore';
 import {enqueueSmartTelegramNotification} from '../services/smartNotificationService';
 import {processNotificationQueue,getBroadcastHistory} from '../services/telegramNotificationQueue';
 import {getNotificationStore} from '../services/postgresNotificationStore';
@@ -122,6 +122,7 @@ try{
  const fixtureKey=ReadModelKeys.competitionFixtures('comp-test','season-2026-27');
  await redisSetRaw(fixtureKey,{data:[{id:'fixture-test',homeScore:0,seasonId:'season-2026-27',competitionId:'comp-test',updatedAt:'2026-10-09T00:00:00Z'}]});
  await db.collection('durable_fixture_overrides').doc('fixture-test').set({id:'fixture-test',homeScore:2,seasonId:'season-2026-27',competitionId:'comp-test',updatedAt:'2026-10-09T01:00:00Z'});
+await invalidateDataset(fixtureKey); // Real fixture-delta writes mark the read snapshot dirty before AI re-reads.
  assert.equal((await createAiSnapshotReader().read<any>(fixtureKey)).data[0].homeScore,2);
  const aborted=new AbortController();aborted.abort();await assert.rejects(getAiRedisClient(aborted.signal)!.set('must-not-save',true));
  assert.equal(await client.get('must-not-save'),null);
