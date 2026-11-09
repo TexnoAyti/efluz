@@ -30,23 +30,31 @@ export function previewSeasonOneSupercup(input:{
  cupFinal:{status:string;homeClubId:string|null;awayClubId:string|null;winnerClubId:string|null}|null;
  rankedClubIds:string[];
  existingFixtureCount:number;
+ selectedClubIds?:string[];
+ allowedClubIds?:string[];
 }):SupercupPlan{
- const {competitionId,leagueComplete,cupFinal,rankedClubIds,existingFixtureCount}=input;
+ const {competitionId,leagueComplete,cupFinal,rankedClubIds,existingFixtureCount,selectedClubIds,allowedClubIds}=input;
  if(!isSeasonOneSupercup(competitionId))throw Error('INVALID_SEASON_ONE_SUPERCUP');
  const size=SEASON_ONE_SUPERCUPS[competitionId].size;
  const blockReasons:string[]=[];
- if(!leagueComplete)blockReasons.push('LEAGUE_NOT_COMPLETE');
- if(!cupFinal || cupFinal.status!=='CONFIRMED'||!cupFinal.homeClubId||
+ if(!selectedClubIds && !leagueComplete)blockReasons.push('LEAGUE_NOT_COMPLETE');
+ if(!selectedClubIds && (!cupFinal || cupFinal.status!=='CONFIRMED'||!cupFinal.homeClubId||
    !cupFinal.awayClubId||cupFinal.homeClubId===cupFinal.awayClubId||
    !cupFinal.winnerClubId ||
-   ![cupFinal.homeClubId,cupFinal.awayClubId].includes(cupFinal.winnerClubId))
+   ![cupFinal.homeClubId,cupFinal.awayClubId].includes(cupFinal.winnerClubId)))
   blockReasons.push('CUP_FINAL_NOT_CONFIRMED');
  if(existingFixtureCount!==0)blockReasons.push('SUPERCUP_ALREADY_GENERATED');
- if(rankedClubIds.length<2||new Set(rankedClubIds).size!==rankedClubIds.length||
-    rankedClubIds.some(id=>typeof id!=='string'||!id))
+ if(!selectedClubIds && (rankedClubIds.length<2||new Set(rankedClubIds).size!==rankedClubIds.length||
+    rankedClubIds.some(id=>typeof id!=='string'||!id)))
   blockReasons.push('INVALID_LEAGUE_RANKING');
  const qualifiers:QualifiedClub[]=[];
- if(!blockReasons.includes('CUP_FINAL_NOT_CONFIRMED')&&!blockReasons.includes('INVALID_LEAGUE_RANKING')){
+ if(selectedClubIds){
+  if(!Array.isArray(selectedClubIds)||selectedClubIds.length!==size||new Set(selectedClubIds).size!==size||
+    selectedClubIds.some(clubId=>typeof clubId!=='string'||!allowedClubIds?.includes(clubId)))
+   blockReasons.push('INVALID_MANUAL_SELECTION');
+  else selectedClubIds.forEach((clubId,i)=>qualifiers.push({clubId,reason:`Admin selected seed #${i+1}`}));
+ }
+ if(!selectedClubIds && !blockReasons.includes('CUP_FINAL_NOT_CONFIRMED')&&!blockReasons.includes('INVALID_LEAGUE_RANKING')){
   const cupWinner=cupFinal!.winnerClubId!;
   const cupRunnerUp=cupFinal!.homeClubId===cupWinner?cupFinal!.awayClubId!:cupFinal!.homeClubId!;
   const add=(clubId:string,reason:string)=>{
