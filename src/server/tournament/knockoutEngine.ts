@@ -115,9 +115,13 @@ export async function generateKnockoutBracket(
         throw new Error('KNOCKOUT_RESET_BLOCKED: existing knockout fixtures contain protected results or submissions.');
       }
 
-      const standingsDoc = await db.collection(COLLECTIONS.STANDINGS).doc(competitionId).get();
-      const rows = standingsDoc.exists && Array.isArray(standingsDoc.data()?.rows) ? standingsDoc.data()!.rows : [];
-      const ranked = rows.map((row: any) => row.clubId).filter((clubId: unknown): clubId is string => typeof clubId === 'string');
+      // Recompute directly from final, confirmed league-phase results.
+      // The old STANDINGS document may never be written by the modern
+      // European standings rebuild (which uses the Redis read model).
+      // Stale ranking snapshots must never determine knockout seeding.
+      const { rebuildEuropeanStandings } = await import('./qualificationEngine');
+      const rows = await rebuildEuropeanStandings(competitionId, comp.seasonId);
+      const ranked = rows.map(row => row.clubId).filter((clubId): clubId is string => typeof clubId === 'string');
       if (ranked.length !== clubIds.length || new Set(ranked).size !== clubIds.length || ranked.some((clubId) => !clubIds.includes(clubId))) {
         throw new Error('STANDINGS_NOT_READY: rebuild complete league-phase standings before generating knockouts.');
       }
