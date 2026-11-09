@@ -66,3 +66,12 @@ export function evaluateLeagueMathematicalLocks(input:LeagueLockInput):LeagueLoc
   championClubId:leader?.worstPossibleRank===1?leader.clubId:null,ranking,
   lockedTop6:top6.length===6?top6:[],lockedTop12:top12.length===12?top12:[]};
 }
+
+/** Returns exactly k proven members only when qualification to the first
+ * k places cannot be overturned on points in any remaining result. */
+export function lockedTopClubs(result:LeagueLockResult,k:number):string[]{
+ if(!result.validSchedule||!Number.isSafeInteger(k)||k<1||
+   k>result.ranking.length)return [];
+ const set=result.ranking.filter(row=>row.worstPossibleRank<=k).map(row=>row.clubId);
+ return set.length===k?set:[];
+}
