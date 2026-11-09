@@ -15,7 +15,7 @@ import {
 } from '../tournament/domesticCupRoundOps';
 import { DOMESTIC_CUPS, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
 import {getSeasonOneSupercupPreview,createSeasonOneSupercup} from '../tournament/seasonOneSupercupService';
-import {getSeasonOneEuropeanOverview,publishSeasonOneEuropeanDraw,openSeasonOneEuropeanRound} from '../tournament/seasonOneEuropeanOperations';
+import {getSeasonOneEuropeanOverview,publishSeasonOneEuropeanDraw,createSeasonOneEuropeanKnockout,openSeasonOneEuropeanRound} from '../tournament/seasonOneEuropeanOperations';
 import { refreshChangedFixtureReadModel, invalidateFixtureReadModels } from '../readModel/readModelStore';
 
 export const adminCupOpsRouter = Router();
@@ -37,6 +37,18 @@ adminCupOpsRouter.post('/season-one/european/:competitionId/draw',async(req:Requ
  try{
   res.setHeader('Cache-Control','no-store');
   res.json(await publishSeasonOneEuropeanDraw(req.params.competitionId,{
+    confirmation:true,previewToken:req.body.previewToken
+  }));
+ }catch(err:any){res.status(409).json({error:err.message});}
+});
+adminCupOpsRouter.post('/season-one/european/:competitionId/knockout',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ if(req.body?.confirmation!==true||typeof req.body?.previewToken!=='string'){
+  res.status(400).json({error:'Explicit confirmation and previewToken required.'});return;
+ }
+ try{
+  res.setHeader('Cache-Control','no-store');
+  res.json(await createSeasonOneEuropeanKnockout(req.params.competitionId,{
     confirmation:true,previewToken:req.body.previewToken
   }));
  }catch(err:any){res.status(409).json({error:err.message});}
