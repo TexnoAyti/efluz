@@ -8,7 +8,7 @@ import { assertNoDisciplinaryHold } from '../../types/discipline';
 import { clubStadium } from '../../constants/clubStadiums';
 import { isDomesticCupResult as isResultCup } from '../../lib/cupResult';
 import { cupScoreMetadata, sameResultScores, type CupTieBreakScores, resolveCupResult } from '../../lib/cupResult';
-import {assertEuropeanDrawReady, domesticEuropeanQualificationReady, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
+import {assertEuropeanDrawReady, domesticEuropeanQualificationReady, europeanManualQualification, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
 import {randomUUID as europeanDrawUUID} from 'node:crypto';
 import { assertTopicResultCurrent, type ExpectedTopicFixture } from '../services/topicResultGuard';
 import { invalidateSharedAdminData } from '../services/adminReviewCache';
@@ -2595,6 +2595,11 @@ export async function generateCompetitionFixturesFirestore(
       .sort();
   }
 
+  if (european && (clubIds.length !== 32 || new Set(clubIds).size !== 32 ||
+    clubIds.some(id => !SEED_CLUBS.some(c => c.id === id)))) {
+    throw new Error('EUROPEAN_EXPECTED_32_VALID_UNIQUE_CLUBS');
+  }
+
   if (clubIds.length < 2) {
     throw new Error(`Not enough clubs (${clubIds.length}) to generate fixtures for ${comp.name}.`);
   }
@@ -2764,7 +2769,7 @@ export async function generateCompetitionFixturesFirestore(
       const latest = comps.docs.find(d=>d.id===competitionId)?.data();
       const rows = fixtures.docs.filter(d=>d.data().competitionId===competitionId);
       if (latest?.europeanQualificationToken !== (comp as any).europeanQualificationToken || latest?.europeanQualificationMode !== 'final' ||
-          !domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId) ||
+          !(europeanManualQualification(latest) || domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId)) ||
           rows.length !== generatedFixtures.length || rows.some(d=>d.data().europeanDrawId !== drawId))
         throw new Error('EUROPEAN_DRAW_CHANGED: refresh qualification and regenerate the draw');
       tx.update(db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId),competitionUpdate);
