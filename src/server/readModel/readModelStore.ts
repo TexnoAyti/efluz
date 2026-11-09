@@ -691,13 +691,15 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   // main club/leagues screens on every revisit.
   const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
   if (!cleanKey.endsWith(':fixtures') && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < Math.min(ttlSeconds * 1000, PROCESS_MEMORY_TTL_MS)) {
+    const breaker = firestoreCircuitBreaker.getStatus();
+    const circuitUnhealthy = breaker.state !== 'CLOSED' || breaker.softLimitExceeded;
     return {
       data: memoryHit.data,
-      source: 'memory',
+      source: circuitUnhealthy ? 'memory_stale' : 'memory',
       generatedAt: memoryHit.generatedAt,
       sourceVersion: memoryHit.sourceVersion,
-      stale: Boolean(memoryHit.stale),
-      degraded: Boolean(memoryHit.degraded),
+      stale: circuitUnhealthy || Boolean(memoryHit.stale),
+      degraded: circuitUnhealthy || Boolean(memoryHit.degraded),
     };
   }
 
