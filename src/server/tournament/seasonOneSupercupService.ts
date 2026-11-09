@@ -3,6 +3,7 @@ import {getFirestoreDb} from '../firebase/admin';
 import {COLLECTIONS} from '../firebase/collections';
 import {SEED_CLUBS,SEED_COMPETITIONS} from '../db/seed';
 import {projectStandings} from './standingsProjection';
+import {controlCompetitionMatchday,getCompetitionMatchdayControl} from '../services/competitionMatchdayService';
 import {previewSeasonOneSupercup,SEASON_ONE_SUPERCUPS,isSeasonOneSupercup} from './seasonOneSupercupPlan';
 
 type Row=Record<string,any>;
@@ -157,4 +158,53 @@ export async function createSeasonOneSupercup(id:string,params:{
    undefined,params.adminUsername||'admin','Season-one Super Cup created from confirmed domestic results.')
   .catch(()=>{});
  return {success:true,generated:rows.length,competitionId:id};
+}
+
+/**
+ * Owner-admin only via route authorization. Unlike generic matchday controls,
+ * opening the final requires both real semifinal winners in final slots.
+ */
+export async function controlSeasonOneSupercupRound(id:string,params:{
+ action:'OPEN'|'NEXT'|'LOCK';expectedUpdatedAt:string|null;
+ durationHours:number;adminUserId:string
+}){
+ if(!isSeasonOneSupercup(id))throw Error('INVALID_SEASON_ONE_SUPERCUP');
+ const db=getFirestoreDb();
+ const doc=await db.collection(COLLECTIONS.COMPETITIONS).doc(id).get();
+ if(!doc.exists||doc.data()?.seasonId!=='season-2026-27'||
+   doc.data()?.type!=='SUPER_CUP'||!doc.data()?.hasFixtures)
+   throw Error('SUPERCUP_NOT_GENERATED');
+ const control=await getCompetitionMatchdayControl(id);
+ const current=control.currentMatchday, total=SEASON_ONE_SUPERCUPS[id].size===2?1:2;
+ const action=params.action;
+ if(!['OPEN','NEXT','LOCK'].includes(action)||
+   !Number.isFinite(params.durationHours)||params.durationHours<=0||params.durationHours>720)
+  throw Error('SUPERCUP_BAD_ROUND_ACTION');
+ if(current<1||current>total)throw Error('SUPERCUP_INVALID_CURRENT_ROUND');
+ const next=action==='NEXT'?current+1:current;
+ if(next>total)throw Error('SUPERCUP_FINAL_ALREADY_REACHED');
+ const currentRows=await db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id).get();
+ const fixtures=currentRows.docs.map(d=>({...(d.data() as Row),id:d.id}))
+   .filter(f=>f.seasonId==='season-2026-27');
+ if(fixtures.length!==total+(total===2?1:0))
+  throw Error('SUPERCUP_FIXTURE_STRUCTURE_MISMATCH');
+ if(action==='NEXT'){
+  const previous=fixtures.filter(f=>Number(f.matchday)===current);
+  if(previous.length!==2||previous.some(f=>f.status!=='CONFIRMED'||
+    !f.winnerClubId||![f.homeClubId,f.awayClubId].includes(f.winnerClubId)))
+   throw Error('SUPERCUP_SEMIFINALS_NOT_CONFIRMED');
+  const final=fixtures.find(f=>Number(f.matchday)===2&&f.roundName==='Final');
+  if(!final||!final.homeClubId||!final.awayClubId||
+    final.homeClubId===final.awayClubId||
+    final.homeClubId!==previous[0].winnerClubId||
+    final.awayClubId!==previous[1].winnerClubId||
+    final.status==='CONFIRMED')
+   throw Error('SUPERCUP_FINAL_SLOTS_UNRESOLVED');
+ }
+ return controlCompetitionMatchday(id,{
+   action:action==='NEXT'?'SELECT':action,
+   matchday:next,
+   expectedUpdatedAt:params.expectedUpdatedAt,
+   durationHours:params.durationHours,adminUserId:params.adminUserId
+ });
 }
