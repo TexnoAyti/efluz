@@ -14,7 +14,7 @@ import {
   advanceDomesticCupRoundSafe,
 } from '../tournament/domesticCupRoundOps';
 import { DOMESTIC_CUPS, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
-import {getSeasonOneSupercupPreview,createSeasonOneSupercup} from '../tournament/seasonOneSupercupService';
+import {getSeasonOneSupercupPreview,createSeasonOneSupercup,controlSeasonOneSupercupRound} from '../tournament/seasonOneSupercupService';
 import {getSeasonOneEuropeanOverview,publishSeasonOneEuropeanDraw,createSeasonOneEuropeanKnockout,openSeasonOneEuropeanRound} from '../tournament/seasonOneEuropeanOperations';
 import { refreshChangedFixtureReadModel, invalidateFixtureReadModels } from '../readModel/readModelStore';
 
@@ -71,6 +71,23 @@ adminCupOpsRouter.post('/season-one/european/:competitionId/next-round',async(re
 
 // First-season Super Cups: verified source preview -> explicit confirmed creation.
 // Admin authorization is enforced by the router-level requireAdmin middleware.
+adminCupOpsRouter.post('/supercups/:supercupId/round',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ const {action,expectedUpdatedAt,durationHours}=req.body||{};
+ if(!['OPEN','NEXT','LOCK'].includes(action)||!Number.isFinite(durationHours)||
+   durationHours<=0||durationHours>720||
+   !(expectedUpdatedAt===null||typeof expectedUpdatedAt==='string')){
+  res.status(400).json({error:'Action OPEN|NEXT|LOCK, expectedUpdatedAt and valid durationHours required.'});
+  return;
+ }
+ try{
+  res.setHeader('Cache-Control','no-store');
+  res.json(await controlSeasonOneSupercupRound(req.params.supercupId,{
+   action,expectedUpdatedAt,durationHours,adminUserId:req.user!.id
+  }));
+ }catch(err:any){res.status(409).json({error:err.message,code:'SUPERCUP_ROUND_NOT_READY'});}
+});
+
 adminCupOpsRouter.get('/supercups/:supercupId/preview',async(req:Request,res:Response)=>{
  if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
  try{
