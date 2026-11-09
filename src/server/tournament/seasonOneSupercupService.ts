@@ -59,8 +59,10 @@ export async function getSeasonOneSupercupPreview(id:string):Promise<Preview>{
   rankedClubIds=projectStandings(leagueClubs,league,
    leagueCompDoc.data()?.formatConfig||sourceLeague.formatConfig).map(row=>row.clubId);
  }
+ // 2026/27 domestic cups have their final in round five. Round-four
+ // semifinal IDs must NEVER be mistaken for a final.
  const finals=cup.filter(f=>f.roundName==='Final'||
-   f.id===`fix-${cfg.cup}-r5-m0`||f.id===`fix-${cfg.cup}-r4-m0`);
+   f.id===`fix-${cfg.cup}-r5-m0`);
  const final=finals.length===1&&cupCompDoc.exists&&cupCompDoc.data()?.seasonId==='season-2026-27'
   ?finals[0]:null;
  const pre=previewSeasonOneSupercup({
