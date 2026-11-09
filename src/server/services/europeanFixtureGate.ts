@@ -2,7 +2,8 @@ import { isSeasonCompetitionEnabled, CURRENT_SEASON_ID } from '../../lib/seasonP
 import {getFirestoreDb} from '../firebase/admin';
 import {SEED_COMPETITIONS, SEED_CLUBS} from '../db/seed';
 import {filterRetiredFixtures} from './retiredFixtureService';
-import {evaluateLeagueMathematicalLocks} from '../tournament/leagueMathematicalLocks';
+import {evaluateLeagueMathematicalLocks,lockedTopClubs} from '../tournament/leagueMathematicalLocks';
+import {withSeasonQualificationPolicy,seasonQualificationRanges} from '../../lib/seasonQualificationPolicy';
 
 export const isEuropeanFixtureCompetition = (id: string) => /(?:champions-league|europa-league|(?:^|-)ucl(?:-|$)|(?:^|-)uel(?:-|$))/.test(id);
 export function europeanDrawPublished(comp: any): boolean {
@@ -30,7 +31,7 @@ export function domesticSeasonComplete(competitions: any[], fixtures: any[], sea
   });
 }
 /** Season-one UCL/UEL need a provably fixed set of top-6 and top-12
- * clubs, not necessarily every fixture confirmed. The full, nonduplicated
+ * clubs according to the official season allocation, not necessarily every fixture confirmed. The full, nonduplicated
  * fixture schedule and valid results are mandatory for this proof. */
 export function domesticQualificationLocked(competitions:any[],fixtures:any[],seasonId:string):boolean{
  if(seasonId!=='season-2026-27')return false;
@@ -43,10 +44,14 @@ export function domesticQualificationLocked(competitions:any[],fixtures:any[],se
    if(!comp||!seed.leagueId)return false;
    const clubs=SEED_CLUBS.filter(c=>c.leagueId===seed.leagueId);
    const rows=canonical.filter(f=>f.competitionId===seed.id&&f.seasonId===seasonId);
+   const effective=withSeasonQualificationPolicy(comp,seasonId);
+   const {uclEnd,uelEnd}=seasonQualificationRanges(effective,seasonId);
+   if(uclEnd<1||uelEnd<=uclEnd||uelEnd>clubs.length)return false;
    const locked=evaluateLeagueMathematicalLocks({
      clubs,fixtures:rows,config:comp.formatConfig||seed.formatConfig
    });
-   return locked.validSchedule&&locked.lockedTop6.length===6&&locked.lockedTop12.length===12;
+   return locked.validSchedule&&lockedTopClubs(locked,uclEnd).length===uclEnd&&
+     lockedTopClubs(locked,uelEnd).length===uelEnd;
  });
 }
 export function domesticEuropeanQualificationReady(competitions:any[],fixtures:any[],seasonId:string):boolean{
@@ -61,7 +66,7 @@ export async function assertEuropeanDrawReady(comp: any): Promise<void> {
     db.collection('fixtures').where('seasonId','==',comp.seasonId).get(),
   ]);
   if (!domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})), fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
-    blocked('DOMESTIC_LEAGUES_INCOMPLETE','UCL/UEL uchun barcha ligalarda top-6 va top-12 jamoalari matematik aniq bo‘lishi yoki barcha liga o‘yinlari tugashi kerak.');
+    blocked('DOMESTIC_LEAGUES_INCOMPLETE','UCL/UEL uchun barcha ligalarda saralash o‘rinlari matematik aniq bo‘lishi yoki barcha liga o‘yinlari tugashi kerak.');
   if (comp.europeanQualificationMode !== 'final' || !comp.europeanQualificationToken)
     blocked('EUROPEAN_QUALIFICATION_NOT_FINAL','Avval yakuniy Yevropa saralashini tasdiqlang, so‘ng qur’a yarating.');
 }
