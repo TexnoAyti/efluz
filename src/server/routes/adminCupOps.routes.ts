@@ -100,13 +100,13 @@ adminCupOpsRouter.get('/supercups/:supercupId/preview',async(req:Request,res:Res
 });
 adminCupOpsRouter.post('/supercups/:supercupId/create',async(req:Request,res:Response)=>{
  if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
- if(req.body?.confirmation!==true||typeof req.body?.previewToken!=='string'){
+ if(req.body?.confirmation!==true||typeof req.body?.previewToken!=='string'||!Array.isArray(req.body?.selectedClubIds)){
   res.status(400).json({error:'Explicit confirmation and previewToken are required.'});
   return;
  }
  try{
   const result=await createSeasonOneSupercup(req.params.supercupId,{
-   previewToken:req.body.previewToken,confirmed:true,
+   previewToken:req.body.previewToken,selectedClubIds:req.body.selectedClubIds,confirmed:true,
    adminUserId:req.user!.id,adminUsername:req.user?.username||'admin'
   });
   res.setHeader('Cache-Control','no-store');
