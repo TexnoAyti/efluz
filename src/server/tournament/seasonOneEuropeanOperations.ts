@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
 import {COLLECTIONS} from '../firebase/collections';
-import {domesticSeasonComplete,domesticEuropeanQualificationReady,europeanDrawPublished,europeanManualQualification} from '../services/europeanFixtureGate';
+import {domesticSeasonComplete,domesticEuropeanQualificationReady,europeanDrawPublished,europeanManualQualification,europeanManualRosterToken} from '../services/europeanFixtureGate';
 import {getCompetitionMatchdayControl,controlCompetitionMatchday} from '../services/competitionMatchdayService';
 import {generateCompetitionFixturesFirestore} from '../firebase/firestoreStore';
 import {generateKnockoutBracket} from './knockoutEngine';
@@ -44,9 +44,12 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
  const domesticLeaguesCompleted=domesticSeasonComplete(competitions,seasonFixtures,'season-2026-27');
  const qualificationMathematicallyReady=domesticEuropeanQualificationReady(competitions,seasonFixtures,'season-2026-27');
  const qualificationFinal=comp.europeanQualificationMode==='final'&&Boolean(comp.europeanQualificationToken);
- const manualQualification=europeanManualQualification(comp);
+
  const drawPublished=europeanDrawPublished(comp);
  const participants=partSnap.docs.map(d=>d.data()).filter(p=>p.seasonId==='season-2026-27');
+ const manualQualification=europeanManualQualification(comp)&&participants.length===32&&
+  new Set(participants.map(p=>p.clubId)).size===32&&
+  europeanManualRosterToken(id,participants.map(p=>p.clubId))===comp.europeanQualificationToken;
  const uniqueIds=new Set(participants.map(p=>p.clubId));
  const rows=seasonFixtures.filter(f=>f.competitionId===id);
  const leaguePhase=rows.filter(f=>Number(f.matchday)>=1&&Number(f.matchday)<=8);
