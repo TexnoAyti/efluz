@@ -162,19 +162,30 @@ export async function finalizeSeasonOneEuropeanManualRoster(id:string,params:{
  if(before.drawPublished||before.fixtures!==0)throw Error('EUROPEAN_ALREADY_STARTED');
  const db=getFirestoreDb();
  const compRef=db.collection(COLLECTIONS.COMPETITIONS).doc(id);
+ const other=id==='comp-champions-league-2026'?'comp-europa-league-2026':'comp-champions-league-2026';
+ const eligible=new Set(SEED_COMPETITIONS.filter(c=>c.seasonId==='season-2026-27'&&c.type==='LEAGUE')
+  .flatMap(league=>SEED_CLUBS.filter(c=>c.leagueId===league.leagueId).map(c=>c.id)));
  await db.runTransaction(async tx=>{
-  const comp=await tx.get(compRef);
-  const parts=await tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',id));
-  const fixtures=await tx.get(db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id));
+  const [comp,parts,fixtures,otherParts]=await Promise.all([
+   tx.get(compRef),
+   tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',id)),
+   tx.get(db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id)),
+   tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',other)),
+  ]);
   if(!comp.exists||comp.data()?.seasonId!=='season-2026-27'||comp.data()?.type!=='EUROPEAN_LEAGUE_PHASE'||
    comp.data()?.europeanDrawId||!fixtures.empty)throw Error('EUROPEAN_MANUAL_SOURCE_CHANGED');
   const roster=parts.docs.filter(d=>d.data().seasonId==='season-2026-27').map(d=>d.data().clubId);
-  const validClubs=new Set(SEED_CLUBS.map(c=>c.id));
-  if(roster.length!==32||new Set(roster).size!==32||roster.some(id=>!validClubs.has(id)))
-   throw Error('EUROPEAN_NEEDS_32_VALID_REGISTERED_CLUBS');
-  const token='admin-manual-'+hash({id,roster:[...roster].sort(),season:'season-2026-27'});
+  const previous=before.participantClubs.map(p=>p.clubId).sort().join('|');
+  if(roster.slice().sort().join('|')!==previous)
+   throw Error('EUROPEAN_MANUAL_PREVIEW_STALE');
+  if(roster.length!==32||new Set(roster).size!==32||roster.some(clubId=>!eligible.has(clubId)))
+   throw Error('EUROPEAN_NEEDS_32_ELIGIBLE_CLUBS');
+  const otherClubs=new Set(otherParts.docs.filter(d=>d.data().seasonId==='season-2026-27').map(d=>d.data().clubId));
+  if(roster.some(clubId=>otherClubs.has(clubId)))
+   throw Error('EUROPEAN_CLUB_ALREADY_IN_OTHER_CUP');
   tx.update(compRef,{europeanQualificationMode:'final',europeanQualificationSource:'admin-manual',
-   europeanQualificationToken:token,europeanManualFinalizedBy:params.adminUserId,
+   europeanQualificationToken:europeanManualRosterToken(id,roster),
+   europeanManualFinalizedBy:params.adminUserId,
    europeanManualFinalizedAt:new Date().toISOString()});
  });
  return {success:true,participants:32};
