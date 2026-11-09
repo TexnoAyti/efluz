@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {previewSeasonOneSupercup,SEASON_ONE_SUPERCUPS} from '../tournament/seasonOneSupercupPlan';
+import {previewSeasonOneSupercup,previewManualSeasonOneSupercup,SEASON_ONE_SUPERCUPS} from '../tournament/seasonOneSupercupPlan';
 
 const ranking=Array.from({length:20},(_,i)=>`club-${i+1}`);
 const cup={status:'CONFIRMED',homeClubId:'club-3',awayClubId:'club-4',winnerClubId:'club-3'};
@@ -40,3 +40,27 @@ assert.throws(()=>previewSeasonOneSupercup({competitionId:'comp-uefa-super-cup-2
  leagueComplete:true,cupFinal:cup,rankedClubIds:ranking,existingFixtureCount:0}),
  /INVALID_SEASON_ONE_SUPERCUP/);
 console.log('PASS_SEASON_ONE_SUPERCUPS: 4 competitions, duplicate winners, source gates, deterministic seeding');
+
+for(const id of Object.keys(SEASON_ONE_SUPERCUPS)){
+ const size=SEASON_ONE_SUPERCUPS[id as keyof typeof SEASON_ONE_SUPERCUPS].size;
+ const clubs=ranking.slice(0,size);
+ const plan=previewManualSeasonOneSupercup({competitionId:id,selectedClubIds:clubs,
+  validClubIds:ranking,existingFixtureCount:0,existingParticipantCount:0});
+ assert.equal(plan.canCreate,true,id);
+ assert.equal(plan.pairings.length,size===2?1:2);
+ assert.deepEqual(plan.qualifiers.map(q=>q.clubId),clubs);
+}
+assert.equal(SEASON_ONE_SUPERCUPS['comp-supercoppa-italiana-2026'].size,2);
+for(const opts of [
+ {selectedClubIds:['club-1'],existingFixtureCount:0,existingParticipantCount:0},
+ {selectedClubIds:['club-1','club-1'],existingFixtureCount:0,existingParticipantCount:0},
+ {selectedClubIds:['club-1','stranger'],existingFixtureCount:0,existingParticipantCount:0},
+ {selectedClubIds:['club-1','club-2'],existingFixtureCount:1,existingParticipantCount:0},
+ {selectedClubIds:['club-1','club-2'],existingFixtureCount:0,existingParticipantCount:1},
+]){
+ const p=previewManualSeasonOneSupercup({competitionId:'comp-supercoppa-italiana-2026',
+  validClubIds:ranking,...opts});
+ assert.equal(p.canCreate,false);
+ assert.equal(p.pairings.length,0);
+}
+console.log('PASS_MANUAL_SUPERCUP_START: 2026 Italian format, manual selection, duplicates and existing fixture safety');
