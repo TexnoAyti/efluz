@@ -184,7 +184,7 @@ export async function controlSeasonOneSupercupRound(id:string,params:{
  const next=action==='NEXT'?current+1:current;
  if(next>total)throw Error('SUPERCUP_FINAL_ALREADY_REACHED');
  const currentRows=await db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id).get();
- const fixtures=currentRows.docs.map(d=>({...(d.data() as Row),id:d.id}))
+ const fixtures:Row[]=currentRows.docs.map(d=>Object.assign({},d.data() as Row,{id:d.id}) as Row)
    .filter(f=>f.seasonId==='season-2026-27');
  if(fixtures.length!==total+(total===2?1:0))
   throw Error('SUPERCUP_FIXTURE_STRUCTURE_MISMATCH');
