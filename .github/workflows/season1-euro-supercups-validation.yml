@@ -25,6 +25,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Type check
         run: bun run lint
+      - name: Mathematical title and UCL / UEL eligibility regression
+        run: node --import tsx src/server/tests/leagueMathematicalLocksRegressionTest.ts
       - name: Super Cup qualification regression
         run: node --import tsx src/server/tests/seasonOneSupercupPlannerRegressionTest.ts
       - name: Production React build (no deployment)
