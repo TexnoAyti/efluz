@@ -107,7 +107,8 @@ export async function syncCompetitionTrophy(competitionId: string, seasonId: str
   const fixtures = snapshot.data.filter(item => item.competitionId === competitionId && item.seasonId === seasonId);
   if (changedFixture && !fixtures.some(item => item.id === changedFixture.id && item.updatedAt === changedFixture.updatedAt)) return;
   const expectedClubs = DOMESTIC_LEAGUE_CONFIG[competitionId]?.expectedCount;
-  if (changedFixture && expectedClubs && fixtures.filter(item => item.status === 'CONFIRMED').length < expectedClubs * (expectedClubs - 1) / 2 - 1) return;
+  // The title can be mathematically secured before the last round. Let the
+  // authoritative fixture/standings proof decide rather than counting all games.
   if (changedFixture && !expectedClubs && !/^final(?:\s|$)/i.test(changedFixture.roundName || '') && !(competition.type === 'SUPER_CUP' && competition.formatConfig.teams === 2)) return;
   const result = await getSeasonTrophies(seasonId, { fixtures, competitionId });
   if (result.unavailableCompetitions.includes(competitionId)) return;
