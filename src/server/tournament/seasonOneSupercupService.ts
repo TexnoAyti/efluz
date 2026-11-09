@@ -41,7 +41,8 @@ export async function getSeasonOneSupercupPreview(id:string):Promise<Preview>{
   id,competition:supercupDoc.data(),fixtures:select(existing),
   participants:select(participants),availableClubs
  });
- return {...pre,sourceToken,sourceLeagueId:cfg.league,sourceCupId:cfg.cup,
+ // Readiness is independent of selections; never present arbitrary clubs as qualifiers.
+ return {...pre,qualifiers:[],pairings:[],sourceToken,sourceLeagueId:cfg.league,sourceCupId:cfg.cup,
   existingParticipants:participants.size,availableClubs};
 }
 /** Explicit admin-only apply, idempotent create (never force-delete old matches). */
