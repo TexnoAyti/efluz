@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {getFirestoreDb} from '../firebase/admin';
 import {COLLECTIONS} from '../firebase/collections';
-import {domesticSeasonComplete,europeanDrawPublished} from '../services/europeanFixtureGate';
+import {domesticSeasonComplete,domesticEuropeanQualificationReady,europeanDrawPublished} from '../services/europeanFixtureGate';
 import {getCompetitionMatchdayControl,controlCompetitionMatchday} from '../services/competitionMatchdayService';
 import {generateCompetitionFixturesFirestore} from '../firebase/firestoreStore';
 import {generateKnockoutBracket} from './knockoutEngine';
@@ -18,7 +18,7 @@ type Phase='WAITING_LEAGUES'|'WAITING_QUALIFICATION'|'WAITING_PARTICIPANTS'|
   'DRAW_READY'|'DRAW_REVIEW_REQUIRED'|'LEAGUE_PHASE'|'KNOCKOUT_READY'|'KNOCKOUT_PHASE'|'COMPLETED';
 type Overview={
  competitionId:SeasonOneEuroId;seasonId:'season-2026-27';name:string;
- phase:Phase;domesticLeaguesCompleted:boolean;qualificationFinal:boolean;
+ phase:Phase;domesticLeaguesCompleted:boolean;qualificationMathematicallyReady:boolean;qualificationFinal:boolean;
  drawPublished:boolean;participants:number;fixtures:number;confirmed:number;
  currentMatchday:number;rounds:Array<{matchday:number;count:number;confirmed:number;incomplete:number}>;
  canGenerateDraw:boolean;canGenerateKnockout:boolean;sourceToken:string;blockReasons:string[];
@@ -41,6 +41,7 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
  const competitions:Array<Record<string,any>&{id:string}>=compsSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
  const seasonFixtures:Array<Record<string,any>&{id:string}>=seasonFixSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
  const domesticLeaguesCompleted=domesticSeasonComplete(competitions,seasonFixtures,'season-2026-27');
+ const qualificationMathematicallyReady=domesticEuropeanQualificationReady(competitions,seasonFixtures,'season-2026-27');
  const qualificationFinal=comp.europeanQualificationMode==='final'&&Boolean(comp.europeanQualificationToken);
  const drawPublished=europeanDrawPublished(comp);
  const participants=partSnap.docs.map(d=>d.data()).filter(p=>p.seasonId==='season-2026-27');
@@ -60,7 +61,7 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
      incomplete:fixtures.filter(f=>f.status!=='CONFIRMED').length};
   });
  const blockers:string[]=[];
- if(!domesticLeaguesCompleted)blockers.push('DOMESTIC_LEAGUES_INCOMPLETE');
+ if(!qualificationMathematicallyReady)blockers.push('QUALIFICATION_POSITIONS_NOT_LOCKED');
  if(!qualificationFinal)blockers.push('FINAL_QUALIFICATION_REQUIRED');
  if(participants.length!==32||uniqueIds.size!==32)blockers.push('EXPECTED_32_UNIQUE_PARTICIPANTS');
  if(rows.length)blockers.push(drawPublished?'DRAW_ALREADY_PUBLISHED':'UNPUBLISHED_FIXTURES_REQUIRE_REVIEW');
@@ -69,18 +70,18 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
    participants.length===32&&uniqueIds.size===32;
  const phase:Phase=completedFinal?'COMPLETED':knockoutFixtures.length?'KNOCKOUT_PHASE':
    canGenerateKnockout?'KNOCKOUT_READY':drawPublished?'LEAGUE_PHASE':
-   rows.length?'DRAW_REVIEW_REQUIRED':!domesticLeaguesCompleted?'WAITING_LEAGUES':
+   rows.length?'DRAW_REVIEW_REQUIRED':!qualificationMathematicallyReady?'WAITING_LEAGUES':
    !qualificationFinal?'WAITING_QUALIFICATION':
    participants.length!==32||uniqueIds.size!==32?'WAITING_PARTICIPANTS':'DRAW_READY';
  const sourceToken=hash({
-  id,domesticLeaguesCompleted,qualificationFinal,qualificationToken:comp.europeanQualificationToken||null,
+  id,qualificationMathematicallyReady,domesticLeaguesCompleted,qualificationFinal,qualificationToken:comp.europeanQualificationToken||null,
   participants:participants.map(p=>p.clubId).sort(),
   fixtures:rows.map(f=>[f.id,f.status,f.europeanDrawId,f.matchday,
     f.homeClubId,f.awayClubId,f.homeScore,f.awayScore,f.winnerClubId])
     .sort((a,b)=>String(a[0]).localeCompare(String(b[0])))
  });
  return {competitionId:id,seasonId:'season-2026-27',name:SEASON_ONE_EUROPE[id],
-  phase,domesticLeaguesCompleted,qualificationFinal,drawPublished,
+  phase,domesticLeaguesCompleted,qualificationMathematicallyReady,qualificationFinal,drawPublished,
   participants:participants.length,fixtures:rows.length,
   confirmed:rows.filter(f=>f.status==='CONFIRMED').length,
   currentMatchday:Number(comp.currentMatchday)||1,rounds,canGenerateDraw,canGenerateKnockout,sourceToken,blockReasons:blockers};
