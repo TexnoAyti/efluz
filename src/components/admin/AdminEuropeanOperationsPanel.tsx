@@ -8,7 +8,7 @@ const cups=[
 ] as const;
 type Overview={
  competitionId:string;name:string;phase:string;sourceToken:string;
- domesticLeaguesCompleted:boolean;qualificationFinal:boolean;drawPublished:boolean;
+ domesticLeaguesCompleted:boolean;qualificationMathematicallyReady:boolean;qualificationFinal:boolean;drawPublished:boolean;
  participants:number;fixtures:number;confirmed:number;currentMatchday:number;
  canGenerateDraw:boolean;canGenerateKnockout:boolean;blockReasons:string[];
  rounds:Array<{matchday:number;count:number;confirmed:number;incomplete:number}>;
@@ -18,7 +18,7 @@ type Control={
  rounds:Array<{matchday:number;fixtureCount:number;unfinished:Array<{id:string;status:string}>}>;
 };
 const messages:Record<string,string>={
- DOMESTIC_LEAGUES_INCOMPLETE:'Ichki ligalar yakunlanmagan',
+ QUALIFICATION_POSITIONS_NOT_LOCKED:'Yevrokubok yo‘llanmalari matematik jihatdan hali aniq emas',
  FINAL_QUALIFICATION_REQUIRED:'Yakuniy Yevropa saralashi tasdiqlanmagan',
  EXPECTED_32_UNIQUE_PARTICIPANTS:'32 ta noyob ishtirokchi talab qilinadi',
  DRAW_ALREADY_PUBLISHED:'Qur’a allaqachon e’lon qilingan',
@@ -125,6 +125,10 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
       <div className="text-xs text-white font-black mt-1">{value}</div>
     </div>)}
    </div>
+   <p className="text-xs text-slate-300">
+    Saralash o‘rinlari: <strong>{overview.qualificationMathematicallyReady?'Matematik aniq':'Hali o‘zgarishi mumkin'}</strong>.
+    Barcha liga uchrashuvlari tugashi shart emas; klubning qolgan o‘yinlardan olishi mumkin bo‘lgan maksimal ochkolari tekshiriladi.
+   </p>
    {overview.blockReasons.length>0&&<div className="border border-amber-500/30 p-3 rounded-xl text-xs text-amber-200">
     {overview.blockReasons.map(code=><div key={code}>{messages[code]||code}</div>)}
    </div>}
