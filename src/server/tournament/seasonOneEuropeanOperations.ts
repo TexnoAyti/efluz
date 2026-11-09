@@ -5,7 +5,7 @@ import {domesticSeasonComplete,domesticEuropeanQualificationReady,europeanDrawPu
 import {getCompetitionMatchdayControl,controlCompetitionMatchday} from '../services/competitionMatchdayService';
 import {generateCompetitionFixturesFirestore} from '../firebase/firestoreStore';
 import {generateKnockoutBracket} from './knockoutEngine';
-import {SEED_CLUBS} from '../db/seed';
+import {SEED_CLUBS,SEED_COMPETITIONS} from '../db/seed';
 
 export const SEASON_ONE_EUROPE={
   'comp-champions-league-2026':'UEFA Champions League',
@@ -20,7 +20,7 @@ type Phase='WAITING_LEAGUES'|'WAITING_QUALIFICATION'|'WAITING_PARTICIPANTS'|
 type Overview={
  competitionId:SeasonOneEuroId;seasonId:'season-2026-27';name:string;
  phase:Phase;domesticLeaguesCompleted:boolean;qualificationMathematicallyReady:boolean;qualificationFinal:boolean;
- drawPublished:boolean;participants:number;participantClubs:Array<{clubId:string;clubName:string}>;fixtures:number;confirmed:number;
+ drawPublished:boolean;participants:number;participantClubs:Array<{clubId:string;clubName:string}>;availableClubs:Array<{clubId:string;clubName:string;leagueName:string}>;fixtures:number;confirmed:number;
  currentMatchday:number;rounds:Array<{matchday:number;count:number;confirmed:number;incomplete:number}>;
  canGenerateDraw:boolean;canGenerateKnockout:boolean;sourceToken:string;blockReasons:string[];
 };
@@ -87,9 +87,63 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
  });
  return {competitionId:id,seasonId:'season-2026-27',name:SEASON_ONE_EUROPE[id],
   phase,domesticLeaguesCompleted,qualificationMathematicallyReady,qualificationFinal,drawPublished,
-  participants:participants.length,participantClubs:participants.map(p=>({clubId:p.clubId,clubName:SEED_CLUBS.find(c=>c.id===p.clubId)?.name||p.clubId})),fixtures:rows.length,
+  participants:participants.length,participantClubs:participants.map(p=>({clubId:p.clubId,clubName:SEED_CLUBS.find(c=>c.id===p.clubId)?.name||p.clubId})),
+  availableClubs:SEED_COMPETITIONS.filter(c=>c.seasonId==='season-2026-27'&&c.type==='LEAGUE').flatMap(league=>SEED_CLUBS.filter(club=>club.leagueId===league.leagueId).map(club=>({clubId:club.id,clubName:club.name,leagueName:league.name}))),fixtures:rows.length,
   confirmed:rows.filter(f=>f.status==='CONFIRMED').length,
   currentMatchday:Number(comp.currentMatchday)||1,rounds,canGenerateDraw,canGenerateKnockout,sourceToken,blockReasons:blockers};
+}
+/** Save exactly 32 admin-selected clubs without requiring completed domestic fixtures.
+ * Existing European fixtures, including incomplete legacy draws, are protected.
+ */
+export async function replaceSeasonOneEuropeanRoster(id:string,params:{
+ previewToken:string;confirmation:boolean;clubIds:string[];adminUserId:string
+}):Promise<{success:true;participants:32}>{
+ if(!isSeasonOneEuro(id))throw Error('INVALID_SEASON_ONE_EUROPEAN');
+ if(!params.confirmation)throw Error('EUROPEAN_ROSTER_CONFIRMATION_REQUIRED');
+ const clubs=params.clubIds;
+ const eligible=new Set(SEED_COMPETITIONS.filter(c=>c.seasonId==='season-2026-27'&&c.type==='LEAGUE')
+  .flatMap(league=>SEED_CLUBS.filter(c=>c.leagueId===league.leagueId).map(c=>c.id)));
+ if(!Array.isArray(clubs)||clubs.length!==32||new Set(clubs).size!==32||
+  clubs.some(c=>typeof c!=='string'||!eligible.has(c)))throw Error('EUROPEAN_32_DISTINCT_ELIGIBLE_CLUBS_REQUIRED');
+ const before=await getSeasonOneEuropeanOverview(id);
+ if(before.sourceToken!==params.previewToken)throw Error('EUROPEAN_ROSTER_PREVIEW_CHANGED');
+ if(before.fixtures||before.drawPublished)throw Error('EUROPEAN_ALREADY_STARTED');
+ const db=getFirestoreDb();
+ const ref=db.collection(COLLECTIONS.COMPETITIONS).doc(id);
+ const other=id==='comp-champions-league-2026'?'comp-europa-league-2026':'comp-champions-league-2026';
+ const now=new Date().toISOString();
+ await db.runTransaction(async tx=>{
+  const [comp,existing,fixtures,otherComp,otherParts,otherFixtures]=await Promise.all([
+   tx.get(ref),tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',id)),
+   tx.get(db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id)),
+   tx.get(db.collection(COLLECTIONS.COMPETITIONS).doc(other)),
+   tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',other)),
+   tx.get(db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',other)),
+  ]);
+  if(!comp.exists||comp.data()?.seasonId!=='season-2026-27'||comp.data()?.type!=='EUROPEAN_LEAGUE_PHASE'||
+   comp.data()?.europeanDrawId||!fixtures.empty)throw Error('EUROPEAN_ROSTER_CHANGED_OR_STARTED');
+  const current=existing.docs.filter(d=>d.data().seasonId==='season-2026-27');
+  const original=[...before.participantClubs.map(c=>c.clubId)].sort().join('|');
+  if(current.length!==before.participants||current.map(d=>d.data().clubId).sort().join('|')!==original)
+   throw Error('EUROPEAN_ROSTER_PREVIEW_STALE');
+  const otherClubs=new Set(otherParts.docs.filter(d=>d.data().seasonId==='season-2026-27').map(d=>d.data().clubId));
+  if(clubs.some(c=>otherClubs.has(c)))throw Error('EUROPEAN_CLUB_ALREADY_IN_OTHER_CUP');
+  if(otherComp.data()?.europeanDrawId && otherFixtures.empty)throw Error('EUROPEAN_OTHER_CUP_INCONSISTENT');
+  const occupancies=await tx.get(db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId','==','season-2026-27'));
+  const owner=new Map(occupancies.docs.map(d=>[d.data().clubId,d.data().userId]));
+  for(const doc of current)tx.delete(doc.ref);
+  for(let i=0;i<clubs.length;i++){
+   const clubId=clubs[i],docId=`part-${id}-${clubId}`;
+   tx.set(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(docId),{
+    id:docId,competitionId:id,seasonId:'season-2026-27',clubId,
+    seedNumber:i+1,ownerUserId:owner.get(clubId)||null,
+    qualificationReason:'Admin selection',qualificationTimestamp:now,createdAt:now,updatedAt:now,
+   });
+  }
+  tx.update(ref,{europeanQualificationMode:'provisional',europeanQualificationSource:'admin-selection',
+   europeanQualificationToken:null,europeanManualFinalizedAt:null,updatedAt:now});
+ });
+ return {success:true,participants:32};
 }
 /** Admin freezes a previously registered 32-club roster. No domestic result edits.
  * This is not an automatic claim that the league standings are final. */
