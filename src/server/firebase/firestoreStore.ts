@@ -8,7 +8,7 @@ import { assertNoDisciplinaryHold } from '../../types/discipline';
 import { clubStadium } from '../../constants/clubStadiums';
 import { isDomesticCupResult as isResultCup } from '../../lib/cupResult';
 import { cupScoreMetadata, sameResultScores, type CupTieBreakScores, resolveCupResult } from '../../lib/cupResult';
-import {assertEuropeanDrawReady, domesticSeasonComplete, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
+import {assertEuropeanDrawReady, domesticEuropeanQualificationReady, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
 import {randomUUID as europeanDrawUUID} from 'node:crypto';
 import { assertTopicResultCurrent, type ExpectedTopicFixture } from '../services/topicResultGuard';
 import { invalidateSharedAdminData } from '../services/adminReviewCache';
@@ -2764,7 +2764,7 @@ export async function generateCompetitionFixturesFirestore(
       const latest = comps.docs.find(d=>d.id===competitionId)?.data();
       const rows = fixtures.docs.filter(d=>d.data().competitionId===competitionId);
       if (latest?.europeanQualificationToken !== (comp as any).europeanQualificationToken || latest?.europeanQualificationMode !== 'final' ||
-          !domesticSeasonComplete(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId) ||
+          !domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId) ||
           rows.length !== generatedFixtures.length || rows.some(d=>d.data().europeanDrawId !== drawId))
         throw new Error('EUROPEAN_DRAW_CHANGED: refresh qualification and regenerate the draw');
       tx.update(db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId),competitionUpdate);
