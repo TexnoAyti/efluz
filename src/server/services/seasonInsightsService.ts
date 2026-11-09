@@ -210,7 +210,11 @@ async function deriveLeagueChampion(fixtures: Fixture[], competitionId: string, 
   const locked=evaluateLeagueMathematicalLocks({clubs,fixtures:scoped,config:seed.formatConfig});
   if(!locked.validSchedule)return null;
   const allCompleted=locked.remaining===0;
-  if(!allCompleted&&!locked.championClubId)return null;
+  // A strict points advantage over every other club's maximum proves the
+  // champion independent of any remaining tie-breaker. The fixture snapshot
+  // is validated at every source row; a stale standings cache must not delay
+  // this mathematically established owner trophy.
+  if(!allCompleted)return locked.championClubId;
   try {
     // The authoritative league table must agree with the fixture projection;
     // never award on an outdated or degraded standings cache.
