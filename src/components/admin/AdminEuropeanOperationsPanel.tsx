@@ -10,7 +10,7 @@ type Overview={
  competitionId:string;name:string;phase:string;sourceToken:string;
  domesticLeaguesCompleted:boolean;qualificationFinal:boolean;drawPublished:boolean;
  participants:number;fixtures:number;confirmed:number;currentMatchday:number;
- canGenerateDraw:boolean;blockReasons:string[];
+ canGenerateDraw:boolean;canGenerateKnockout:boolean;blockReasons:string[];
  rounds:Array<{matchday:number;count:number;confirmed:number;incomplete:number}>;
 };
 type Control={
@@ -63,6 +63,18 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
    showToast('Yevrokubok qur’asi yaratildi va tekshirildi','success');
    await load();
   }catch(e:any){showToast(e.message||'Qur’a yaratilmadi','error');}
+  finally{setBusy(false);}
+ }
+ async function createKnockout(){
+  if(!overview?.canGenerateKnockout||!confirmation||busy)return;
+  setBusy(true);
+  try{
+   await adminCall('/api/admin/season-one/european/'+id+'/knockout',{
+    method:'POST',body:JSON.stringify({confirmation:true,previewToken:overview.sourceToken})
+   });
+   showToast('Yevrokubok pley-off bosqichi yaratildi','success');
+   await load();
+  }catch(e:any){showToast(e.message||'Pley-off yaratilmadi','error');}
   finally{setBusy(false);}
  }
  async function nextRound(){
@@ -122,7 +134,7 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
       <span>{r.matchday}-tur</span><span>{r.confirmed}/{r.count} tasdiqlangan</span>
     </div>)}
    </div>}
-   {(overview.canGenerateDraw||nextAllowed)&&<label
+   {(overview.canGenerateDraw||overview.canGenerateKnockout||nextAllowed)&&<label
     className="flex items-start gap-2 text-xs text-slate-300">
     <input type="checkbox" checked={confirmation} onChange={e=>setConfirmation(e.target.checked)}/>
     Ma’lumotlarni tekshirdim, musobaqani boshqarish amalini tasdiqlayman
@@ -131,6 +143,11 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
      disabled={!confirmation||busy}
      className="bg-blue-700 text-white text-xs font-bold rounded-xl px-4 py-2 disabled:opacity-40">
      {busy?'Yaratilmoqda...':'32 klub uchun qur’ani yaratish'}
+   </button>}
+   {overview.canGenerateKnockout&&<button type="button" onClick={()=>void createKnockout()}
+     disabled={!confirmation||busy}
+     className="bg-amber-700 text-white text-xs font-bold rounded-xl px-4 py-2 disabled:opacity-40">
+     {busy?'Yaratilmoqda...':'128 ta natijadan pley-off qur’asini yaratish'}
    </button>}
    {overview.drawPublished&&control&&<div className="space-y-2">
     <p className="text-xs text-slate-300">
