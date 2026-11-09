@@ -131,13 +131,17 @@ export async function replaceSeasonOneEuropeanRoster(id:string,params:{
   if(otherComp.data()?.europeanDrawId && otherFixtures.empty)throw Error('EUROPEAN_OTHER_CUP_INCONSISTENT');
   const occupancies=await tx.get(db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId','==','season-2026-27'));
   const owner=new Map(occupancies.docs.map(d=>[d.data().clubId,d.data().userId]));
-  for(const doc of current)tx.delete(doc.ref);
+  const retained=new Map(current.map(d=>[d.data().clubId,d]));
+  for(const doc of current)if(!clubs.includes(doc.data().clubId))tx.delete(doc.ref);
   for(let i=0;i<clubs.length;i++){
-   const clubId=clubs[i],docId=`part-${id}-${clubId}`;
+   const clubId=clubs[i],prior=retained.get(clubId);
+   const docId=prior?.id||`part-${id}-${clubId}`;
    tx.set(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).doc(docId),{
+    ...(prior?.data()||{}),
     id:docId,competitionId:id,seasonId:'season-2026-27',clubId,
     seedNumber:i+1,ownerUserId:owner.get(clubId)||null,
-    qualificationReason:'Admin selection',qualificationTimestamp:now,createdAt:now,updatedAt:now,
+    qualificationReason:'Admin selection',qualificationTimestamp:now,
+    createdAt:prior?.data().createdAt||now,updatedAt:now,
    });
   }
   tx.update(ref,{europeanQualificationMode:'provisional',europeanQualificationSource:'admin-selection',
