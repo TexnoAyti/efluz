@@ -27,6 +27,8 @@ jobs:
         run: bun run lint
       - name: Mathematical title and UCL / UEL eligibility regression
         run: node --import tsx src/server/tests/leagueMathematicalLocksRegressionTest.ts
+      - name: Four-league early European qualification integration regression
+        run: node --import tsx src/server/tests/seasonOneEarlyQualificationRegressionTest.ts
       - name: Super Cup qualification regression
         run: node --import tsx src/server/tests/seasonOneSupercupPlannerRegressionTest.ts
       - name: Production React build (no deployment)
