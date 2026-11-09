@@ -30,7 +30,8 @@ for(const [opts,expected] of [
  [{rankedClubIds:['club-1','club-1']},'INVALID_LEAGUE_RANKING'],
 ] as const){
  const p=previewSeasonOneSupercup({competitionId:'comp-supercopa-espana-2026',
- leagueComplete:true,cupFinal:cup,rankedClubIds:ranking,existingFixtureCount:0,...opts});
+ leagueComplete:true,cupFinal:cup,existingFixtureCount:0,...opts,
+ rankedClubIds:'rankedClubIds' in opts?[...opts.rankedClubIds]:ranking});
  assert.equal(p.canCreate,false);
  assert.ok(p.blockReasons.includes(expected),expected);
  assert.deepEqual(p.pairings,[]);
