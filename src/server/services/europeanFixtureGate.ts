@@ -12,7 +12,11 @@ export function europeanManualRosterToken(id:string,clubs:string[]):string{
   id,roster:[...clubs].sort(),season:'season-2026-27'
  })).digest('hex');
 }
-export function europeanManualQualification(comp:any):boolean {\n return comp?.seasonId==='season-2026-27' && comp?.europeanQualificationMode==='final' &&\n   comp?.europeanQualificationSource==='admin-manual' && Boolean(comp?.europeanQualificationToken);\n}\nexport function europeanDrawPublished(comp: any): boolean {
+export function europeanManualQualification(comp:any):boolean {
+ return comp?.seasonId==='season-2026-27' && comp?.europeanQualificationMode==='final' &&
+   comp?.europeanQualificationSource==='admin-manual' && Boolean(comp?.europeanQualificationToken);
+}
+export function europeanDrawPublished(comp: any): boolean {
   return Boolean(comp?.europeanQualificationMode === 'final' && comp.europeanQualificationToken &&
     comp.europeanDrawId && comp.europeanDrawQualificationToken === comp.europeanQualificationToken);
 }
