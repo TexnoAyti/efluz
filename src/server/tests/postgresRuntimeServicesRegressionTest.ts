@@ -103,7 +103,10 @@ await invalidateSharedAdminData(); await readSharedAdminReview('pg-reviews', rev
 
 const hour = new Date().toISOString().slice(0, 13);
 await first.eval(READ_COST_INCREMENT_LUA, [`${KEY_PREFIX}:read-cost:${hour}`], ['totalReads', 3, 'endpoint:GET /state', 3]);
-assert.equal((await getDurableReadCosts() as any).byEndpoint['GET /state'], 3);
+assert.equal((await first.hgetall<Record<string,number>>(`${KEY_PREFIX}:read-cost:${hour}`))?.['endpoint:GET /state'],3,
+ 'Native runtime-state increment stores the exact field value');
+assert.equal((await getDurableReadCosts() as any).available,false,
+ 'Optional Redis telemetry is deliberately unavailable in Supabase mode');
 assert.equal((await runDeadlineSweep(season)).skipped, false);
 assert.equal((await runDeadlineSweep(season)).reason, 'HOURLY_LOCK');
 

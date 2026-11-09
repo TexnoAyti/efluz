@@ -107,7 +107,8 @@ export async function syncCompetitionTrophy(competitionId: string, seasonId: str
   const fixtures = snapshot.data.filter(item => item.competitionId === competitionId && item.seasonId === seasonId);
   if (changedFixture && !fixtures.some(item => item.id === changedFixture.id && item.updatedAt === changedFixture.updatedAt)) return;
   const expectedClubs = DOMESTIC_LEAGUE_CONFIG[competitionId]?.expectedCount;
-  if (changedFixture && expectedClubs && fixtures.filter(item => item.status === 'CONFIRMED').length < expectedClubs * (expectedClubs - 1) / 2 - 1) return;
+  // The title can be mathematically secured before the last round. Let the
+  // authoritative fixture/standings proof decide rather than counting all games.
   if (changedFixture && !expectedClubs && !/^final(?:\s|$)/i.test(changedFixture.roundName || '') && !(competition.type === 'SUPER_CUP' && competition.formatConfig.teams === 2)) return;
   const result = await getSeasonTrophies(seasonId, { fixtures, competitionId });
   if (result.unavailableCompetitions.includes(competitionId)) return;
@@ -196,6 +197,14 @@ async function getTrophyCabinet(activeSeasonId: string, belongsTo: (trophy: Trop
   ]);
   const saved = history.data.records.filter(record => record.active && record.seasonId === activeSeasonId);
   const current = live ? [...live.trophies, ...saved.filter(record => live.unavailableCompetitions.includes(record.competitionId))] : saved;
+  // A recorded title survives a stale standings read, but must be labelled
+  // stale until the authoritative table has been rebuilt.
+  const leagueTitleIds = [...new Set(current
+    .filter(item => item.seasonId === activeSeasonId && DOMESTIC_LEAGUE_CONFIG[item.competitionId])
+    .map(item => item.competitionId))];
+  const staleStandings = (await Promise.all(leagueTitleIds.map(id =>
+    redisIsDirty(ReadModelKeys.standings(id, activeSeasonId)).catch(() => true)
+  ))).some(Boolean);
   const awards = awardResult?.awards.flatMap(award => award.leaders
     .filter(leader => awardBelongsTo(leader.clubId, leader.userId))
     .map(leader => ({
@@ -208,7 +217,7 @@ async function getTrophyCabinet(activeSeasonId: string, belongsTo: (trophy: Trop
       clubId: leader.clubId,
       clubName: leader.clubName,
     }))) || [];
-  return { trophies: mergeTrophies(current, history.data, activeSeasonId, belongsTo), awards, stale: history.stale || !live || !awardResult || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
+  return { trophies: mergeTrophies(current, history.data, activeSeasonId, belongsTo), awards, stale: staleStandings || history.stale || !live || !awardResult || live.unavailableCompetitions.length > 0 || live.source === 'redis_stale' || live.source === 'sqlite' };
 }
 
 export async function getPlayerTrophyCabinet(userId: string, activeSeasonId: string): Promise<PlayerTrophyCabinet> {

@@ -1,0 +1,35 @@
+name: Season-one European and Super Cups (no deploy)
+on:
+  push:
+    branches:
+      - feat/season1-euro-supercups-20261109
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: season1-euro-supercups-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+      NODE_ENV: "test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install frozen dependencies
+        run: bun install --frozen-lockfile
+      - name: Type check
+        run: bun run lint
+      - name: Mathematical title and UCL / UEL eligibility regression
+        run: node --import tsx src/server/tests/leagueMathematicalLocksRegressionTest.ts
+      - name: Four-league early European qualification integration regression
+        run: node --import tsx src/server/tests/seasonOneEarlyQualificationRegressionTest.ts
+      - name: Super Cup qualification regression
+        run: node --import tsx src/server/tests/seasonOneSupercupPlannerRegressionTest.ts
+      - name: Production React build (no deployment)
+        run: bun run build

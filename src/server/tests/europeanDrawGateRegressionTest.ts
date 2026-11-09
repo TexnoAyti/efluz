@@ -27,7 +27,7 @@ assert.equal(await getFixtureByIdFirestore(legacy.id),null);
 assert.equal((await getCompetitionFixturesFromReadModel(id,{seasonId})).fixtures.length,0,'Warm old snapshots cannot expose a pre-draw fixture');
 assert.equal((await getMyMatchesResilient('owner',[SEED_CLUBS.find(c=>c.id==='club-arsenal')!] as any,seasonId)).fixtures.length,0);
 assert.equal((await withVisibleFixtureCounts([comp as any],seasonId))[0].fixturesCount,0);
-for(const force of [false,true]) await assert.rejects(generateCompetitionFixturesFirestore(id,{force}),/avval barcha ichki liga/);
+for(const force of [false,true]) await assert.rejects(generateCompetitionFixturesFirestore(id,{force}),/saralash o‘rinlari/);
 await assert.rejects(controlCompetitionMatchday(id,{action:'OPEN',matchday:1}),/yakuniy saralash/);
 assert.equal((await db.collection('fixtures').doc(legacy.id).get()).exists,true,'Premature fixtures are preserved, not deleted by a blocked draw');
 assert.equal((await previewEuropeanQualificationSync(seasonId,'final')).canApply,false);
@@ -43,6 +43,12 @@ await assert.rejects(generateCompetitionFixturesFirestore(id),/yakuniy Yevropa s
 const final=await previewEuropeanQualificationSync(seasonId,'final');assert.equal(final.canApply,true);
 await applyEuropeanQualificationSync({previewToken:final.previewToken,seasonId,confirmation:true,adminUserId:'admin'});
 assert.equal((await filterPublishedEuropeanFixtures([legacy])).length,0,'Final qualification alone is not the draw');
+await assert.rejects(generateCompetitionFixturesFirestore(id),
+ /EUROPEAN_EXISTING_UNPUBLISHED_FIXTURES/,
+ 'Old unreviewed fixtures must block creation even after qualification is final');
+ // The isolated test explicitly simulates an administrator resolving the
+ // quarantined legacy fixture before publishing the canonical draw.
+await db.collection('fixtures').doc(legacy.id).delete();
 const draw=await generateCompetitionFixturesFirestore(id);assert.equal(draw.generated,128);
 const current=(await db.collection('competitions').doc(id).get()).data()!;
 assert.equal(current.europeanDrawQualificationToken,final.previewToken);
@@ -51,5 +57,5 @@ assert.equal((await filterPublishedEuropeanFixtures(fixtures as any)).length,128
 assert.equal((await filterPublishedEuropeanFixtures([legacy])).length,0,'An old snapshot stays hidden after publication');
 assert.equal((await getFixturesFirestore({competitionId:id,seasonId})).length,128);
 await db.collection('fixtures').doc(rows[0].id).update({status:'SCHEDULED'});
-await assert.rejects(generateCompetitionFixturesFirestore(id,{force:true}),/avval barcha ichki liga/);
-console.log('PASS European gate: incomplete/missing/duplicate domestic schedules, provisional vs final qualification, force bypass blocked, legacy fixture+warm snapshot+my matches hidden, locked round, finalization alone hidden, tagged 128-match draw published, reopened domestic result blocks redraw.');
+await assert.rejects(generateCompetitionFixturesFirestore(id,{force:true}),/saralash o‘rinlari/);
+console.log('PASS European gate: mathematically unsecured or incomplete domestic qualification, missing/duplicate domestic schedules, provisional vs final qualification, force bypass blocked, legacy fixture+warm snapshot+my matches hidden, locked round, finalization alone hidden, tagged 128-match draw published, reopened domestic result blocks redraw.');

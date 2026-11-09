@@ -1,5 +1,5 @@
 import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy';
-import {domesticSeasonComplete} from '../services/europeanFixtureGate';
+import {domesticSeasonComplete,domesticEuropeanQualificationReady} from '../services/europeanFixtureGate';
 import { getRuntimeStateStore } from '../readModel/runtimeStateStore';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
 import { getFirestoreDb } from '../firebase/admin';
@@ -59,6 +59,7 @@ export interface EuropeanQualificationPreview {
   canApply: boolean;
   blockReason?: string;
   domesticLeaguesCompleted: boolean;
+  mathematicalQualificationReady: boolean;
   unplayedLeagueMatchesCount: number;
   hasEuropeanStarted: boolean;
   summary: {
@@ -252,6 +253,7 @@ export async function previewEuropeanQualificationSync(
   const leagueFixtures = allFixtures.filter((f) => leagueIds.has(f.competitionId));
   const unplayedLeagueMatchesCount = leagueFixtures.filter((f) => f.status !== 'CONFIRMED').length;
   const domesticLeaguesCompleted = domesticSeasonComplete(allComps, allFixtures, seasonId);
+  const mathematicalQualificationReady=domesticEuropeanQualificationReady(allComps,allFixtures,seasonId);
 
   let canApply = true;
   let blockReason: string | undefined;
@@ -259,9 +261,9 @@ export async function previewEuropeanQualificationSync(
   if (hasEuropeanStarted) {
     canApply = false;
     blockReason = `European competitions have already started (${playedEuropeanFixtures.length} played/in-progress matches). Participant synchronization is strictly blocked to protect active competition integrity.`;
-  } else if (mode === 'final' && !domesticLeaguesCompleted) {
+  } else if (mode === 'final' && !mathematicalQualificationReady) {
     canApply = false;
-    blockReason = `Domestic leagues are not finished (${unplayedLeagueMatchesCount} unconfirmed fixtures remaining). Final European qualification sync can only be applied after all domestic league matches are confirmed.`;
+    blockReason = 'Final European qualification requires mathematically locked top-six and top-twelve clubs in every participating league, or all league games completed.';
   }
 
   // Calculate projected qualifications from domestic league standings
@@ -378,6 +380,7 @@ export async function previewEuropeanQualificationSync(
     canApply,
     blockReason,
     domesticLeaguesCompleted,
+    mathematicalQualificationReady,
     unplayedLeagueMatchesCount,
     hasEuropeanStarted,
     summary: {
@@ -463,28 +466,9 @@ export async function applyEuropeanQualificationSync(params: {
     );
   }
 
-  // 2. If mode is final, re-verify all domestic league matches are completed
-  if (preview.mode === 'final') {
-    const unplayedLeaguesSnap = await db
-      .collection(COLLECTIONS.FIXTURES)
-      .where('seasonId', '==', preview.seasonId)
-      .get();
-    const leagueIds = [
-      'comp-premier-league-2026',
-      'comp-la-liga-2026',
-      'comp-serie-a-2026',
-      'comp-bundesliga-2026',
-      'comp-ligue-1-2026',
-    ];
-    const unplayedLeagueMatches = unplayedLeaguesSnap.docs.filter((d) =>
-      leagueIds.includes(d.data().competitionId) && d.data().status !== 'CONFIRMED'
-    ).length;
-    if (unplayedLeagueMatches > 0) {
-      throw new Error(
-        `Precondition Failed: Domestic leagues still have ${unplayedLeagueMatches} unplayed scheduled matches. Final qualification sync cannot be applied.`
-      );
-    }
-  }
+  // Final qualification is revalidated atomically in the transaction below.
+  // Do not reject a mathematically settled top-six/top-twelve group merely
+  // because unrelated league fixtures remain scheduled.
 
   const now = new Date().toISOString();
   const participantsAdded = preview.diff.ucl.added.length + preview.diff.uel.added.length;
@@ -498,9 +482,9 @@ export async function applyEuropeanQualificationSync(params: {
     const application = await transaction.get(applicationRef);
     if (application.exists) throw new Error('PREVIEW_ALREADY_APPLIED');
     if (fingerprintSnapshots(snapshots) !== preview.sourceFingerprint) throw new Error('PREVIEW_DATA_CHANGED: refresh and review the new preview');
-    if (preview.mode === 'final' && !domesticSeasonComplete(
+    if (preview.mode === 'final' && !domesticEuropeanQualificationReady(
       snapshots[0].docs.map(d=>({...d.data(),id:d.id})), snapshots[2].docs.map(d=>({...d.data(),id:d.id})), preview.seasonId))
-      throw new Error('DOMESTIC_LEAGUES_INCOMPLETE');
+      throw new Error('EUROPEAN_QUALIFICATION_NOT_MATHEMATICALLY_LOCKED');
     for (const diff of [preview.diff.ucl, preview.diff.uel]) transaction.update(db.collection(COLLECTIONS.COMPETITIONS).doc(diff.competitionId), {
       europeanQualificationMode: preview.mode, europeanQualificationToken: params.previewToken,
       europeanQualificationFinalizedAt: preview.mode === 'final' ? now : null,

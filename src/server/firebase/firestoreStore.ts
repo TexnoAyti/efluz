@@ -2551,7 +2551,20 @@ export async function generateCompetitionFixturesFirestore(
 
   // Check existing fixtures
   const existingSnap = await db.collection(COLLECTIONS.FIXTURES).where('competitionId', '==', competitionId).get();
-  if (!existingSnap.empty && !options.force && (!european || europeanDrawPublished(comp))) {
+  // A new European draw must never silently overwrite unpublished fixture
+  // data (including an interrupted or partially generated schedule). Require
+  // separate explicit review/recovery rather than recreating source matches.
+  if (european && !existingSnap.empty) {
+    if (!europeanDrawPublished(comp)) {
+      throw new Error('EUROPEAN_EXISTING_UNPUBLISHED_FIXTURES: review and reconcile the existing draw before generating again.');
+    }
+    if (options.force) {
+      throw new Error('EUROPEAN_DRAW_REGENERATION_BLOCKED: existing tournament draw is protected against force regeneration.');
+    }
+    const matchdays = new Set(existingSnap.docs.map((d) => d.data().matchday)).size;
+    return { generated: existingSnap.size, matchdays };
+  }
+  if (!existingSnap.empty && !options.force) {
     const matchdays = new Set(existingSnap.docs.map((d) => d.data().matchday)).size;
     return { generated: existingSnap.size, matchdays };
   }

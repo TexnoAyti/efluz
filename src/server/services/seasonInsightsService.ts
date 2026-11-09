@@ -3,6 +3,7 @@ import {loadPostgresSeasonFixtures, loadPostgresSeasonOwners} from './postgresSe
 import { Fixture } from '../../types';
 import { queryAll } from '../db';
 import { SEED_CLUBS, SEED_COMPETITIONS } from '../db/seed';
+import {evaluateLeagueMathematicalLocks} from '../tournament/leagueMathematicalLocks';
 import {
   DOMESTIC_LEAGUE_CONFIG,
   ReadModelKeys,
@@ -202,15 +203,29 @@ export function isCompleteLeagueFixtureSet(fixtures: Fixture[], competitionId: s
 }
 
 async function deriveLeagueChampion(fixtures: Fixture[], competitionId: string, seasonId: string): Promise<string | null> {
-  if (!isCompleteLeagueFixtureSet(fixtures, competitionId)) return null;
+  const seed=SEED_COMPETITIONS.find(c=>c.id===competitionId&&c.seasonId===seasonId);
+  if(!seed?.leagueId)return null;
+  const clubs=SEED_CLUBS.filter(c=>c.leagueId===seed.leagueId);
+  const scoped=fixtures.filter(f=>f.competitionId===competitionId&&f.seasonId===seasonId);
+  const locked=evaluateLeagueMathematicalLocks({clubs,fixtures:scoped,config:seed.formatConfig});
+  if(!locked.validSchedule)return null;
+  const allCompleted=locked.remaining===0;
+  // A strict points advantage over every other club's maximum proves the
+  // champion independent of any remaining tie-breaker. The fixture snapshot
+  // is validated at every source row; a stale standings cache must not delay
+  // this mathematically established owner trophy.
+  if(!allCompleted)return locked.championClubId;
   try {
-    // Use the same tie-breaker rules and ranking as the official league table.
-    const result = await getCompetitionStandingsFromReadModel(competitionId, seasonId);
-    const expectedClubs = DOMESTIC_LEAGUE_CONFIG[competitionId].expectedCount;
-    if (result.stale || result.degraded || result.standings.length !== expectedClubs ||
-      result.standings.some((row) => row.played !== expectedClubs - 1)) return null;
-    return result.standings.find((row) => row.position === 1)?.clubId || null;
-  } catch { return null; }
+    // The authoritative league table must agree with the fixture projection;
+    // never award on an outdated or degraded standings cache.
+    const result=await getCompetitionStandingsFromReadModel(competitionId,seasonId);
+    if(result.stale||result.degraded||result.standings.length!==clubs.length)return null;
+    const first=result.standings.find(r=>r.position===1);
+    const projected=locked.ranking.find(r=>r.clubId===first?.clubId);
+    if(!first||!projected||first.points!==projected.points)return null;
+    if(allCompleted)return first.clubId; // Final ties resolved by official rules.
+    return locked.championClubId===first.clubId?first.clubId:null;
+  }catch{return null;}
 }
 
 export function isConfirmedFinalFixture(fixture: Fixture): boolean {
