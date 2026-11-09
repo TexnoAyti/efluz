@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feat/season1-euro-supercups-20261109
+      - feat/season1-supercup-manual-start-20261109
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,5 +32,7 @@ jobs:
         run: node --import tsx src/server/tests/seasonOneEarlyQualificationRegressionTest.ts
       - name: Super Cup qualification regression
         run: node --import tsx src/server/tests/seasonOneSupercupPlannerRegressionTest.ts
+      - name: European draw and manual roster regression
+        run: node scripts/run-isolated-test.mjs src/server/tests/europeanDrawGateRegressionTest.ts
       - name: Production React build (no deployment)
         run: bun run build
