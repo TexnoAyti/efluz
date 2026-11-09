@@ -37,8 +37,8 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
  const comp=doc.data();
  if(!doc.exists||comp?.type!=='EUROPEAN_LEAGUE_PHASE'||comp?.seasonId!=='season-2026-27')
   throw Error('EUROPEAN_CATALOG_NOT_READY');
- const competitions=compsSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
- const seasonFixtures=seasonFixSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
+ const competitions:Array<Record<string,any>&{id:string}>=compsSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
+ const seasonFixtures:Array<Record<string,any>&{id:string}>=seasonFixSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
  const domesticLeaguesCompleted=domesticSeasonComplete(competitions,seasonFixtures,'season-2026-27');
  const qualificationFinal=comp.europeanQualificationMode==='final'&&Boolean(comp.europeanQualificationToken);
  const drawPublished=europeanDrawPublished(comp);
