@@ -53,6 +53,18 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
   finally{setLoading(false);}
  }
  useEffect(()=>{void load();},[id]);
+ async function manualFinalize(){
+  if(!overview||overview.participants!==32||overview.fixtures!==0||!confirmation||busy)return;
+  setBusy(true);
+  try{
+   await adminCall('/api/admin/season-one/european/'+id+'/manual-finalize',{
+    method:'POST',body:JSON.stringify({confirmation:true,previewToken:overview.sourceToken})
+   });
+   showToast('32 klub ro‘yxati admin tomonidan tasdiqlandi. Endi qur’a yaratish mumkin.','success');
+   await load();
+  }catch(e:any){showToast(e.message||'Ishtirokchilar tasdiqlanmadi','error');}
+  finally{setBusy(false);}
+ }
  async function createDraw(){
   if(!overview?.canGenerateDraw||!confirmation||busy)return;
   setBusy(true);
@@ -100,7 +112,7 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
   <header>
    <h3 className="text-base font-black text-white">1-mavsum Yevrokuboklarini boshqarish</h3>
    <p className="text-xs text-slate-400 mt-1">
-    Final saralash → xavfsiz qur’a → liga bosqichi → pley-off → final.
+    Matematik saralash yoki admin tasdiqlagan 32 klub → qur’a → liga bosqichi → pley-off → final.
     Faqat 2026/27 mavsumiga tegishli.
    </p>
   </header>
@@ -138,11 +150,16 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
       <span>{r.matchday}-tur</span><span>{r.confirmed}/{r.count} tasdiqlangan</span>
     </div>)}
    </div>}
-   {(overview.canGenerateDraw||overview.canGenerateKnockout||nextAllowed)&&<label
+   {(overview.canGenerateDraw||overview.canGenerateKnockout||nextAllowed||(overview.participants===32&&overview.fixtures===0&&!overview.canGenerateDraw))&&<label
     className="flex items-start gap-2 text-xs text-slate-300">
     <input type="checkbox" checked={confirmation} onChange={e=>setConfirmation(e.target.checked)}/>
     Ma’lumotlarni tekshirdim, musobaqani boshqarish amalini tasdiqlayman
    </label>}
+   {overview.participants===32&&overview.fixtures===0&&!overview.canGenerateDraw&&<button
+     type="button" onClick={()=>void manualFinalize()} disabled={!confirmation||busy}
+     className="bg-indigo-700 text-white text-xs font-bold rounded-xl px-4 py-2 disabled:opacity-40">
+     {busy?'Tasdiqlanmoqda...':'32 klubni admin qarori bilan tasdiqlash'}
+   </button>}
    {overview.canGenerateDraw&&<button type="button" onClick={()=>void createDraw()}
      disabled={!confirmation||busy}
      className="bg-blue-700 text-white text-xs font-bold rounded-xl px-4 py-2 disabled:opacity-40">
