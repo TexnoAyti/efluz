@@ -13,10 +13,39 @@ import {
   advanceDomesticCupRoundSafe,
 } from '../tournament/domesticCupRoundOps';
 import { DOMESTIC_CUPS, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
+import {getSeasonOneSupercupPreview,createSeasonOneSupercup} from '../tournament/seasonOneSupercupService';
 import { refreshChangedFixtureReadModel, invalidateFixtureReadModels } from '../readModel/readModelStore';
 
 export const adminCupOpsRouter = Router();
 adminCupOpsRouter.use(requireAdmin);
+
+// First-season Super Cups: verified source preview -> explicit confirmed creation.
+// Admin authorization is enforced by the router-level requireAdmin middleware.
+adminCupOpsRouter.get('/supercups/:supercupId/preview',async(req:Request,res:Response)=>{
+ try{
+  const preview=await getSeasonOneSupercupPreview(req.params.supercupId);
+  res.setHeader('Cache-Control','no-store');
+  res.json(preview);
+ }catch(err:any){
+  res.status(400).json({error:err.message,code:'SUPERCUP_PREVIEW_FAILED'});
+ }
+});
+adminCupOpsRouter.post('/supercups/:supercupId/create',async(req:Request,res:Response)=>{
+ if(req.body?.confirmation!==true||typeof req.body?.previewToken!=='string'){
+  res.status(400).json({error:'Explicit confirmation and previewToken are required.'});
+  return;
+ }
+ try{
+  const result=await createSeasonOneSupercup(req.params.supercupId,{
+   previewToken:req.body.previewToken,confirmed:true,
+   adminUserId:req.user!.id,adminUsername:req.user?.username||'admin'
+  });
+  res.setHeader('Cache-Control','no-store');
+  res.json(result);
+ }catch(err:any){
+  res.status(409).json({error:err.message,code:'SUPERCUP_NOT_READY'});
+ }
+});
 
 adminCupOpsRouter.get('/cups/:cupId/health', async (req: Request, res: Response) => {
   try {
