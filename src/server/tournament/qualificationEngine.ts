@@ -463,28 +463,9 @@ export async function applyEuropeanQualificationSync(params: {
     );
   }
 
-  // 2. If mode is final, re-verify all domestic league matches are completed
-  if (preview.mode === 'final') {
-    const unplayedLeaguesSnap = await db
-      .collection(COLLECTIONS.FIXTURES)
-      .where('seasonId', '==', preview.seasonId)
-      .get();
-    const leagueIds = [
-      'comp-premier-league-2026',
-      'comp-la-liga-2026',
-      'comp-serie-a-2026',
-      'comp-bundesliga-2026',
-      'comp-ligue-1-2026',
-    ];
-    const unplayedLeagueMatches = unplayedLeaguesSnap.docs.filter((d) =>
-      leagueIds.includes(d.data().competitionId) && d.data().status !== 'CONFIRMED'
-    ).length;
-    if (unplayedLeagueMatches > 0) {
-      throw new Error(
-        `Precondition Failed: Domestic leagues still have ${unplayedLeagueMatches} unplayed scheduled matches. Final qualification sync cannot be applied.`
-      );
-    }
-  }
+  // Final qualification is revalidated atomically in the transaction below.
+  // Do not reject a mathematically settled top-six/top-twelve group merely
+  // because unrelated league fixtures remain scheduled.
 
   const now = new Date().toISOString();
   const participantsAdded = preview.diff.ucl.added.length + preview.diff.uel.added.length;
