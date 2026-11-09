@@ -40,6 +40,7 @@ interface QualificationPreviewData {
   canApply: boolean;
   blockReason?: string;
   domesticLeaguesCompleted: boolean;
+  mathematicalQualificationReady: boolean;
   unplayedLeagueMatchesCount: number;
   hasEuropeanStarted: boolean;
   summary: {
@@ -376,7 +377,7 @@ export const AdminEuropeanTab: React.FC<{ canUseDangerZone?: boolean }> = ({ can
                 </div>
                 <div className="text-[11px] opacity-90 mt-0.5">
                   {preview.blockReason ||
-                    `${loc('Ichki ligalar tugagan', 'Внутренние лиги завершены', 'Domestic leagues finished')}: ${preview.domesticLeaguesCompleted ? loc('ha', 'да', 'yes') : loc('davom etmoqda', 'в процессе', 'in progress')}. ${loc('Yevropa musobaqalari boshlangan', 'Еврокубки начались', 'European competitions active')}: ${preview.hasEuropeanStarted ? loc('ha', 'да', 'yes') : loc('yo‘q', 'нет', 'no')}.`}
+                    `${loc('Yo‘llanmalar matematik aniq', 'Математически закреплённые места', 'Mathematically locked qualifications')}: ${preview.mathematicalQualificationReady ? loc('ha', 'да', 'yes') : loc('hali emas', 'пока нет', 'not yet')}. ${loc('Yevropa musobaqalari boshlangan', 'Еврокубки начались', 'European competitions active')}: ${preview.hasEuropeanStarted ? loc('ha', 'да', 'yes') : loc('yo‘q', 'нет', 'no')}.`}
                 </div>
               </div>
             </div>
