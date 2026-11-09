@@ -20,7 +20,7 @@ type Phase='WAITING_LEAGUES'|'WAITING_QUALIFICATION'|'WAITING_PARTICIPANTS'|
 type Overview={
  competitionId:SeasonOneEuroId;seasonId:'season-2026-27';name:string;
  phase:Phase;domesticLeaguesCompleted:boolean;qualificationMathematicallyReady:boolean;qualificationFinal:boolean;
- drawPublished:boolean;participants:number;fixtures:number;confirmed:number;
+ drawPublished:boolean;participants:number;participantClubs:Array<{clubId:string;clubName:string}>;fixtures:number;confirmed:number;
  currentMatchday:number;rounds:Array<{matchday:number;count:number;confirmed:number;incomplete:number}>;
  canGenerateDraw:boolean;canGenerateKnockout:boolean;sourceToken:string;blockReasons:string[];
 };
@@ -84,7 +84,7 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
  });
  return {competitionId:id,seasonId:'season-2026-27',name:SEASON_ONE_EUROPE[id],
   phase,domesticLeaguesCompleted,qualificationMathematicallyReady,qualificationFinal,drawPublished,
-  participants:participants.length,fixtures:rows.length,
+  participants:participants.length,participantClubs:participants.map(p=>({clubId:p.clubId,clubName:SEED_CLUBS.find(c=>c.id===p.clubId)?.name||p.clubId})),fixtures:rows.length,
   confirmed:rows.filter(f=>f.status==='CONFIRMED').length,
   currentMatchday:Number(comp.currentMatchday)||1,rounds,canGenerateDraw,canGenerateKnockout,sourceToken,blockReasons:blockers};
 }
