@@ -59,6 +59,7 @@ export interface EuropeanQualificationPreview {
   canApply: boolean;
   blockReason?: string;
   domesticLeaguesCompleted: boolean;
+  mathematicalQualificationReady: boolean;
   unplayedLeagueMatchesCount: number;
   hasEuropeanStarted: boolean;
   summary: {
@@ -252,6 +253,7 @@ export async function previewEuropeanQualificationSync(
   const leagueFixtures = allFixtures.filter((f) => leagueIds.has(f.competitionId));
   const unplayedLeagueMatchesCount = leagueFixtures.filter((f) => f.status !== 'CONFIRMED').length;
   const domesticLeaguesCompleted = domesticSeasonComplete(allComps, allFixtures, seasonId);
+  const mathematicalQualificationReady=domesticEuropeanQualificationReady(allComps,allFixtures,seasonId);
 
   let canApply = true;
   let blockReason: string | undefined;
@@ -259,7 +261,7 @@ export async function previewEuropeanQualificationSync(
   if (hasEuropeanStarted) {
     canApply = false;
     blockReason = `European competitions have already started (${playedEuropeanFixtures.length} played/in-progress matches). Participant synchronization is strictly blocked to protect active competition integrity.`;
-  } else if (mode === 'final' && !domesticEuropeanQualificationReady(allComps,allFixtures,seasonId)) {
+  } else if (mode === 'final' && !mathematicalQualificationReady) {
     canApply = false;
     blockReason = 'Final European qualification requires mathematically locked top-six and top-twelve clubs in every participating league, or all league games completed.';
   }
@@ -378,6 +380,7 @@ export async function previewEuropeanQualificationSync(
     canApply,
     blockReason,
     domesticLeaguesCompleted,
+    mathematicalQualificationReady,
     unplayedLeagueMatchesCount,
     hasEuropeanStarted,
     summary: {
