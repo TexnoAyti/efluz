@@ -75,6 +75,7 @@ import {
 import { AdminDomesticCupsTab } from './admin/AdminDomesticCupsTab';
 import { AdminSupercupPanel } from './admin/AdminSupercupPanel';
 import { AdminEuropeanTab } from './admin/AdminEuropeanTab';
+import { AdminEuropeanOperationsPanel } from './admin/AdminEuropeanOperationsPanel';
 import { AdminTelegramTab } from './admin/AdminTelegramTab';
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
 import { AdminTelegramAiTab } from './admin/AdminTelegramAiTab';
@@ -2377,7 +2378,10 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       {/* ========================================================================= */}
       {/* 5B. UCL / UEL STANDINGS & QUALIFICATIONS SECTION */}
       {/* ========================================================================= */}
-      {activeAdminTab === 'european' && <AdminEuropeanTab canUseDangerZone={canUseDangerZone} />}
+      {activeAdminTab === 'european' && <>
+        <AdminEuropeanTab canUseDangerZone={canUseDangerZone} />
+        {canUseDangerZone && !isScoped && <div className="mt-6"><AdminEuropeanOperationsPanel /></div>}
+      </>}
 
       {/* ========================================================================= */}
       {/* 5C. TELEGRAM NOTIFICATIONS SECTION */}
