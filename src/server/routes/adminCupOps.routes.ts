@@ -15,10 +15,47 @@ import {
 } from '../tournament/domesticCupRoundOps';
 import { DOMESTIC_CUPS, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
 import {getSeasonOneSupercupPreview,createSeasonOneSupercup} from '../tournament/seasonOneSupercupService';
+import {getSeasonOneEuropeanOverview,publishSeasonOneEuropeanDraw,openSeasonOneEuropeanRound} from '../tournament/seasonOneEuropeanOperations';
 import { refreshChangedFixtureReadModel, invalidateFixtureReadModels } from '../readModel/readModelStore';
 
 export const adminCupOpsRouter = Router();
 adminCupOpsRouter.use(requireAdmin);
+
+// First-season UCL and UEL: no conference league, no second-season takeover.
+adminCupOpsRouter.get('/season-one/european/:competitionId/overview',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ try{
+  res.setHeader('Cache-Control','no-store');
+  res.json(await getSeasonOneEuropeanOverview(req.params.competitionId));
+ }catch(err:any){res.status(400).json({error:err.message});}
+});
+adminCupOpsRouter.post('/season-one/european/:competitionId/draw',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ if(req.body?.confirmation!==true||typeof req.body?.previewToken!=='string'){
+  res.status(400).json({error:'Explicit confirmation and previewToken are required.'});return;
+ }
+ try{
+  res.setHeader('Cache-Control','no-store');
+  res.json(await publishSeasonOneEuropeanDraw(req.params.competitionId,{
+    confirmation:true,previewToken:req.body.previewToken
+  }));
+ }catch(err:any){res.status(409).json({error:err.message});}
+});
+adminCupOpsRouter.post('/season-one/european/:competitionId/next-round',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ const {nextMatchday,expectedUpdatedAt,durationHours}=req.body||{};
+ if(!Number.isSafeInteger(nextMatchday)||!Number.isFinite(durationHours)||
+    durationHours<=0||durationHours>720||
+    !(expectedUpdatedAt===null||typeof expectedUpdatedAt==='string')){
+  res.status(400).json({error:'Valid nextMatchday, expectedUpdatedAt and durationHours required.'});return;
+ }
+ try{
+  res.setHeader('Cache-Control','no-store');
+  res.json(await openSeasonOneEuropeanRound(req.params.competitionId,{
+   nextMatchday,expectedUpdatedAt,durationHours,adminUserId:req.user!.id
+  }));
+ }catch(err:any){res.status(409).json({error:err.message});}
+});
 
 // First-season Super Cups: verified source preview -> explicit confirmed creation.
 // Admin authorization is enforced by the router-level requireAdmin middleware.
