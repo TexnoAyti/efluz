@@ -43,6 +43,12 @@ await assert.rejects(generateCompetitionFixturesFirestore(id),/yakuniy Yevropa s
 const final=await previewEuropeanQualificationSync(seasonId,'final');assert.equal(final.canApply,true);
 await applyEuropeanQualificationSync({previewToken:final.previewToken,seasonId,confirmation:true,adminUserId:'admin'});
 assert.equal((await filterPublishedEuropeanFixtures([legacy])).length,0,'Final qualification alone is not the draw');
+await assert.rejects(generateCompetitionFixturesFirestore(id),
+ /EUROPEAN_EXISTING_UNPUBLISHED_FIXTURES/,
+ 'Old unreviewed fixtures must block creation even after qualification is final');
+ // The isolated test explicitly simulates an administrator resolving the
+ // quarantined legacy fixture before publishing the canonical draw.
+await db.collection('fixtures').doc(legacy.id).delete();
 const draw=await generateCompetitionFixturesFirestore(id);assert.equal(draw.generated,128);
 const current=(await db.collection('competitions').doc(id).get()).data()!;
 assert.equal(current.europeanDrawQualificationToken,final.previewToken);
