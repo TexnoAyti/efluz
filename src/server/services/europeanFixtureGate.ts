@@ -6,7 +6,7 @@ import {evaluateLeagueMathematicalLocks,lockedTopClubs} from '../tournament/leag
 import {withSeasonQualificationPolicy,seasonQualificationRanges} from '../../lib/seasonQualificationPolicy';
 
 export const isEuropeanFixtureCompetition = (id: string) => /(?:champions-league|europa-league|(?:^|-)ucl(?:-|$)|(?:^|-)uel(?:-|$))/.test(id);
-export function europeanDrawPublished(comp: any): boolean {
+export function europeanManualQualification(comp:any):boolean {\n return comp?.seasonId==='season-2026-27' && comp?.europeanQualificationMode==='final' &&\n   comp?.europeanQualificationSource==='admin-manual' && Boolean(comp?.europeanQualificationToken);\n}\nexport function europeanDrawPublished(comp: any): boolean {
   return Boolean(comp?.europeanQualificationMode === 'final' && comp.europeanQualificationToken &&
     comp.europeanDrawId && comp.europeanDrawQualificationToken === comp.europeanQualificationToken);
 }
@@ -65,7 +65,7 @@ export async function assertEuropeanDrawReady(comp: any): Promise<void> {
     db.collection('competitions').where('seasonId','==',comp.seasonId).get(),
     db.collection('fixtures').where('seasonId','==',comp.seasonId).get(),
   ]);
-  if (!domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})), fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
+  if (!europeanManualQualification(comp) && !domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})), fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
     blocked('DOMESTIC_LEAGUES_INCOMPLETE','UCL/UEL uchun barcha ligalarda saralash o‘rinlari matematik aniq bo‘lishi yoki barcha liga o‘yinlari tugashi kerak.');
   if (comp.europeanQualificationMode !== 'final' || !comp.europeanQualificationToken)
     blocked('EUROPEAN_QUALIFICATION_NOT_FINAL','Avval yakuniy Yevropa saralashini tasdiqlang, so‘ng qur’a yarating.');
