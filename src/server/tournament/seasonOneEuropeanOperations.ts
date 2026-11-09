@@ -130,7 +130,8 @@ export async function replaceSeasonOneEuropeanRoster(id:string,params:{
   if(clubs.some(c=>otherClubs.has(c)))throw Error('EUROPEAN_CLUB_ALREADY_IN_OTHER_CUP');
   if(otherComp.data()?.europeanDrawId && otherFixtures.empty)throw Error('EUROPEAN_OTHER_CUP_INCONSISTENT');
   const occupancies=await tx.get(db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId','==','season-2026-27'));
-  const owner=new Map(occupancies.docs.map(d=>[d.data().clubId,d.data().userId]));
+  const owner=new Map<string,string>(occupancies.docs.filter(d=>d.data().clubId&&d.data().userId)
+   .map(d=>[String(d.data().clubId),String(d.data().userId)] as [string,string]));
   const retained=new Map(current.map(d=>[d.data().clubId,d]));
   for(const doc of current)if(!clubs.includes(doc.data().clubId))tx.delete(doc.ref);
   for(let i=0;i<clubs.length;i++){
