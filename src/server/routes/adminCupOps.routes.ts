@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../middleware/authMiddleware';
+import {canUseDangerZone} from '../../lib/adminPermissions';
 import { handleFirestoreError } from '../firebase/firestoreErrorHandler';
 import {
   adminApproveFixtureResultFirestore,
@@ -22,6 +23,7 @@ adminCupOpsRouter.use(requireAdmin);
 // First-season Super Cups: verified source preview -> explicit confirmed creation.
 // Admin authorization is enforced by the router-level requireAdmin middleware.
 adminCupOpsRouter.get('/supercups/:supercupId/preview',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
  try{
   const preview=await getSeasonOneSupercupPreview(req.params.supercupId);
   res.setHeader('Cache-Control','no-store');
@@ -31,6 +33,7 @@ adminCupOpsRouter.get('/supercups/:supercupId/preview',async(req:Request,res:Res
  }
 });
 adminCupOpsRouter.post('/supercups/:supercupId/create',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
  if(req.body?.confirmation!==true||typeof req.body?.previewToken!=='string'){
   res.status(400).json({error:'Explicit confirmation and previewToken are required.'});
   return;
