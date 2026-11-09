@@ -2,6 +2,7 @@ import { isSeasonCompetitionEnabled, CURRENT_SEASON_ID } from '../../lib/seasonP
 import {getFirestoreDb} from '../firebase/admin';
 import {SEED_COMPETITIONS, SEED_CLUBS} from '../db/seed';
 import {filterRetiredFixtures} from './retiredFixtureService';
+import {evaluateLeagueMathematicalLocks} from '../tournament/leagueMathematicalLocks';
 
 export const isEuropeanFixtureCompetition = (id: string) => /(?:champions-league|europa-league|(?:^|-)ucl(?:-|$)|(?:^|-)uel(?:-|$))/.test(id);
 export function europeanDrawPublished(comp: any): boolean {
@@ -28,14 +29,39 @@ export function domesticSeasonComplete(competitions: any[], fixtures: any[], sea
       f.status === 'CONFIRMED' && f.homeClubId !== f.awayClubId && clubs.has(f.homeClubId) && clubs.has(f.awayClubId));
   });
 }
+/** Season-one UCL/UEL need a provably fixed set of top-6 and top-12
+ * clubs, not necessarily every fixture confirmed. The full, nonduplicated
+ * fixture schedule and valid results are mandatory for this proof. */
+export function domesticQualificationLocked(competitions:any[],fixtures:any[],seasonId:string):boolean{
+ if(seasonId!=='season-2026-27')return false;
+ const required=SEED_COMPETITIONS.filter(c=>c.type==='LEAGUE'&&
+   c.seasonId===seasonId&&isSeasonCompetitionEnabled(c.id,seasonId));
+ if(required.length!==4)return false;
+ const canonical=filterRetiredFixtures(fixtures,seasonId);
+ return required.every(seed=>{
+   const comp=competitions.find(c=>c.id===seed.id&&c.seasonId===seasonId);
+   if(!comp||!seed.leagueId)return false;
+   const clubs=SEED_CLUBS.filter(c=>c.leagueId===seed.leagueId);
+   const rows=canonical.filter(f=>f.competitionId===seed.id&&f.seasonId===seasonId);
+   const locked=evaluateLeagueMathematicalLocks({
+     clubs,fixtures:rows,config:comp.formatConfig||seed.formatConfig
+   });
+   return locked.validSchedule&&locked.lockedTop6.length===6&&locked.lockedTop12.length===12;
+ });
+}
+export function domesticEuropeanQualificationReady(competitions:any[],fixtures:any[],seasonId:string):boolean{
+ return domesticSeasonComplete(competitions,fixtures,seasonId)||
+   domesticQualificationLocked(competitions,fixtures,seasonId);
+}
+
 export async function assertEuropeanDrawReady(comp: any): Promise<void> {
   const db = getFirestoreDb();
   const [comps, fixtures] = await Promise.all([
     db.collection('competitions').where('seasonId','==',comp.seasonId).get(),
     db.collection('fixtures').where('seasonId','==',comp.seasonId).get(),
   ]);
-  if (!domesticSeasonComplete(comps.docs.map(d=>({...d.data(),id:d.id})), fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
-    blocked('DOMESTIC_LEAGUES_INCOMPLETE','UCL/UEL qur’asi uchun avval barcha ichki liga o‘yinlari yakunlanishi kerak.');
+  if (!domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})), fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
+    blocked('DOMESTIC_LEAGUES_INCOMPLETE','UCL/UEL uchun barcha ligalarda top-6 va top-12 jamoalari matematik aniq bo‘lishi yoki barcha liga o‘yinlari tugashi kerak.');
   if (comp.europeanQualificationMode !== 'final' || !comp.europeanQualificationToken)
     blocked('EUROPEAN_QUALIFICATION_NOT_FINAL','Avval yakuniy Yevropa saralashini tasdiqlang, so‘ng qur’a yarating.');
 }
