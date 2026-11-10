@@ -134,17 +134,17 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
               <p className="welcome-description">{c.secondDescription}</p>
               <div className="welcome-awards" aria-label={c.goldenBall + ', ' + c.goldenBoot}>
                 <article className="welcome-award-card">
-                  <img className="welcome-award-art" src="/welcome-awards/golden-ball.svg" alt="" width="116" height="124" />
+                  <img className="welcome-award-art" src="/welcome-awards/golden-ball-photo.png" alt="" width="116" height="124" />
                   <strong>{c.goldenBall}</strong>
                   <p>{c.goldenBallNote}</p>
                 </article>
                 <article className="welcome-award-card">
-                  <img className="welcome-award-art" src="/welcome-awards/golden-boot.svg" alt="" width="116" height="124" />
+                  <img className="welcome-award-art" src="/welcome-awards/golden-boot-photo.png" alt="" width="116" height="124" />
                   <strong>{c.goldenBoot}</strong>
                   <p>{c.goldenBootNote}</p>
                 </article>
               </div>
-              <div className="welcome-weekly"><img className="welcome-weekly-art" src="/welcome-awards/weekly-motm.svg" alt="" width="70" height="78" /><div><strong>{c.weekly}</strong><p>{c.weeklyNote}</p></div></div>
+              <div className="welcome-weekly"><img className="welcome-weekly-art" src="/welcome-awards/weekly-motm-photo.png" alt="" width="70" height="78" /><div><strong>{c.weekly}</strong><p>{c.weeklyNote}</p></div></div>
             </>
           )}
         </main>
