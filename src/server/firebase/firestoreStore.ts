@@ -8,7 +8,7 @@ import { assertNoDisciplinaryHold } from '../../types/discipline';
 import { clubStadium } from '../../constants/clubStadiums';
 import { isDomesticCupResult as isResultCup } from '../../lib/cupResult';
 import { cupScoreMetadata, sameResultScores, type CupTieBreakScores, resolveCupResult } from '../../lib/cupResult';
-import {assertEuropeanDrawReady, domesticSeasonComplete, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
+import {assertEuropeanDrawReady, domesticEuropeanQualificationReady, europeanManualQualification, europeanManualRosterToken, europeanDrawPublished, filterPublishedEuropeanFixtures, isEuropeanFixtureCompetition} from '../services/europeanFixtureGate';
 import {randomUUID as europeanDrawUUID} from 'node:crypto';
 import { assertTopicResultCurrent, type ExpectedTopicFixture } from '../services/topicResultGuard';
 import { invalidateSharedAdminData } from '../services/adminReviewCache';
@@ -2595,6 +2595,11 @@ export async function generateCompetitionFixturesFirestore(
       .sort();
   }
 
+  if (european && (clubIds.length !== 32 || new Set(clubIds).size !== 32 ||
+    clubIds.some(id => !SEED_CLUBS.some(c => c.id === id)))) {
+    throw new Error('EUROPEAN_EXPECTED_32_VALID_UNIQUE_CLUBS');
+  }
+
   if (clubIds.length < 2) {
     throw new Error(`Not enough clubs (${clubIds.length}) to generate fixtures for ${comp.name}.`);
   }
@@ -2761,10 +2766,14 @@ export async function generateCompetitionFixturesFirestore(
     await db.runTransaction(async tx => {
       const comps = await tx.get(db.collection(COLLECTIONS.COMPETITIONS).where('seasonId','==',comp.seasonId));
       const fixtures = await tx.get(db.collection(COLLECTIONS.FIXTURES).where('seasonId','==',comp.seasonId));
+      const partDocs = await tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',competitionId));
       const latest = comps.docs.find(d=>d.id===competitionId)?.data();
+      const roster = partDocs.docs.filter(d=>d.data().seasonId===comp.seasonId).map(d=>d.data().clubId);
+      const approvedManual = europeanManualQualification(latest) && roster.length===32 &&
+        new Set(roster).size===32 && europeanManualRosterToken(competitionId,roster)===latest.europeanQualificationToken;
       const rows = fixtures.docs.filter(d=>d.data().competitionId===competitionId);
       if (latest?.europeanQualificationToken !== (comp as any).europeanQualificationToken || latest?.europeanQualificationMode !== 'final' ||
-          !domesticSeasonComplete(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId) ||
+          !(approvedManual || domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId)) ||
           rows.length !== generatedFixtures.length || rows.some(d=>d.data().europeanDrawId !== drawId))
         throw new Error('EUROPEAN_DRAW_CHANGED: refresh qualification and regenerate the draw');
       tx.update(db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId),competitionUpdate);

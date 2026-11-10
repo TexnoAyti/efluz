@@ -25,6 +25,7 @@ interface CupBracketsViewProps {
 
 function expectedTeamsForCup(cup?: Competition | null): number {
   if (!cup) return 20;
+  if (cup.type === 'SUPER_CUP') return cup.id === 'comp-supercopa-espana-2026' ? 4 : 2;
   const haystack = `${cup.id || ''} ${cup.name || ''}`.toLowerCase();
   if (haystack.includes('dfb') || haystack.includes('bundesliga') || haystack.includes('coupe-de-france') || haystack.includes('coupe de france') || haystack.includes('ligue-1')) {
     return 18;
@@ -59,7 +60,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       setError(null);
       try {
         const res = await api.getCompetitions(cupSeasonId);
-        const cups = (res.competitions || []).filter((competition: Competition) => competition.type === 'KNOCKOUT');
+        const cups = (res.competitions || []).filter((competition: Competition) => competition.type === 'KNOCKOUT' || competition.type === 'SUPER_CUP');
         if (cancelled) return;
         setCupCompetitions(cups);
         setSelectedCupId((current) => {
@@ -115,6 +116,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
 
   const activeCup = cupCompetitions.find((cup) => cup.id === selectedCupId) || null;
   const expectedTeams = expectedTeamsForCup(activeCup);
+  const isSupercup = activeCup?.type === 'SUPER_CUP';
 
   const format = useMemo(() => {
     const playInMatches = Math.max(0, expectedTeams - 16);
@@ -181,7 +183,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
               {activeCup?.name || t.navCups}
             </h1>
             <p className="mt-1.5 max-w-xl text-xs leading-5 text-slate-500 efl-theme-muted dark:text-slate-400">
-              Barcha {expectedTeams} klub kubokda qatnashadi. Play-in faqat bracketni 16 jamoaga tushiradi — hech bir klub turnirdan avtomatik chiqarib tashlanmaydi.
+              {isSupercup ? `Superkubok: ${expectedTeams} klub. ${expectedTeams === 4 ? 'Yarim final va final.' : 'Bitta final.'} Uchrashuvlar shu yerda ko‘rinadi.` : `Barcha ${expectedTeams} klub kubokda qatnashadi. Play-in faqat bracketni 16 jamoaga tushiradi — hech bir klub turnirdan avtomatik chiqarib tashlanmaydi.`}
             </p>
           </div>
 
@@ -242,7 +244,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
       </section>
 
       {/* 2. Format Explanation Strip */}
-      <section className="preview-surface rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 p-4 sm:p-5 shadow-xs">
+      {!isSupercup && <section className="preview-surface rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs sm:text-sm font-black text-slate-900 efl-theme-text dark:text-white">
@@ -283,7 +285,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
             </div>
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* 3. Bracket Progression Summary */}
       {cupFixtures.length > 0 && (
@@ -332,7 +334,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
           <Trophy className="mx-auto h-10 w-10 text-slate-600 efl-theme-muted" />
           <h3 className="mt-3 text-sm font-black text-white efl-theme-text">Bracket hali yaratilmagan</h3>
           <p className="mx-auto mt-1 max-w-md px-5 text-xs leading-5 text-slate-400 efl-theme-text-2">
-            Cup draw yaratilganda barcha {expectedTeams} klub play-in va Round of 16 yo‘li orqali bitta connected bracket ichida ko‘rinadi.
+            {isSupercup ? 'Superkubok uchrashuvlari hali yaratilmagan yoki ochilmagan.' : `Cup draw yaratilganda barcha ${expectedTeams} klub play-in va Round of 16 yo‘li orqali bitta connected bracket ichida ko‘rinadi.`}
           </p>
         </div>
       ) : (

@@ -1,13 +1,13 @@
 /**
  * Season-one Super Cup qualification rules.
  * This module has no database, webhook or notification side effects.
- * Existing format is preserved: England/Germany 2 clubs, Spain/Italy 4.
+ * 2026 format: England/Germany/Italy 2 clubs, Spain 4.
  * Conflicting qualifications are replaced by the next ranked league club.
  */
 export const SEASON_ONE_SUPERCUPS = {
   'comp-community-shield-2026': {league:'comp-premier-league-2026', cup:'comp-fa-cup-2026', size:2},
   'comp-supercopa-espana-2026': {league:'comp-la-liga-2026',cup:'comp-copa-del-rey-2026',size:4},
-  'comp-supercoppa-italiana-2026': {league:'comp-serie-a-2026',cup:'comp-coppa-italia-2026',size:4},
+  'comp-supercoppa-italiana-2026': {league:'comp-serie-a-2026',cup:'comp-coppa-italia-2026',size:2},
   'comp-dfl-supercup-2026': {league:'comp-bundesliga-2026',cup:'comp-dfb-pokal-2026',size:2},
 } as const;
 export type SeasonOneSupercupId=keyof typeof SEASON_ONE_SUPERCUPS;
@@ -74,6 +74,38 @@ export function previewSeasonOneSupercup(input:{
    ?[{homeClubId:qualifiers[0].clubId,awayClubId:qualifiers[1].clubId}]
    :[{homeClubId:qualifiers[0].clubId,awayClubId:qualifiers[3].clubId},
      {homeClubId:qualifiers[1].clubId,awayClubId:qualifiers[2].clubId}];
+ return {competitionId,seasonId:'season-2026-27',size,canCreate:blockReasons.length===0,
+  blockReasons,qualifiers,pairings};
+}
+
+/** Manual admin entry: no league/cup completion or champion proof requirement.
+ * The provided order is the admin's intended seed order, not an official result.
+ * Existing generated fixtures are never overwritten.
+ */
+export function previewManualSeasonOneSupercup(input:{
+ competitionId:string;
+ selectedClubIds:string[];
+ validClubIds:string[];
+ existingFixtureCount:number;
+ existingParticipantCount:number;
+}):SupercupPlan {
+ const {competitionId,selectedClubIds,validClubIds,existingFixtureCount,existingParticipantCount}=input;
+ if(!isSeasonOneSupercup(competitionId))throw Error('INVALID_SEASON_ONE_SUPERCUP');
+ const size=SEASON_ONE_SUPERCUPS[competitionId].size;
+ const blockReasons:string[]=[];
+ if(existingFixtureCount!==0)blockReasons.push('SUPERCUP_ALREADY_GENERATED');
+ if(existingParticipantCount!==0)blockReasons.push('SUPERCUP_PARTICIPANTS_ALREADY_REGISTERED');
+ const distinct=new Set(selectedClubIds);
+ const allowed=new Set(validClubIds);
+ if(selectedClubIds.length!==size)blockReasons.push('SUPERCUP_SELECTION_SIZE_MISMATCH');
+ if(distinct.size!==selectedClubIds.length)blockReasons.push('SUPERCUP_DUPLICATE_CLUB');
+ if(selectedClubIds.some(id=>typeof id!=='string'||!allowed.has(id)))
+  blockReasons.push('SUPERCUP_CLUB_OUTSIDE_LEAGUE');
+ const qualifiers=selectedClubIds.map((clubId,i)=>({clubId,reason:`Admin selected, seed ${i+1}`}));
+ const pairings=blockReasons.length?[]:size===2
+  ?[{homeClubId:selectedClubIds[0],awayClubId:selectedClubIds[1]}]
+  :[{homeClubId:selectedClubIds[0],awayClubId:selectedClubIds[3]},
+    {homeClubId:selectedClubIds[1],awayClubId:selectedClubIds[2]}];
  return {competitionId,seasonId:'season-2026-27',size,canCreate:blockReasons.length===0,
   blockReasons,qualifiers,pairings};
 }

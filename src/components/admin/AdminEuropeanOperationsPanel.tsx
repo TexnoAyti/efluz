@@ -9,7 +9,7 @@ const cups=[
 type Overview={
  competitionId:string;name:string;phase:string;sourceToken:string;
  domesticLeaguesCompleted:boolean;qualificationMathematicallyReady:boolean;qualificationFinal:boolean;drawPublished:boolean;
- participants:number;fixtures:number;confirmed:number;currentMatchday:number;
+ participants:number;participantClubs:Array<{clubId:string;clubName:string}>;availableClubs:Array<{clubId:string;clubName:string;leagueName:string}>;fixtures:number;confirmed:number;currentMatchday:number;
  canGenerateDraw:boolean;canGenerateKnockout:boolean;blockReasons:string[];
  rounds:Array<{matchday:number;count:number;confirmed:number;incomplete:number}>;
 };
@@ -43,16 +43,44 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
  const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const [confirmation,setConfirmation]=useState(false);
  const [duration,setDuration]=useState(30);
+ const [selected,setSelected]=useState<string[]>([]);
+ const [rosterOpen,setRosterOpen]=useState(false);
  async function load(){
   setLoading(true);setOverview(null);setControl(null);setConfirmation(false);
   try{
    const data=await adminCall<Overview>('/api/admin/season-one/european/'+id+'/overview');
    setOverview(data);
+   setSelected(data.participantClubs.map(c=>c.clubId));
    if(data.drawPublished)setControl(await api.getMatchdayControl(id));
   }catch(e:any){showToast(e.message||'Yevrokubok holati olinmadi','error');}
   finally{setLoading(false);}
  }
  useEffect(()=>{void load();},[id]);
+ async function saveRoster(){
+  if(!overview||busy||overview.fixtures!==0||selected.length!==32||new Set(selected).size!==32||!confirmation)return;
+  setBusy(true);
+  try{
+   await adminCall('/api/admin/season-one/european/'+id+'/roster',{
+    method:'POST',body:JSON.stringify({confirmation:true,previewToken:overview.sourceToken,clubIds:selected})
+   });
+   showToast('32 klub ro‘yxati saqlandi. Endi ishtirokchilarni tasdiqlash mumkin.','success');
+   setRosterOpen(false);
+   await load();
+  }catch(e:any){showToast(e.message||'Ro‘yxat saqlanmadi','error');}
+  finally{setBusy(false);}
+ }
+ async function manualFinalize(){
+  if(!overview||overview.participants!==32||overview.fixtures!==0||!confirmation||busy)return;
+  setBusy(true);
+  try{
+   await adminCall('/api/admin/season-one/european/'+id+'/manual-finalize',{
+    method:'POST',body:JSON.stringify({confirmation:true,previewToken:overview.sourceToken})
+   });
+   showToast('32 klub ro‘yxati admin tomonidan tasdiqlandi. Endi qur’a yaratish mumkin.','success');
+   await load();
+  }catch(e:any){showToast(e.message||'Ishtirokchilar tasdiqlanmadi','error');}
+  finally{setBusy(false);}
+ }
  async function createDraw(){
   if(!overview?.canGenerateDraw||!confirmation||busy)return;
   setBusy(true);
@@ -100,7 +128,7 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
   <header>
    <h3 className="text-base font-black text-white">1-mavsum Yevrokuboklarini boshqarish</h3>
    <p className="text-xs text-slate-400 mt-1">
-    Final saralash → xavfsiz qur’a → liga bosqichi → pley-off → final.
+    Matematik saralash yoki admin tasdiqlagan 32 klub → qur’a → liga bosqichi → pley-off → final.
     Faqat 2026/27 mavsumiga tegishli.
    </p>
   </header>
@@ -129,6 +157,35 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
     Saralash o‘rinlari: <strong>{overview.qualificationMathematicallyReady?'Matematik aniq':'Hali o‘zgarishi mumkin'}</strong>.
     Barcha liga uchrashuvlari tugashi shart emas; klubning qolgan o‘yinlardan olishi mumkin bo‘lgan maksimal ochkolari tekshiriladi.
    </p>
+   {overview.fixtures===0&&!overview.drawPublished&&<div className="border border-slate-700 rounded-xl p-3 space-y-2">
+    <div className="flex items-center justify-between gap-2">
+     <div className="text-xs text-white font-bold">Yevrokubok ishtirokchilari: {selected.length}/32</div>
+     <button type="button" onClick={()=>setRosterOpen(v=>!v)} className="text-xs bg-slate-700 text-white px-3 py-2 rounded-lg">
+      {rosterOpen?'Yopish':'Klublarni tanlash'}
+     </button>
+    </div>
+    {rosterOpen&&<>
+     <p className="text-xs text-slate-400">Har bir klub bir marta tanlanadi. Ikkala Yevrokubok uchun alohida 32 tadan klub tanlang.</p>
+     <div className="max-h-72 overflow-y-auto space-y-1">
+      {overview.availableClubs.map(c=><label key={c.clubId} className="flex gap-2 items-center rounded-lg px-2 py-1.5 border border-slate-800 text-xs text-slate-200">
+       <input type="checkbox" checked={selected.includes(c.clubId)}
+        disabled={!selected.includes(c.clubId)&&selected.length>=32}
+        onChange={e=>{setSelected(prev=>e.target.checked?[...prev,c.clubId]:prev.filter(v=>v!==c.clubId));setConfirmation(false);}}/>
+       <span>{c.clubName}</span><span className="ml-auto text-slate-500">{c.leagueName}</span>
+      </label>)}
+     </div>
+     <button type="button" onClick={()=>void saveRoster()} disabled={busy||!confirmation||selected.length!==32}
+      className="text-xs rounded-xl px-4 py-2 bg-indigo-700 text-white font-bold disabled:opacity-40">
+      {busy?'Saqlanmoqda...':'32 klubni saqlash'}
+     </button>
+    </>}
+   </div>}
+   {overview.participantClubs?.length>0&&overview.fixtures===0&&<details className="rounded-xl border border-slate-700 p-3">
+    <summary className="text-xs text-white font-semibold cursor-pointer">Ro‘yxatdan o‘tgan klublar ({overview.participantClubs.length})</summary>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-3 max-h-52 overflow-auto">
+     {overview.participantClubs.map((c,i)=><div key={c.clubId} className="text-xs text-slate-300">{i+1}. {c.clubName}</div>)}
+    </div>
+   </details>}
    {overview.blockReasons.length>0&&<div className="border border-amber-500/30 p-3 rounded-xl text-xs text-amber-200">
     {overview.blockReasons.map(code=><div key={code}>{messages[code]||code}</div>)}
    </div>}
@@ -138,11 +195,16 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
       <span>{r.matchday}-tur</span><span>{r.confirmed}/{r.count} tasdiqlangan</span>
     </div>)}
    </div>}
-   {(overview.canGenerateDraw||overview.canGenerateKnockout||nextAllowed)&&<label
+   {(overview.canGenerateDraw||overview.canGenerateKnockout||nextAllowed||overview.fixtures===0)&&<label
     className="flex items-start gap-2 text-xs text-slate-300">
     <input type="checkbox" checked={confirmation} onChange={e=>setConfirmation(e.target.checked)}/>
     Ma’lumotlarni tekshirdim, musobaqani boshqarish amalini tasdiqlayman
    </label>}
+   {overview.participants===32&&overview.fixtures===0&&!overview.canGenerateDraw&&<button
+     type="button" onClick={()=>void manualFinalize()} disabled={!confirmation||busy}
+     className="bg-indigo-700 text-white text-xs font-bold rounded-xl px-4 py-2 disabled:opacity-40">
+     {busy?'Tasdiqlanmoqda...':'32 klubni admin qarori bilan tasdiqlash'}
+   </button>}
    {overview.canGenerateDraw&&<button type="button" onClick={()=>void createDraw()}
      disabled={!confirmation||busy}
      className="bg-blue-700 text-white text-xs font-bold rounded-xl px-4 py-2 disabled:opacity-40">

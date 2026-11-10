@@ -6,7 +6,7 @@ import {SEED_COMPETITIONS,SEED_CLUBS} from '../db/seed';
 import {generateRoundRobinSchedule} from '../tournament/fixtureEngine';
 import {previewEuropeanQualificationSync,applyEuropeanQualificationSync} from '../tournament/qualificationEngine';
 import {generateCompetitionFixturesFirestore,getFixturesFirestore,getFixtureByIdFirestore} from '../firebase/firestoreStore';
-import {domesticSeasonComplete,filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
+import {domesticSeasonComplete,filterPublishedEuropeanFixtures,europeanManualQualification,europeanManualRosterToken} from '../services/europeanFixtureGate';
 import {controlCompetitionMatchday} from '../services/competitionMatchdayService';
 import {withVisibleFixtureCounts} from '../services/competitionFixtureCounts';
 import {getMyMatchesResilient} from '../services/myMatchesReadService';
@@ -59,3 +59,11 @@ assert.equal((await getFixturesFirestore({competitionId:id,seasonId})).length,12
 await db.collection('fixtures').doc(rows[0].id).update({status:'SCHEDULED'});
 await assert.rejects(generateCompetitionFixturesFirestore(id,{force:true}),/saralash o‘rinlari/);
 console.log('PASS European gate: mathematically unsecured or incomplete domestic qualification, missing/duplicate domestic schedules, provisional vs final qualification, force bypass blocked, legacy fixture+warm snapshot+my matches hidden, locked round, finalization alone hidden, tagged 128-match draw published, reopened domestic result blocks redraw.');
+
+const frozenIds=SEED_CLUBS.slice(0,32).map(c=>c.id);
+const manualToken=europeanManualRosterToken(id,frozenIds);
+assert.equal(manualToken,europeanManualRosterToken(id,[...frozenIds].reverse()),'Roster token is order independent');
+assert.notEqual(manualToken,europeanManualRosterToken(id,[...frozenIds.slice(1),'changed-club']),'Roster changes invalidate manual approval');
+assert.equal(europeanManualQualification({seasonId,europeanQualificationMode:'final',europeanQualificationSource:'admin-manual',europeanQualificationToken:manualToken}),true);
+assert.equal(europeanManualQualification({seasonId,europeanQualificationMode:'provisional',europeanQualificationSource:'admin-manual',europeanQualificationToken:manualToken}),false);
+console.log('PASS manual UCL/UEL roster token and explicit finalization mode');
