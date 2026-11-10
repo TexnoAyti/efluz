@@ -71,6 +71,21 @@ export const AdminSupercupPanel:React.FC=()=>{
   finally{setLoading(false);}
  };
  useEffect(()=>{void refresh();},[cupId]);
+ const archiveOldParticipants=async()=>{
+  if(!preview||preview.existingFixtureCount!==0||preview.existingParticipants<1||busy)return;
+  if(!window.confirm('Bu Superkubokdagi '+preview.existingParticipants+
+     ' ta eski ishtirokchi arxivga saqlanadi. Mavjud o‘yinlar yoki natijalar o‘zgarmaydi. Davom etasizmi?'))return;
+  setBusy(true);
+  try{
+   const result=await guardedRequest<{archived:number}>(
+     '/api/admin/supercups/'+cupId+'/archive-legacy-participants',{
+      method:'POST',body:JSON.stringify({confirmation:true,previewToken:preview.sourceToken})
+     });
+   showToast(result.archived+' ta eski ishtirokchi arxivlandi. Endi kvota ro‘yxatini tekshirib ikki klubni tanlang.','success');
+   await refresh();
+  }catch(err:any){showToast(err.message||'Eski ro‘yxatni arxivlab bo‘lmadi','error');}
+  finally{setBusy(false);}
+ };
  const create=async()=>{
   if(!preview||!preview.canCreate||!confirmed||busy||chosen.length!==preview.size||chosen.some(id=>!id)||new Set(chosen).size!==chosen.length)return;
   setBusy(true);
@@ -143,7 +158,11 @@ export const AdminSupercupPanel:React.FC=()=>{
     {preview.existingParticipantClubs.length>0&&<div className="border-t border-[var(--efl-border)] pt-2 text-xs text-[var(--efl-text-2)]">
       <strong>Bazada saqlangan eski ishtirokchilar ({preview.existingParticipantClubs.length}):</strong>
       <p>{preview.existingParticipantClubs.map(q=>q.name).join(', ')}</p>
-      <p>Bu yozuvlar o‘chirilmadi. Ularni xavfsiz moslashtirmasdan qayta turnir yaratish bloklanadi.</p>
+      <p>Bu yozuvlar tarixda saqlanadi. Ularni xavfsiz moslashtirmasdan qayta turnir yaratish bloklanadi.</p>
+      {preview.existingFixtureCount===0&&<button type="button" onClick={()=>void archiveOldParticipants()} disabled={busy}
+        className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-[var(--efl-text)] disabled:opacity-40">
+        {busy?'Tekshirilmoqda...':'Eski ishtirokchilarni arxivlab, yangi formatga tayyorlash'}
+      </button>}
     </div>}
    </section>
    {preview.blockReasons.length>0&&<div className="rounded-xl border border-amber-500/40 p-3 text-xs text-amber-200 space-y-1">
