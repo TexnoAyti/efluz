@@ -81,6 +81,20 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
   }catch(e:any){showToast(e.message||'Ishtirokchilar tasdiqlanmadi','error');}
   finally{setBusy(false);}
  }
+ async function archiveLegacy(){
+  if(!overview||overview.fixtures<1||overview.confirmed>0||overview.drawPublished||busy)return;
+  const sure=window.confirm(`Bu musobaqadagi ${overview.fixtures} ta eski va e’lon qilinmagan uchrashuv arxivga saqlanadi. Hisobli yoki bog‘liq murojaatli o‘yinlar bloklanadi. Hozir davom etasizmi?`);
+  if(!sure)return;
+  setBusy(true);
+  try{
+   const result=await adminCall<{archived:number}>('/api/admin/season-one/european/'+id+'/archive-unplayed-legacy',{
+    method:'POST',body:JSON.stringify({confirmation:true,previewToken:overview.sourceToken})
+   });
+   showToast(result.archived+' ta eski o‘yin nusxasi arxivlandi. Endi 32 klubni tekshirib, saralashni tasdiqlang.','success');
+   await load();
+  }catch(e:any){showToast(e.message||'Eski qur’ani arxivlash rad etildi','error');}
+  finally{setBusy(false);}
+ }
  async function createDraw(){
   if(!overview?.canGenerateDraw||!confirmation||busy)return;
   setBusy(true);
@@ -188,6 +202,15 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
    </details>}
    {overview.blockReasons.length>0&&<div className="border border-amber-500/30 p-3 rounded-xl text-xs text-amber-200">
     {overview.blockReasons.map(code=><div key={code}>{messages[code]||code}</div>)}
+   </div>}
+   {overview.fixtures>0&&!overview.drawPublished&&<div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-3 space-y-2">
+    <h4 className="text-xs font-black text-rose-200">Eski qur’a bloklayapti</h4>
+    <p className="text-xs text-slate-300">Avvalgi {overview.fixtures} ta o‘yin yakuniy qur’a sifatida tasdiqlanmagan. Eski qur’ani tasdiqlangan deb belgilash mumkin emas. Arxivlash faqat natijasi va bog‘liq murojaati yo‘q o‘yinlarga ruxsat beradi.</p>
+    {overview.confirmed===0&&<button type="button" onClick={()=>void archiveLegacy()} disabled={busy}
+      className="rounded-lg border border-rose-400/50 px-3 py-2 text-xs font-bold text-rose-200 disabled:opacity-40">
+      {busy?'Tekshirilmoqda...':'Natijasiz eski qur’ani xavfsiz arxivlash'}
+    </button>}
+    {overview.confirmed>0&&<p className="text-xs text-rose-200">Tasdiqlangan o‘yinlar bor — avtomatik arxivlash bloklangan.</p>}
    </div>}
    {overview.rounds.length>0&&<div className="max-h-44 overflow-y-auto space-y-1">
     {overview.rounds.map(r=><div key={r.matchday}
