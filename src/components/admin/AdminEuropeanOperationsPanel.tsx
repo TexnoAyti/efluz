@@ -15,7 +15,7 @@ type Overview={
 };
 type Control={
  currentMatchday:number;updatedAt:string|null;totalMatchdays:number;
- rounds:Array<{matchday:number;fixtureCount:number;unfinished:Array<{id:string;status:string}>}>;
+ rounds:Array<{matchday:number;isOpen:boolean;fixtureCount:number;unfinished:Array<{id:string;status:string}>}>;
 };
 const messages:Record<string,string>={
  QUALIFICATION_POSITIONS_NOT_LOCKED:'Yevrokubok yo‘llanmalari matematik jihatdan hali aniq emas',
@@ -119,25 +119,27 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
   }catch(e:any){showToast(e.message||'Pley-off yaratilmadi','error');}
   finally{setBusy(false);}
  }
- async function nextRound(){
+ async function nextRound(openCurrent=false){
   if(!overview?.drawPublished||!control||!confirmation||busy)return;
   setBusy(true);
   try{
    await adminCall('/api/admin/season-one/european/'+id+'/next-round',{
     method:'POST',body:JSON.stringify({
-     nextMatchday:control.currentMatchday+1,
+     nextMatchday:control.currentMatchday+(openCurrent?0:1),
      expectedUpdatedAt:control.updatedAt,durationHours:duration
     })
    });
-   showToast('Navbatdagi tur ochildi','success');
+   showToast(openCurrent?'Joriy tur ochildi':'Navbatdagi tur ochildi','success');
    await load();
   }catch(e:any){showToast(e.message||'Keyingi tur ochilmadi','error');}
   finally{setBusy(false);}
  }
  const next=control?.rounds.find(row=>row.matchday===control.currentMatchday+1);
  const now=control?.rounds.find(row=>row.matchday===control.currentMatchday);
+ const currentClosed=!!overview?.drawPublished&&!!now?.fixtureCount&&now.isOpen===false;
  const nextAllowed=!!next?.fixtureCount &&
-  (control!.currentMatchday<9||now?.unfinished.length===0);
+  (control!.currentMatchday<9||now?.unfinished.length===0) &&
+  !(control!.currentMatchday===1&&currentClosed);
  return <section className="glass-panel p-4 rounded-2xl space-y-4">
   <header>
    <h3 className="text-base font-black text-white">1-mavsum Yevrokuboklarini boshqarish</h3>
@@ -218,7 +220,7 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
       <span>{r.matchday}-tur</span><span>{r.confirmed}/{r.count} tasdiqlangan</span>
     </div>)}
    </div>}
-   {(overview.canGenerateDraw||overview.canGenerateKnockout||nextAllowed||overview.fixtures===0)&&<label
+   {(overview.canGenerateDraw||overview.canGenerateKnockout||nextAllowed||currentClosed||overview.fixtures===0)&&<label
     className="flex items-start gap-2 text-xs text-slate-300">
     <input type="checkbox" checked={confirmation} onChange={e=>setConfirmation(e.target.checked)}/>
     Ma’lumotlarni tekshirdim, musobaqani boshqarish amalini tasdiqlayman
@@ -242,20 +244,26 @@ export const AdminEuropeanOperationsPanel:React.FC=()=>{
     <p className="text-xs text-slate-300">
      Joriy tur: {control.currentMatchday} / {control.totalMatchdays}
     </p>
-    {nextAllowed&&<>
+    {(nextAllowed||currentClosed)&&<>
      <label className="text-xs text-slate-400 flex items-center gap-2">
       Tur muddati (soat)
       <input type="number" min={1} max={720} value={duration}
        onChange={e=>setDuration(Number(e.target.value))}
        className="w-20 bg-slate-900 border border-slate-700 text-white rounded-lg p-1.5"/>
      </label>
-     <button type="button" disabled={!confirmation||busy||!Number.isFinite(duration)||duration<1||duration>720}
+     {currentClosed&&<button type="button"
+       disabled={!confirmation||busy||!Number.isFinite(duration)||duration<1||duration>720}
+       onClick={()=>void nextRound(true)}
+       className="rounded-xl px-4 py-2 text-xs font-black bg-emerald-700 text-white disabled:opacity-40">
+       {busy?'Ochilmoqda...':'Joriy turni ochish'}
+      </button>}
+     {nextAllowed&&<button type="button" disabled={!confirmation||busy||!Number.isFinite(duration)||duration<1||duration>720}
       onClick={()=>void nextRound()}
-      className="rounded-xl px-4 py-2 text-xs font-black bg-emerald-700 text-white disabled:opacity-40">
+      className="rounded-xl px-4 py-2 text-xs font-black bg-blue-700 text-white disabled:opacity-40">
       {busy?'Ochilmoqda...':'Navbatdagi turni ochish'}
-     </button>
+     </button>}
     </>}
-    {!nextAllowed&&<p className="text-xs text-slate-400">
+    {!nextAllowed&&!currentClosed&&<p className="text-xs text-slate-400">
      Keyingi tur hali tayyor emas yoki bu so‘nggi tur.
     </p>}
    </div>}
