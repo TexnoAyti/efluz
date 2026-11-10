@@ -2017,6 +2017,24 @@ export async function getCompetitionFixturesFromReadModel(
 
   }
 
+  // Supercups are small live knockout brackets. A historical empty Postgres
+  // snapshot must not hide newly created fixtures from ordinary users.
+  if(rawFixtures.length===0 && usesPostgresSnapshots() &&
+     ['comp-community-shield-2026','comp-supercopa-espana-2026',
+      'comp-supercoppa-italiana-2026','comp-dfl-supercup-2026'].includes(competitionId)) {
+    try {
+      const snap=await getFirestoreDb().collection(COLLECTIONS.FIXTURES)
+        .where('competitionId','==',competitionId).where('seasonId','==',seasonId).limit(20).get();
+      if(!snap.empty){
+        rawFixtures=snap.docs.map(doc=>normalizeFixtureSnapshot({id:doc.id,...doc.data()},seasonId));
+        source='supercup_live_fallback';stale=false;degraded=false;
+        generatedAt=new Date().toISOString();
+      }
+    }catch(error:any){
+      console.warn('[SUPERCUP_LIVE_FALLBACK_FAILED]',competitionId,error?.message);
+    }
+  }
+
   let fixtures = await filterPublishedEuropeanFixtures(filterRetiredFixtures(rawFixtures, seasonId));
   if (options.matchday !== undefined) {
     fixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(options.matchday));
