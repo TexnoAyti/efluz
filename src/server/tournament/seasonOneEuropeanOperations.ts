@@ -326,14 +326,25 @@ export async function openSeasonOneEuropeanRound(id:string,options:{
  if(!preview.drawPublished)throw Error('EUROPEAN_DRAW_NOT_PUBLISHED');
  const control=await getCompetitionMatchdayControl(id);
  const current=control.currentMatchday;
- if(options.nextMatchday!==current+1||!Number.isSafeInteger(options.nextMatchday))
-  throw Error('EUROPEAN_NEXT_ROUND_ONLY');
+ if(!Number.isSafeInteger(options.nextMatchday) ||
+    (options.nextMatchday!==current&&options.nextMatchday!==current+1))
+  throw Error('EUROPEAN_CURRENT_OR_NEXT_ROUND_ONLY');
  const target=control.rounds.find(r=>r.matchday===options.nextMatchday);
- if(!target||!target.fixtureCount)throw Error('EUROPEAN_NEXT_ROUND_EMPTY');
+ if(!target||!target.fixtureCount)throw Error('EUROPEAN_ROUND_EMPTY');
+ // Opening the currently selected round is the only way to start matchday 1.
+ // Never skip directly to matchday 2 while the first round is still closed.
+ if(options.nextMatchday===current){
+  if(target.isOpen)throw Error('EUROPEAN_CURRENT_ROUND_ALREADY_OPEN');
+  return controlCompetitionMatchday(id,{action:'OPEN',matchday:current,
+   expectedUpdatedAt:options.expectedUpdatedAt,durationHours:options.durationHours,
+   adminUserId:options.adminUserId});
+ }
+ const currentRound=control.rounds.find(r=>r.matchday===current);
+ if(!currentRound?.isOpen && current===1)
+  throw Error('EUROPEAN_FIRST_ROUND_NOT_OPENED');
  // Knockout stages depend on confirmed bracket winners, never force-fill TBDs.
  if(current>=9){
-  const previous=control.rounds.find(r=>r.matchday===current);
-  if(!previous||previous.unfinished.length)throw Error('EUROPEAN_KNOCKOUT_NOT_CONFIRMED');
+  if(!currentRound||currentRound.unfinished.length)throw Error('EUROPEAN_KNOCKOUT_NOT_CONFIRMED');
  }
  return controlCompetitionMatchday(id,{action:'SELECT',matchday:options.nextMatchday,
   expectedUpdatedAt:options.expectedUpdatedAt,durationHours:options.durationHours,
