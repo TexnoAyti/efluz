@@ -30,6 +30,7 @@ export interface User {
   firstName: string;
   lastName?: string;
   photoUrl?: string;
+  lastSeenAt?: string;
   isAdmin: boolean;
   adminPermissions?: AdminPermissions;
   isSuspended: boolean;

@@ -7,12 +7,17 @@ import {useAuth} from '../context/AuthContext';
 import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
 
 export function MatchChatHost(){
- const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState('');
+ const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[now,setNow]=useState(()=>Date.now()),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState('');
  const input=useRef<HTMLTextAreaElement>(null),loading=useRef(false),messages=useRef<HTMLDivElement>(null),backdrop=useRef<HTMLDivElement>(null),stickToBottom=useRef(true);
  const inTelegram=typeof window!=='undefined'&&Boolean((window as any).Telegram?.WebApp?.initData);
+ const seen=chat?.opponentLastSeenAt?Date.parse(chat.opponentLastSeenAt):NaN;
+ const minutesAgo=Number.isFinite(seen)?Math.max(0,Math.floor((now-seen)/60000)):null;
+ const recentlyActive=minutesAgo!==null&&now>=seen&&now-seen<90_000;
+ const lastSeenLabel=minutesAgo===null?'Oxirgi faollik noma’lum':recentlyActive?'Yaqinda faol':minutesAgo<60?`Oxirgi faollik: ${Math.max(1,minutesAgo)} daqiqa oldin`:minutesAgo<1440?`Oxirgi faollik: ${Math.floor(minutesAgo/60)} soat oldin`:minutesAgo<10080?`Oxirgi faollik: ${Math.floor(minutesAgo/1440)} kun oldin`:`Oxirgi faollik: ${new Intl.DateTimeFormat('uz-UZ',{timeZone:'Asia/Tashkent',day:'numeric',month:'short'}).format(new Date(seen))}`;
  const close=()=>{setTarget(null);setChat(null);setText('');setError('');setMenu(false);setReporting(false);};
  const load=useCallback(async(silent=false)=>{if(!target||loading.current)return;loading.current=true;if(!silent)setBusy(true);try{const next=await matchChatApi.read(target);setChat(next);setError('');const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
  useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;setTarget(next);setChat(null);setError('');setText('');setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
+ useEffect(()=>{if(!target)return;const interval=window.setInterval(()=>setNow(Date.now()),30000);return()=>window.clearInterval(interval);},[target]);
  useEffect(()=>{if(!target)return;void load();
   const refresh=()=>{if(document.visibilityState==='visible')void load(true);};
   const timer=window.setInterval(refresh,5000);
@@ -43,8 +48,8 @@ export function MatchChatHost(){
   <section className="match-chat-sheet" role="dialog" aria-modal="true" aria-label="Raqib bilan chat">
    <header className="match-chat-header">
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
-    <div className="match-chat-avatar"><MessageCircle size={20}/><span/></div>
-    <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p></div>
+    <div className="match-chat-avatar"><MessageCircle size={20}/>{chat?.opponentPhotoUrl&&<img key={chat.opponentPhotoUrl} src={chat.opponentPhotoUrl} alt="" referrerPolicy="no-referrer" onError={event=>{event.currentTarget.hidden=true;}}/>}{recentlyActive&&<span/>}</div>
+    <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p className="match-chat-presence">{chat?lastSeenLabel:'Faollik yuklanmoqda…'}</p><p>{chat?.subtitle||target.title||'O‘yin chati'}</p></div>
     {chat&&isValidTelegramUsername(chat.opponentUsername)&&<button className="match-chat-icon" onClick={()=>openTelegramChat(chat.opponentUsername)} aria-label="Telegram profilini ochish" title="Telegram profilini ochish"><Send size={17}/></button>}
     <button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>
     <button className="match-chat-icon match-chat-close" onClick={close} aria-label="Yopish"><X size={20}/></button>

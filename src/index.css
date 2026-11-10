@@ -470,3 +470,11 @@
  .match-chat-keyboard-open.match-chat-backdrop{bottom:auto;top:var(--match-chat-viewport-top,0px);height:var(--match-chat-viewport-height,100dvh)}
  .match-chat-sheet{flex:1 1 auto;min-height:0;height:100%}
 }
+
+/* Opponent profile media and explicitly recorded last activity in match chat. */
+.match-chat-avatar{overflow:visible}
+.match-chat-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.match-chat-avatar img[hidden]{display:none}
+.match-chat-avatar span{z-index:2}
+.match-chat-header .match-chat-presence{font-size:10px;line-height:1.25;font-weight:700;color:var(--efl-primary,#2563eb);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.match-chat-header .match-chat-presence + p{font-size:9px}

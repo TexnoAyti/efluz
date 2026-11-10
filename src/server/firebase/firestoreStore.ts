@@ -4704,6 +4704,7 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
         firstName,
         lastName,
         photoUrl,
+        lastSeenAt: now,
         isAdmin,
         isSuspended: false,
         createdAt: now,
@@ -4738,14 +4739,21 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
         (photoUrl && (existing.photoUrl || '') !== photoUrl) ||
         Boolean(existing.isAdmin) !== updatedAdmin;
 
-      if (changed) {
+      // Presence is distinct from profile metadata. Throttle updates to keep
+      // Telegram WebApp authentication inexpensive on every API request.
+      const previousSeen = Date.parse(existing.lastSeenAt || '');
+      const refreshPresence = !Number.isFinite(previousSeen) || Date.now() - previousSeen >= 120_000;
+      if (changed || refreshPresence) {
         await userDocRef.update({
-          username,
-          firstName,
-          lastName: lastName || existing.lastName || '',
-          photoUrl: photoUrl || existing.photoUrl || '',
-          isAdmin: updatedAdmin,
-          updatedAt: now,
+          ...(changed ? {
+            username,
+            firstName,
+            lastName: lastName || existing.lastName || '',
+            photoUrl: photoUrl || existing.photoUrl || '',
+            isAdmin: updatedAdmin,
+            updatedAt: now,
+          } : {}),
+          ...(refreshPresence ? { lastSeenAt: now } : {}),
         });
         trackFirestoreWrite(COLLECTIONS.USERS, 1, 'getOrCreateTelegramUserFirestore:update');
       }
