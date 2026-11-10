@@ -76,7 +76,10 @@ adminCupOpsRouter.post('/season-one/european/:competitionId/draw',async(req:Requ
   res.json(await publishSeasonOneEuropeanDraw(req.params.competitionId,{
     confirmation:true,previewToken:req.body.previewToken
   }));
- }catch(err:any){res.status(409).json({error:err.message});}
+ }catch(err:any){
+  console.error('[EUROPEAN_DRAW_FAILED]',req.params.competitionId,err?.message,err?.stack);
+  res.status(409).json({error:err.message,code:err.code||'EUROPEAN_DRAW_FAILED'});
+ }
 });
 adminCupOpsRouter.post('/season-one/european/:competitionId/knockout',async(req:Request,res:Response)=>{
  if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
