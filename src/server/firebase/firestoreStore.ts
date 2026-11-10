@@ -2764,18 +2764,26 @@ export async function generateCompetitionFixturesFirestore(
   if (european) {
     // Publish only a complete tagged draw under the still-current finalization.
     await db.runTransaction(async tx => {
-      const comps = await tx.get(db.collection(COLLECTIONS.COMPETITIONS).where('seasonId','==',comp.seasonId));
-      const fixtures = await tx.get(db.collection(COLLECTIONS.FIXTURES).where('seasonId','==',comp.seasonId));
-      const partDocs = await tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',competitionId));
-      const latest = comps.docs.find(d=>d.id===competitionId)?.data();
+      // Bounded transaction: a manual 32-team draw must not read/write all
+      // domestic season fixtures (that previously caused expensive timeouts).
+      const [currentDoc,fixtureDocs,partDocs] = await Promise.all([
+        tx.get(db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId)),
+        tx.get(db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',competitionId)),
+        tx.get(db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',competitionId)),
+      ]);
+      const latest = currentDoc.data();
       const roster = partDocs.docs.filter(d=>d.data().seasonId===comp.seasonId).map(d=>d.data().clubId);
       const approvedManual = europeanManualQualification(latest) && roster.length===32 &&
-        new Set(roster).size===32 && europeanManualRosterToken(competitionId,roster)===latest.europeanQualificationToken;
-      const rows = fixtures.docs.filter(d=>d.data().competitionId===competitionId);
-      if (latest?.europeanQualificationToken !== (comp as any).europeanQualificationToken || latest?.europeanQualificationMode !== 'final' ||
-          !(approvedManual || domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})),fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId)) ||
-          rows.length !== generatedFixtures.length || rows.some(d=>d.data().europeanDrawId !== drawId))
-        throw new Error('EUROPEAN_DRAW_CHANGED: refresh qualification and regenerate the draw');
+        new Set(roster).size===32 &&
+        europeanManualRosterToken(competitionId,roster)===latest?.europeanQualificationToken;
+      const rows = fixtureDocs.docs.filter(d=>d.data().seasonId===comp.seasonId);
+      if (!approvedManual)
+        throw new Error('EUROPEAN_MANUAL_ROSTER_NOT_VERIFIED: refresh the 32-club roster first');
+      if (latest?.europeanQualificationToken !== (comp as any).europeanQualificationToken ||
+          latest?.europeanQualificationMode !== 'final' || latest?.europeanDrawId ||
+          rows.length !== generatedFixtures.length ||
+          rows.some(d=>d.data().europeanDrawId !== drawId))
+        throw new Error('EUROPEAN_DRAW_CHANGED: refresh qualification and reconcile the draft');
       tx.update(db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId),competitionUpdate);
     });
   } else await db.collection(COLLECTIONS.COMPETITIONS).doc(competitionId).update(competitionUpdate);
