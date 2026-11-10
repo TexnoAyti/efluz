@@ -95,3 +95,85 @@
  .efl-welcome .welcome-asia { margin-top: 14px; }
  .efl-welcome .welcome-awards { margin-top: 20px; }
 }
+
+/* Preview refinements: preserve existing EFL welcome layout and palette. */
+.efl-welcome h1.welcome-season-heading {
+  color: var(--efl-text);
+  max-width: 100%;
+}
+.efl-welcome h1.welcome-season-heading span { color: var(--efl-text); }
+.efl-welcome h1.welcome-season-heading .welcome-season-flame {
+  color: #ed6d1d;
+  background: linear-gradient(115deg,#ffb46f 0%,#ff781e 43%,#dc4b17 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.efl-welcome--dark h1.welcome-season-heading .welcome-season-flame {
+  background-image: linear-gradient(115deg,#ffd18a 0%,#ff8c2b 50%,#ff5824 100%);
+}
+.efl-welcome .welcome-award-card { min-height: 222px; }
+.efl-welcome .welcome-award-art {
+  width: 100%;
+  max-width: 125px;
+  height: 120px;
+  display: block;
+  object-fit: contain;
+  background: transparent;
+  flex-shrink: 0;
+}
+.efl-welcome .welcome-weekly-art {
+  display: block;
+  object-fit: contain;
+  width: 74px;
+  height: 76px;
+  flex-shrink: 0;
+  background: transparent;
+}
+.efl-welcome .welcome-weekly { min-height: 96px; }
+.efl-welcome .welcome-asia .welcome-league-icons li {
+  background: #f7f9fd;
+  border-color: #dce4ef;
+}
+.efl-welcome--dark .welcome-asia .welcome-league-icons li {
+  background: #f7f9fd;
+  border-color: #aebed5;
+}
+.efl-welcome .welcome-asia .welcome-league-icons img {
+  width: 100%;
+  max-width: 48px;
+  height: 46px;
+  object-fit: contain;
+  filter: none;
+}
+.efl-welcome .welcome-language { position: relative; padding: 0 8px 0 10px; gap: 6px; }
+.efl-welcome .welcome-language select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--efl-text);
+  border: none;
+  border-radius: 0;
+  outline-offset: 2px;
+  padding: 0 17px 0 1px;
+  min-width: 42px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.efl-welcome .welcome-language select option {
+  background: var(--efl-surface);
+  color: var(--efl-text);
+}
+.efl-welcome .welcome-language-chevron {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--efl-text-2);
+  pointer-events: none;
+}
+@media (max-width: 370px) {
+  .efl-welcome .welcome-award-card { min-height: 190px; }
+  .efl-welcome .welcome-award-art { height: 98px; }
+  .efl-welcome .welcome-asia .welcome-league-icons img { height: 38px; }
+}
