@@ -33,6 +33,61 @@ function expectedTeamsForCup(cup?: Competition | null): number {
   return 20;
 }
 
+/**
+ * Spain Supercup has exactly two semifinals feeding one final.
+ * The generic domestic cup bracket assumes 16+ teams and is not used here.
+ */
+const SpanishSupercupBracket:React.FC<{
+ fixtures:Fixture[];onSelectFixture:(fixture:Fixture)=>void;
+}>=({fixtures,onSelectFixture})=>{
+ const semis=fixtures.filter(f=>Number(f.matchday)===1).sort((a,b)=>a.id.localeCompare(b.id));
+ const final=fixtures.find(f=>Number(f.matchday)===2);
+ const game=(fixture:Fixture|undefined,label:string,index:number)=>{
+  if(!fixture)return <div key={label} className="rounded-2xl border border-dashed border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-4 text-sm text-[var(--efl-text-2)]">{label}: hali yaratilmagan</div>;
+  const club=(side:'home'|'away')=>{
+   const isHome=side==='home',clubId=isHome?fixture.homeClubId:fixture.awayClubId;
+   const info=isHome?fixture.homeClub:fixture.awayClub;
+   const score=isHome?fixture.homeScore:fixture.awayScore;
+   const unknown=!clubId||clubId==='TBD';
+   return <div className={`flex items-center gap-2 rounded-xl px-2.5 py-2 ${clubId&&fixture.winnerClubId===clubId?'bg-emerald-500/10':''}`}>
+    {unknown
+     ? <div className="h-8 w-8 shrink-0 rounded-full border border-dashed border-[var(--efl-border)] flex items-center justify-center text-[var(--efl-text-2)] text-xs">?</div>
+     : <ClubCrest clubId={clubId} logoUrl={info?.logoUrl} name={info?.name||clubId} shortName={info?.shortName} size="xs" className="h-8 w-8 shrink-0"/>}
+    <span className={`min-w-0 flex-1 truncate text-xs font-bold ${unknown?'text-[var(--efl-text-2)]':'text-[var(--efl-text)]'}`}>
+      {unknown?(index===2?(isHome?'1-yarim final g‘olibi':'2-yarim final g‘olibi'):'Aniqlanmagan'):(info?.name||clubId)}
+    </span>
+    <strong className="text-sm tabular-nums text-[var(--efl-text)]">{score??'–'}</strong>
+   </div>;
+  };
+  return <button type="button" key={fixture.id} onClick={()=>onSelectFixture(fixture)}
+    className="w-full rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3 text-left transition hover:border-amber-500/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">
+    <div className="mb-2 flex justify-between gap-2 text-[10px] font-black tracking-widest uppercase text-amber-500">
+     <span>{label}</span><span className="text-[var(--efl-text-2)]">{fixture.status==='CONFIRMED'?'Yakunlangan':'Kutilmoqda'}</span>
+    </div>
+    <div className="space-y-1">{club('home')}<div className="h-px bg-[var(--efl-border)]"/>{club('away')}</div>
+   </button>;
+ };
+ return <section className="rounded-3xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3 sm:p-5" aria-label="Ispaniya Superkubogi yarim final va final">
+   <div className="mb-4 flex items-center gap-2 text-xs font-black text-[var(--efl-text)]">
+    <Trophy size={18} className="text-amber-500"/> Ispaniya Superkubogi · 4 klub · 3 uchrashuv
+   </div>
+   <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:gap-8">
+    <div className="space-y-3">
+     <h3 className="text-center text-xs font-black uppercase tracking-wider text-[var(--efl-text-2)]">Yarim final · 1-tur</h3>
+     {game(semis[0],'Yarim final 1',0)}
+     {game(semis[1],'Yarim final 2',1)}
+    </div>
+    <div className="flex flex-col justify-center gap-3">
+     <h3 className="text-center text-xs font-black uppercase tracking-wider text-amber-500">Final · 2-tur</h3>
+     {game(final,'Final',2)}
+     <p className="text-center text-[11px] leading-5 text-[var(--efl-text-2)]">
+      Final ishtirokchilari yarim final natijalari tasdiqlangach aniqlanadi.
+     </p>
+    </div>
+   </div>
+ </section>;
+};
+
 export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, ownedClubs = [] } = useAuth();
   // Season two is registration-only; all live domestic cup brackets remain
@@ -355,6 +410,8 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
             {isSupercup ? 'Superkubok uchrashuvlari hali yaratilmagan yoki ochilmagan.' : `Cup draw yaratilganda barcha ${expectedTeams} klub play-in va Round of 16 yo‘li orqali bitta connected bracket ichida ko‘rinadi.`}
           </p>
         </div>
+      ) : activeCup?.id === 'comp-supercopa-espana-2026' ? (
+        <SpanishSupercupBracket fixtures={cupFixtures} onSelectFixture={setSelectedFixtureForSubmit}/>
       ) : (
         <TournamentBracket
           fixtures={cupFixtures}
