@@ -7,20 +7,31 @@ import {useAuth} from '../context/AuthContext';
 import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
 
 export function MatchChatHost(){
- const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null);
- const input=useRef<HTMLTextAreaElement>(null),loading=useRef(false),messages=useRef<HTMLDivElement>(null),backdrop=useRef<HTMLDivElement>(null),stickToBottom=useRef(true),typingSentAt=useRef(0);
+ const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null),[hasNewMessages,setHasNewMessages]=useState(false);
+ const input=useRef<HTMLTextAreaElement>(null),loading=useRef(false),messages=useRef<HTMLDivElement>(null),backdrop=useRef<HTMLDivElement>(null),stickToBottom=useRef(true),typingSentAt=useRef(0),typingIdleTimer=useRef<number|null>(null),lastMessageId=useRef<string|null>(null);
  const inTelegram=typeof window!=='undefined'&&Boolean((window as any).Telegram?.WebApp?.initData);
 
- const close=()=>{setTarget(null);setChat(null);setText('');setReplyTo(null);setError('');setMenu(false);setReporting(false);};
- const typing=(value:string)=>{if(!target||!chat?.canSend||document.visibilityState!=='visible')return;
+ const stopTyping=()=>{if(typingIdleTimer.current!==null){window.clearTimeout(typingIdleTimer.current);typingIdleTimer.current=null;}
+  if(typingSentAt.current&&target){typingSentAt.current=0;void matchChatApi.typing(target,false).catch(()=>{});}
+ };
+ const close=()=>{stopTyping();setTarget(null);setChat(null);setText('');setReplyTo(null);setError('');setMenu(false);setReporting(false);setHasNewMessages(false);};
+ const typing=(value:string)=>{
+  if(!target||!chat?.canSend||document.visibilityState!=='visible')return;
+  if(!value.trim()){stopTyping();return;}
   const current=Date.now();
-  if(value.trim()&&current-typingSentAt.current>=4000){typingSentAt.current=current;void matchChatApi.typing(target,true).catch(()=>{});}
-  if(!value.trim()&&typingSentAt.current){typingSentAt.current=0;void matchChatApi.typing(target,false).catch(()=>{});}
+  if(current-typingSentAt.current>=4000){typingSentAt.current=current;void matchChatApi.typing(target,true).catch(()=>{});}
+  if(typingIdleTimer.current!==null)window.clearTimeout(typingIdleTimer.current);
+  typingIdleTimer.current=window.setTimeout(()=>{stopTyping();},2600);
  };
  const focusMessage=(id:string)=>{const el=messages.current?.querySelector<HTMLElement>(`[data-chat-message-id="${id}"]`);el?.scrollIntoView({behavior:'smooth',block:'center'});};
  const changePin=async(id:string|null)=>{if(!target||busy)return;setBusy(true);try{setChat(await matchChatApi.pin(target,id));setError('');}catch(e:any){setError(e.message||'Xabarni mahkamlab bo‘lmadi.');}finally{setBusy(false);}};
- const load=useCallback(async(silent=false)=>{if(!target||loading.current)return;loading.current=true;if(!silent)setBusy(true);try{const next=await matchChatApi.read(target);setChat(next);setError('');const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
- useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
+ const load=useCallback(async(silent=false)=>{if(!target||loading.current)return;loading.current=true;if(!silent)setBusy(true);try{const next=await matchChatApi.read(target);
+   const latest=next.messages.at(-1)?.id||null;
+   if(silent&&!stickToBottom.current&&latest!==lastMessageId.current&&lastMessageId.current!==null)setHasNewMessages(true);
+   lastMessageId.current=latest;
+   setChat(next);setError('');const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
+ useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
+ useEffect(()=>()=>{if(typingIdleTimer.current!==null)window.clearTimeout(typingIdleTimer.current);},[]);
  useEffect(()=>{if(!target)return;void load();
   const refresh=()=>{if(document.visibilityState==='visible')void load(true);};
   const timer=window.setInterval(refresh,5000);
@@ -44,7 +55,7 @@ export function MatchChatHost(){
  useEffect(()=>{if(chat?.messages.length&&stickToBottom.current)requestAnimationFrame(()=>{const el=messages.current;if(el)el.scrollTop=el.scrollHeight;});},[chat?.messages.length,target?.matchId]);
  useEffect(()=>{if(!target)return;const key=(event:KeyboardEvent)=>{if(event.key==='Escape')close();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[target]);
  if(!target)return null;
- const send=async(value=text)=>{const body=value.trim();if(!body||busy||!chat?.canSend)return;setBusy(true);setError('');try{stickToBottom.current=true;setChat(await matchChatApi.send(target,body,replyTo||undefined));setText('');setReplyTo(null);typingSentAt.current=0;input.current?.focus();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
+ const send=async(value=text)=>{const body=value.trim();if(!body||busy||!chat?.canSend)return;setBusy(true);setError('');try{stickToBottom.current=true;setHasNewMessages(false);const next=await matchChatApi.send(target,body,replyTo||undefined);lastMessageId.current=next.messages.at(-1)?.id||null;setChat(next);setText('');setReplyTo(null);stopTyping();input.current?.focus();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  const toggleBlock=async()=>{if(!chat||busy)return;setBusy(true);try{setChat(await matchChatApi.block(target,!chat.blockedByMe));setMenu(false);setError('');}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  const report=async()=>{if(busy||reportReason.trim().length<3)return;setBusy(true);try{setChat(await matchChatApi.report(target,reportReason));setReporting(false);setReportReason('');setMenu(false);setError('Shikoyat adminga yuborildi.');}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  return createPortal(<div ref={backdrop} className={`match-chat-backdrop${inTelegram?' match-chat-telegram':''}`} role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}>
@@ -69,7 +80,7 @@ export function MatchChatHost(){
    </section>}
    {chat?.pinnedMessageId&&chat.messages.some(m=>m.id===chat.pinnedMessageId)&&<button className="match-chat-pinned" onClick={()=>focusMessage(chat.pinnedMessageId!)}><Pin size={15}/><span>{chat.messages.find(m=>m.id===chat.pinnedMessageId)?.text}</span><span>Ko‘rish</span></button>}
    {reporting&&<div className="match-chat-report"><label>Shikoyat sababi<textarea maxLength={300} value={reportReason} onChange={e=>setReportReason(e.target.value)} placeholder="Muammoni qisqa va aniq yozing"/></label><div><button onClick={()=>setReporting(false)}>Bekor qilish</button><button className="primary" disabled={busy||reportReason.trim().length<3} onClick={()=>void report()}><Flag size={14}/>Yuborish</button></div></div>}
-   <div ref={messages} className="match-chat-messages" aria-live="polite" onScroll={e=>{const el=e.currentTarget;stickToBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<90;}}>
+   <div ref={messages} className="match-chat-messages" aria-live="polite" onScroll={e=>{const el=e.currentTarget;stickToBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<90;if(stickToBottom.current)setHasNewMessages(false);}}>
     {!chat&&busy&&<div className="match-chat-state"><LoaderCircle className="animate-spin"/><p>Chat ochilmoqda…</p></div>}
     {chat&&!chat.messages.length&&<div className="match-chat-empty"><div><MessageCircle size={28}/></div><h3>Suhbatni boshlang</h3><p>O‘yin vaqtini kelishib oling yoki xona ID yuboring.</p></div>}
     {chat?.messages.map((message,index)=>{
@@ -93,12 +104,13 @@ export function MatchChatHost(){
     })}
     {chat?.opponentTyping&&<div className="match-chat-typing" aria-live="polite"><span/><span/><span/> Raqib yozmoqda…</div>}
    </div>
+   {hasNewMessages&&<button type="button" className="match-chat-jump-latest" onClick={()=>{stickToBottom.current=true;setHasNewMessages(false);const el=messages.current;if(el)el.scrollTo({top:el.scrollHeight,behavior:'smooth'});}}><MessageCircle size={14}/> Yangi xabarlar <span>Pastga tushish</span></button>}
    {error&&<div className={`match-chat-error ${error.includes('yuborildi')?'success':''}`} role="status">{error.includes('yuborildi')?<Check size={15}/>:<AlertTriangle size={15}/>}<span>{error}</span><button onClick={()=>{setError('');void load();}} aria-label="Yangilash"><RefreshCw size={14}/></button></div>}
    {chat&&<div className="match-chat-quick" aria-label="Tezkor xabarlar">{chat.quickMessages.map(item=><button key={item} type="button" disabled={busy||!chat.canSend} onClick={()=>void send(item)}>{item}</button>)}</div>}
    {replyTo&&chat?.messages.find(m=>m.id===replyTo)&&<div className="match-chat-reply-draft"><CornerUpLeft size={15}/><span><b>Javob:</b> {chat.messages.find(m=>m.id===replyTo)?.text}</span><button type="button" onClick={()=>setReplyTo(null)} aria-label="Javobni bekor qilish"><X size={16}/></button></div>}
    <footer className="match-chat-compose">
     {chat?.closed?<div className="match-chat-blocked"><Check size={16}/><span>Natija tasdiqlangan. Chat o‘qish holatida.</span></div>:chat?.blocked?<div className="match-chat-blocked"><Lock size={16}/><span>{chat.blockedByMe?'Siz chatni bloklagansiz.':'Chat vaqtincha bloklangan.'}</span>{chat.blockedByMe&&<button disabled={busy} onClick={()=>void toggleBlock()}>Blokni ochish</button>}</div>:<>
-      <textarea ref={input} rows={1} maxLength={500} value={text} disabled={busy||!chat?.canSend} onChange={e=>{setText(e.target.value);typing(e.target.value);e.currentTarget.style.height='auto';e.currentTarget.style.height=`${Math.min(e.currentTarget.scrollHeight,104)}px`;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send();}}} onBlur={()=>typing('')} placeholder="Xabar yozing…" aria-label="Xabar"/>
+      <textarea ref={input} rows={1} maxLength={500} value={text} disabled={busy||!chat?.canSend} onChange={e=>{setText(e.target.value);typing(e.target.value);e.currentTarget.style.height='auto';e.currentTarget.style.height=`${Math.min(e.currentTarget.scrollHeight,104)}px`;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&(e.ctrlKey||e.metaKey||window.matchMedia('(pointer:fine)').matches)){e.preventDefault();void send();}}} onBlur={()=>stopTyping()} placeholder="Xabar yozing…" aria-label="Xabar"/>
       <button className="match-chat-send" disabled={busy||!text.trim()||!chat?.canSend} onClick={()=>void send()} aria-label="Xabarni yuborish">{busy?<LoaderCircle size={19} className="animate-spin"/>:<Send size={19}/>}</button>
     </>}
    </footer>
