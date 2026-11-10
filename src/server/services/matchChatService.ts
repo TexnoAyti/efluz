@@ -11,7 +11,7 @@ import {telegramMiniAppButton} from './telegramMiniAppButton';
 const MAX_MESSAGES=200;
 const QUICK_MESSAGES=['Assalomu alaykum, qachon o‘ynaymiz?','Xona ID yuboring.','Hozir o‘ynay olaman.','Hisobni tasdiqlang.'];
 
-type Participant={id:string;name:string;username?:string|null;photoUrl?:string|null;lastSeenAt?:string|null};
+type Participant={id:string;name:string;username?:string|null;photoUrl?:string|null};
 type MatchContext={kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];closed:boolean};
 type ChatReport={id:string;reporterId:string;reason:string;createdAt:string;status:'OPEN'|'RESOLVED'};
 type ChatRoom={id:string;kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];messages:MatchChatMessage[];unread:Record<string,number>;blockedBy:string[];reports:ChatReport[];createdAt:string;updatedAt:string;lastMessageAt:string|null;closed:boolean};
@@ -24,15 +24,8 @@ const textValue=(value:unknown)=>String(value??'').replace(/[\u0000-\u0008\u000B
 function chatReplyMarkup(kind:MatchChatKind,matchId:string){const button=telegramMiniAppButton('💬 O‘yin chatini ochish'),url=new URL(button.web_app.url);url.searchParams.set('chatKind',kind);url.searchParams.set('chatMatch',matchId);return {inline_keyboard:[[{...button,web_app:{url:url.toString()}}]]};}
 
 async function currentAccount(user:User){
- const ref=getFirestoreDb().collection(COLLECTIONS.USERS).doc(user.id);
- const doc=await ref.get(),account=doc.data() as User|undefined;
+ const doc=await getFirestoreDb().collection(COLLECTIONS.USERS).doc(user.id).get(),account=doc.data() as User|undefined;
  if(!account||account.isSuspended||String(account.telegramId)!==String(user.telegramId))throw new MatchChatError('Akkaunt vakolati o‘zgargan.',403,'ACCOUNT_UNAVAILABLE');
- const previous=Date.parse(account.lastSeenAt||'');
- if(!Number.isFinite(previous)||Date.now()-previous>=60_000){
-  // Presence is best-effort; never block legitimate messaging if its write fails.
-  try{await ref.update({lastSeenAt:new Date().toISOString()});}
-  catch(error:any){console.warn('[MATCH_CHAT_PRESENCE]',error?.code||'UNAVAILABLE');}
- }
  return account;
 }
 
@@ -46,7 +39,7 @@ async function fixtureContext(matchId:string):Promise<MatchContext>{
  if(!ids[0]||!ids[1]||ids[0]===ids[1])throw new MatchChatError('Ikki raqibning akkaunti topilmadi.',409,'PARTICIPANTS_UNAVAILABLE');
  const [homeUser,awayUser,homeClub,awayClub]=await Promise.all([db.collection(COLLECTIONS.USERS).doc(ids[0]).get(),db.collection(COLLECTIONS.USERS).doc(ids[1]).get(),db.collection(COLLECTIONS.CLUBS).doc(clubIds[0]).get(),db.collection(COLLECTIONS.CLUBS).doc(clubIds[1]).get()]);
  const homeName=String(homeClub.data()?.name||clubIds[0]).slice(0,80),awayName=String(awayClub.data()?.name||clubIds[1]).slice(0,80);
- return {kind:'fixture',matchId,seasonId,title:`${homeName} — ${awayName}`,subtitle:`${fixture.competitionName||fixture.competitionId||'EFLUZ'} · ${fixture.roundName||`${fixture.matchday||1}-tur`}`,participants:[{id:ids[0],name:displayName(homeUser.data(),ids[0]),username:homeUser.data()?.username||null,photoUrl:homeUser.data()?.photoUrl||null,lastSeenAt:homeUser.data()?.lastSeenAt||null},{id:ids[1],name:displayName(awayUser.data(),ids[1]),username:awayUser.data()?.username||null,photoUrl:awayUser.data()?.photoUrl||null,lastSeenAt:awayUser.data()?.lastSeenAt||null}],closed:['CONFIRMED','CANCELLED'].includes(String(fixture.status))};
+ return {kind:'fixture',matchId,seasonId,title:`${homeName} — ${awayName}`,subtitle:`${fixture.competitionName||fixture.competitionId||'EFLUZ'} · ${fixture.roundName||`${fixture.matchday||1}-tur`}`,participants:[{id:ids[0],name:displayName(homeUser.data(),ids[0]),username:homeUser.data()?.username||null,photoUrl:homeUser.data()?.photoUrl||null},{id:ids[1],name:displayName(awayUser.data(),ids[1]),username:awayUser.data()?.username||null,photoUrl:awayUser.data()?.photoUrl||null}],closed:['CONFIRMED','CANCELLED'].includes(String(fixture.status))};
 }
 
 async function uzeflifeContext(matchId:string):Promise<MatchContext>{
@@ -56,7 +49,7 @@ async function uzeflifeContext(matchId:string):Promise<MatchContext>{
  const names=new Map(state.participants.map(p=>[p.id,p.name]));
  const db=getFirestoreDb();
  const [homeUser,awayUser]=await Promise.all([db.collection(COLLECTIONS.USERS).doc(match.home).get(),db.collection(COLLECTIONS.USERS).doc(match.away).get()]);
- return {kind:'uzeflife',matchId,seasonId:'season-2026-27',title:`${names.get(match.home)||'O‘yinchi'} — ${names.get(match.away)||'O‘yinchi'}`,subtitle:`UZEFLIFE · ${match.round}-tur`,participants:[{id:match.home,name:String(names.get(match.home)||match.home).slice(0,80),photoUrl:homeUser.data()?.photoUrl||null,lastSeenAt:homeUser.data()?.lastSeenAt||null},{id:match.away,name:String(names.get(match.away)||match.away).slice(0,80),photoUrl:awayUser.data()?.photoUrl||null,lastSeenAt:awayUser.data()?.lastSeenAt||null}],closed:state.status==='completed'||!!match.winner};
+ return {kind:'uzeflife',matchId,seasonId:'season-2026-27',title:`${names.get(match.home)||'O‘yinchi'} — ${names.get(match.away)||'O‘yinchi'}`,subtitle:`UZEFLIFE · ${match.round}-tur`,participants:[{id:match.home,name:String(names.get(match.home)||match.home).slice(0,80),photoUrl:homeUser.data()?.photoUrl||null},{id:match.away,name:String(names.get(match.away)||match.away).slice(0,80),photoUrl:awayUser.data()?.photoUrl||null}],closed:state.status==='completed'||!!match.winner};
 }
 
 async function context(kind:MatchChatKind,rawId:string,user:User){
@@ -66,7 +59,7 @@ async function context(kind:MatchChatKind,rawId:string,user:User){
 }
 
 function initialRoom(value:MatchContext):ChatRoom{const now=new Date().toISOString();return {id:roomId(value.kind,value.matchId,value.participants.map(p=>p.id)),kind:value.kind,matchId:value.matchId,seasonId:value.seasonId,title:value.title,subtitle:value.subtitle,participants:value.participants,messages:[],unread:Object.fromEntries(value.participants.map(p=>[p.id,0])),blockedBy:[],reports:[],createdAt:now,updatedAt:now,lastMessageAt:null,closed:value.closed};}
-function view(room:ChatRoom,userId:string,context?:MatchContext):MatchChatView{const opponent=(context?.participants||room.participants).find(p=>p.id!==userId)!;return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,opponentPhotoUrl:opponent.photoUrl?.startsWith('https://')?opponent.photoUrl:null,opponentLastSeenAt:opponent.lastSeenAt||null,messages:room.messages||[],unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
+function view(room:ChatRoom,userId:string,context?:MatchContext):MatchChatView{const opponent=(context?.participants||room.participants).find(p=>p.id!==userId)!;return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,opponentPhotoUrl:opponent.photoUrl?.startsWith('https://')?opponent.photoUrl:null,messages:room.messages||[],unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
 
 export async function readMatchChat(kind:MatchChatKind,matchId:string,user:User):Promise<MatchChatView>{
  const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);
