@@ -92,6 +92,96 @@ export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
   confirmed:rows.filter(f=>f.status==='CONFIRMED').length,
   currentMatchday:Number(comp.currentMatchday)||1,rounds,canGenerateDraw,canGenerateKnockout,sourceToken,blockReasons:blockers};
 }
+/**
+ * Explicit global-admin recovery for an unpublished, entirely unplayed legacy draw.
+ * Every original fixture is copied to an immutable archive before its live record
+ * is retired in the same transaction. Any result, score, pending submission,
+ * dispute or match chat blocks this operation. No participants are changed.
+ */
+export async function archiveUnplayedLegacyEuropeanDraw(id:string,params:{
+ previewToken:string;confirmation:boolean;adminUserId:string
+}):Promise<{success:true;archived:number;competitionId:string}>{
+ if(!isSeasonOneEuro(id))throw Error('INVALID_SEASON_ONE_EUROPEAN');
+ if(!params.confirmation)throw Error('EUROPEAN_LEGACY_ARCHIVE_CONFIRMATION_REQUIRED');
+ const before=await getSeasonOneEuropeanOverview(id);
+ if(before.sourceToken!==params.previewToken)throw Error('EUROPEAN_LEGACY_PREVIEW_CHANGED');
+ if(before.drawPublished||before.fixtures<1||before.confirmed!==0)
+  throw Error('EUROPEAN_LEGACY_ARCHIVE_NOT_ELIGIBLE');
+ const db=getFirestoreDb(),fixtureCol=db.collection(COLLECTIONS.FIXTURES);
+ const current=await fixtureCol.where('competitionId','==',id).get();
+ const records=current.docs.filter(d=>d.data().seasonId==='season-2026-27')
+  .map(d=>({id:d.id,data:d.data() as Record<string,any>}));
+ const unplayed=(v:Record<string,any>)=>
+  ['SCHEDULED','PENDING'].includes(String(v.status).toUpperCase()) &&
+  [v.homeScore,v.awayScore,v.homeExtraTimeScore,v.awayExtraTimeScore,
+    v.homePenaltyScore,v.awayPenaltyScore,v.winnerClubId,v.resultConfirmedAt]
+   .every(value=>value===null||value===undefined);
+ if(records.length!==before.fixtures||records.length>190||records.some(r=>!unplayed(r.data)))
+  throw Error('EUROPEAN_LEGACY_ARCHIVE_RESULTS_OR_RECORDS_FOUND');
+ const idSet=new Set(records.map(r=>r.id));
+ const linkedCollections=[
+  COLLECTIONS.RESULT_SUBMISSIONS,COLLECTIONS.DISPUTES,
+  COLLECTIONS.MATCH_CHAT_ROOMS,'durable_fixture_overrides'
+ ];
+ // Include both competitionId-linked and fixtureId-linked records; never
+ // retire a fixture that has a result submission, dispute or chat history.
+ const links=await Promise.all(linkedCollections.map(async name=>{
+  const collection=db.collection(name);
+  const sameCup=await collection.where('competitionId','==',id).limit(1).get();
+  if(!sameCup.empty)return true;
+  for(let offset=0;offset<records.length;offset+=30){
+   const ids=records.slice(offset,offset+30).map(r=>r.id);
+   const linked=await collection.where('fixtureId','in',ids).limit(1).get();
+   if(!linked.empty)return true;
+  }
+  return false;
+ }));
+ if(links.some(Boolean))throw Error('EUROPEAN_LEGACY_ARCHIVE_LINKED_HISTORY_FOUND');
+ const recheck=await getSeasonOneEuropeanOverview(id);
+ if(recheck.sourceToken!==params.previewToken)throw Error('EUROPEAN_LEGACY_PREVIEW_CHANGED');
+ const timestamp=new Date().toISOString();
+ const archiveRoot=db.collection('european_legacy_draw_archives');
+ const manifestRef=archiveRoot.doc(id+'-pre-draw-recovery-20261110');
+ const compRef=db.collection(COLLECTIONS.COMPETITIONS).doc(id);
+ await db.runTransaction(async tx=>{
+  // Read before writing, so partial archives cannot be committed.
+  const [comp,manifest,...snapshot]=await Promise.all([
+   tx.get(compRef),tx.get(manifestRef),
+   ...records.map(r=>tx.get(fixtureCol.doc(r.id)))
+  ]);
+  if(manifest.exists||!comp.exists||comp.data()?.europeanDrawId||
+     comp.data()?.seasonId!=='season-2026-27')
+   throw Error('EUROPEAN_LEGACY_ARCHIVE_CONFLICT');
+  for(let i=0;i<records.length;i++){
+   const doc=snapshot[i],expected=records[i];
+   if(!doc.exists||JSON.stringify(doc.data())!==JSON.stringify(expected.data)||
+      !unplayed(doc.data() as Record<string,any>))
+    throw Error('EUROPEAN_LEGACY_ARCHIVE_STALE_OR_PLAYED');
+  }
+  for(const record of records){
+   const original=record.data;
+   tx.create(archiveRoot.doc(id+'-'+record.id),{
+    originalFixtureId:record.id,competitionId:id,seasonId:'season-2026-27',
+    archivedAt:timestamp,archivedBy:params.adminUserId,
+    reason:'unpublished-legacy-draw-before-verified-32-club-replacement',
+    original
+   });
+   tx.delete(fixtureCol.doc(record.id));
+  }
+  tx.create(manifestRef,{
+   competitionId:id,seasonId:'season-2026-27',fixtureCount:records.length,
+   fixtureIds:records.map(r=>r.id),archivedBy:params.adminUserId,
+   archivedAt:timestamp,restoreRequiredForRollback:true
+  });
+  tx.update(compRef,{
+   hasFixtures:false,fixtureCount:0,fixturesCount:0,generationStatus:'not-generated',
+   currentMatchday:1,isMatchdayOpen:false,updatedAt:timestamp
+  });
+ });
+ // The persistent archive remains the source of truth for rollback.
+ return {success:true,archived:records.length,competitionId:id};
+}
+
 /** Save exactly 32 admin-selected clubs without requiring completed domestic fixtures.
  * Existing European fixtures, including incomplete legacy draws, are protected.
  */
