@@ -3,7 +3,8 @@ import {getFirestoreDb} from '../firebase/admin';
 import {COLLECTIONS} from '../firebase/collections';
 import {SEED_CLUBS,SEED_COMPETITIONS} from '../db/seed';
 import {controlCompetitionMatchday,getCompetitionMatchdayControl} from '../services/competitionMatchdayService';
-import {SEASON_ONE_SUPERCUPS,isSeasonOneSupercup,previewManualSeasonOneSupercup} from './seasonOneSupercupPlan';
+import {SEASON_ONE_SUPERCUPS,isSeasonOneSupercup,previewManualSeasonOneSupercup,previewSeasonOneSupercup} from './seasonOneSupercupPlan';
+import {readNativeLeagueTable} from '../services/nativeLeagueTable';
 
 type Row=Record<string,any>;
 type Preview=ReturnType<typeof previewManualSeasonOneSupercup>&{
@@ -11,6 +12,14 @@ type Preview=ReturnType<typeof previewManualSeasonOneSupercup>&{
  sourceLeagueId:string;
  sourceCupId:string;
  existingParticipants:number;
+ existingParticipantClubs:Array<{id:string;name:string}>;
+ existingFixtureCount:number;
+ qualificationPreview:{
+  ready:boolean;leagueCompleted:boolean;cupFinalConfirmed:boolean;
+  qualifiers:Array<{clubId:string;name:string;reason:string}>;
+  rankingPreview:Array<{clubId:string;name:string;position:number}>;
+  blockReasons:string[];
+ };
  availableClubs:Array<{id:string;name:string}>;
 };
 const select=(rows:{docs:Array<{id:string;data:()=>any}>})=>rows.docs.map(d=>({id:d.id,...d.data()}));
@@ -24,10 +33,11 @@ export async function getSeasonOneSupercupPreview(id:string):Promise<Preview>{
  const sourceLeague=SEED_COMPETITIONS.find(c=>c.id===cfg.league);
  if(!sourceLeague?.leagueId)throw Error('SUPERCUP_SOURCE_CONFIGURATION_INVALID');
  const db=getFirestoreDb();
- const [supercupDoc,existing,participants]=await Promise.all([
+ const [supercupDoc,existing,participants,cupFixtures]=await Promise.all([
   db.collection(COLLECTIONS.COMPETITIONS).doc(id).get(),
   db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id).get(),
   db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',id).get(),
+  db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',cfg.cup).get(),
  ]);
  if(!supercupDoc.exists||supercupDoc.data()?.seasonId!=='season-2026-27'||
    supercupDoc.data()?.type!=='SUPER_CUP')throw Error('SUPERCUP_CATALOG_MISSING');
@@ -37,13 +47,44 @@ export async function getSeasonOneSupercupPreview(id:string):Promise<Preview>{
   competitionId:id,selectedClubIds:availableClubs.slice(0,cfg.size).map(c=>c.id),validClubIds:availableClubs.map(c=>c.id),
   existingFixtureCount:existing.size,existingParticipantCount:participants.size
  });
+ // Qualification is read-only, never invent confirmed berths from incomplete results.
+ const table=await readNativeLeagueTable(cfg.league,'season-2026-27').catch(()=>null);
+ const ranked=table?.standings?.slice().sort((a,b)=>a.position-b.position) || [];
+ const sourceCompetition=SEED_COMPETITIONS.find(c=>c.id===cfg.league);
+ const matchesPerClub=(ranked.length-1)*(sourceCompetition?.formatConfig?.homeAndAway?2:1);
+ const leagueCompleted=ranked.length>=cfg.size &&
+   ranked.every(row=>row.played===matchesPerClub);
+ const final=cupFixtures.docs.map(d=>d.data()).find(f=>f.seasonId==='season-2026-27' &&
+   String(f.roundName||'').toLowerCase()==='final' &&
+   f.status==='CONFIRMED' && f.winnerClubId && f.homeClubId && f.awayClubId) || null;
+ const qualification=previewSeasonOneSupercup({
+  competitionId:id,leagueComplete:leagueCompleted,
+  cupFinal:final?{status:String(final.status),homeClubId:final.homeClubId,
+   awayClubId:final.awayClubId,winnerClubId:final.winnerClubId}:null,
+  rankedClubIds:ranked.map(row=>row.clubId),
+  existingFixtureCount:existing.size
+ });
+ const qualificationPreview={
+  ready:qualification.canCreate,leagueCompleted,cupFinalConfirmed:Boolean(final),
+  qualifiers:qualification.qualifiers.map(q=>({clubId:q.clubId,
+   name:availableClubs.find(c=>c.id===q.clubId)?.name||q.clubId,reason:q.reason})),
+  rankingPreview:ranked.slice(0,Math.max(cfg.size,4)).map((row,i)=>({
+   clubId:row.clubId,name:row.clubName,position:i+1
+  })),
+  blockReasons:qualification.blockReasons,
+ };
+ const existingParticipantClubs=participants.docs.map(d=>{
+  const clubId=String(d.data().clubId||'');
+  return {id:clubId,name:availableClubs.find(c=>c.id===clubId)?.name||clubId};
+ });
  const sourceToken=fingerprint({
   id,competition:supercupDoc.data(),fixtures:select(existing),
   participants:select(participants),availableClubs
  });
  // Readiness is independent of selections; never present arbitrary clubs as qualifiers.
  return {...pre,qualifiers:[],pairings:[],sourceToken,sourceLeagueId:cfg.league,sourceCupId:cfg.cup,
-  existingParticipants:participants.size,availableClubs};
+  existingParticipants:participants.size,existingParticipantClubs,existingFixtureCount:existing.size,
+  qualificationPreview,availableClubs};
 }
 /** Explicit admin-only apply, idempotent create (never force-delete old matches). */
 export async function createSeasonOneSupercup(id:string,params:{
