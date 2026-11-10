@@ -7,10 +7,11 @@ import {awardTiedWinners} from '../lib/seasonAwards';
 import {BALLOT_POINTS,type SeasonAwardsView,type AwardPlayer} from '../types/seasonAwards';
 import './competition-content.css';
 import './season-awards.css';
+import {CURRENT_SEASON_ID} from '../lib/seasonParticipationPolicy';
 const labels={draft:'Nomzodlar saralanmoqda',open:'Ovoz berish ochiq',closed:'Ovoz berish yopiq',published:'Natija e’lon qilindi'};
 export function SeasonAwardsPanel({management=false}:{management?:boolean}){
  const {user,activeSeasonId}=useAuth(),[data,setData]=useState<SeasonAwardsView|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[ranking,setRanking]=useState<string[]>([]),[ack,setAck]=useState(false),[min,setMin]=useState(3),[until,setUntil]=useState(''),[tieWinner,setTieWinner]=useState(''),[reason,setReason]=useState(''),[refresh,setRefresh]=useState(0),[uncertain,setUncertain]=useState(false);
- const flight=useRef(false),url='/api/awards/'+encodeURIComponent(activeSeasonId);
+ const flight=useRef(false),awardsSeasonId=activeSeasonId==='season-2027-28'?CURRENT_SEASON_ID:activeSeasonId,url='/api/awards/'+encodeURIComponent(awardsSeasonId);
  useEffect(()=>{const controller=new AbortController();let live=true;setData(null);setBusy(true);setError('');setNotice('');
  fetch(url,{headers:getAuthHeaders(),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(25000)])}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.message||'Mukofotlar yuklanmadi.');if(live){setData(d);setRanking(d.myRanking.length?d.myRanking:d.election.nominees.map((p:AwardPlayer)=>p.id));setMin(d.election.minMatches);setUntil(toTashkentInput(Date.parse(d.election.closesAt||'')>Date.now()?d.election.closesAt:new Date(Date.now()+7*86400000).toISOString()));setAck(false);setUncertain(false);setTieWinner('');setReason('');}}).catch(e=>{if(live)setError(e.message||'Yuklab bo‘lmadi.');}).finally(()=>{if(live)setBusy(false);});
  return()=>{live=false;controller.abort();};
@@ -22,8 +23,8 @@ export function SeasonAwardsPanel({management=false}:{management?:boolean}){
  const date=(at:string)=>{const [y,m,d]=toTashkentInput(at).split('T')[0].split('-');return `${d}.${m}`;};
  const deadline=(at:string)=>{const [ymd,hm]=toTashkentInput(at).split('T');return `${ymd.split('-').reverse().join('.')} · ${hm}`;};
  const line=(p:AwardPlayer)=>`${p.played} o‘yin · ${p.wins} g‘alaba · ${p.goals} gol · ${p.titles} sovrin`;
- const seasonLabel=activeSeasonId.replace('season-','').replace('-','/');
- if(!data)return <section className="season-awards competition-panel"><p role={error?'alert':'status'}>{error||'Mukofotlar yuklanmoqda…'}</p>{error&&<button className="competition-button" disabled={busy} onClick={()=>setRefresh(n=>n+1)}>Qayta urinish</button>}</section>;
+ const seasonLabel=awardsSeasonId.replace('season-','').replace('-','/');
+ if(!data)return <section className="season-awards competition-panel"><h3 className="font-bold">1-mavsum mukofotlari</h3><p role={error?'alert':'status'}>{error?'Mukofot ma’lumotlarini yuklashda xatolik: '+error:'Mukofotlar yuklanmoqda…'}</p>{error&&<button className="competition-button" disabled={busy} onClick={()=>setRefresh(n=>n+1)}>Qayta urinish</button>}</section>;
  const e=data.election,byId=new Map(e.nominees.map(p=>[p.id,p])),tied=awardTiedWinners(data.results),ended=e.status==='closed'||e.status==='open'&&Date.parse(e.closesAt||'')<=Date.now(),status=e.status==='open'&&ended?'closed':e.status;
  return <section className="season-awards" aria-label="EFL mavsum mukofotlari">
   <header className="awards-hero">
