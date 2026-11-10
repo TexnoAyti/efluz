@@ -93,3 +93,10 @@
 @media (prefers-reduced-motion: reduce) {
   .efl-honour-trophy, .efl-honour-award { transition:none; }
 }
+
+
+/* EFL uploaded award PNG — retain profile award cards and remove icon tiles behind photos. */
+.efl-honour-award .efl-honour-award-icon:has(.efl-honour-award-photo) {
+ background:transparent; border-color:transparent; width:41px; height:43px; flex-basis:41px; border-radius:0;
+}
+.efl-honour-award-photo { width:40px; height:43px; object-fit:contain; background:transparent; display:block; }
