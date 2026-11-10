@@ -43,6 +43,7 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
   const fixtureRequest = useRef(0);
 
   const [cupCompetitions, setCupCompetitions] = useState<Competition[]>([]);
+  const [cupCategory, setCupCategory] = useState<'CUPS'|'SUPERCUPS'>('CUPS');
   const [selectedCupId, setSelectedCupId] = useState('');
   const fixtureScope = `${cupSeasonId}:${selectedCupId}`;
   const currentFixtureScope = useRef(fixtureScope);
@@ -114,7 +115,9 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
     return () => { fixtureRequest.current += 1; };
   }, [loadCupFixtures]);
 
-  const activeCup = cupCompetitions.find((cup) => cup.id === selectedCupId) || null;
+  const visibleCups = cupCompetitions.filter(cup => cupCategory === 'SUPERCUPS' ? cup.type === 'SUPER_CUP' : cup.type === 'KNOCKOUT');
+  const effectiveCupId = visibleCups.some(cup => cup.id === selectedCupId) ? selectedCupId : (visibleCups[0]?.id || '');
+  const activeCup = cupCompetitions.find((cup) => cup.id === effectiveCupId) || null;
   const expectedTeams = expectedTeamsForCup(activeCup);
   const isSupercup = activeCup?.type === 'SUPER_CUP';
 
@@ -221,9 +224,24 @@ export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab 
           </div>
         )}
 
+        <div className="relative z-10 mt-4 grid grid-cols-2 gap-2" role="tablist" aria-label="Kuboklar turi">
+          {(['CUPS','SUPERCUPS'] as const).map(category => (
+            <button key={category} type="button" role="tab" aria-selected={cupCategory===category}
+              onClick={()=>{
+                setCupCategory(category);
+                const first=cupCompetitions.find(cup=>category==='SUPERCUPS'?cup.type==='SUPER_CUP':cup.type==='KNOCKOUT');
+                if(first)setSelectedCupId(first.id);
+              }}
+              className={`rounded-xl border px-3 py-3 text-xs font-black transition-colors ${cupCategory===category
+                ? 'border-amber-400/60 bg-amber-500/15 text-amber-500'
+                : 'border-[var(--efl-border)] bg-[var(--efl-surface-2)] text-[var(--efl-text-2)]'}`}>
+              {category==='CUPS'?'Kuboklar':'Superkuboklar'}
+            </button>
+          ))}
+        </div>
         {/* Cup Switcher Tabs */}
         <div className="relative z-10 mt-4 flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {cupCompetitions.map((cup) => {
+          {visibleCups.map((cup) => {
             const selected = cup.id === selectedCupId;
             return (
               <button
