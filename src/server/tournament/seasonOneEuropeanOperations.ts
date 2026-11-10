@@ -30,28 +30,37 @@ const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).d
 export async function getSeasonOneEuropeanOverview(id:string):Promise<Overview>{
  if(!isSeasonOneEuro(id))throw Error('INVALID_SEASON_ONE_EUROPEAN');
  const db=getFirestoreDb();
- const [doc,compsSnap,seasonFixSnap,partSnap]=await Promise.all([
+ const [doc,partSnap,cupFixturesSnap]=await Promise.all([
   db.collection(COLLECTIONS.COMPETITIONS).doc(id).get(),
-  db.collection(COLLECTIONS.COMPETITIONS).where('seasonId','==','season-2026-27').get(),
-  db.collection(COLLECTIONS.FIXTURES).where('seasonId','==','season-2026-27').get(),
   db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',id).get(),
+  db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id).get(),
  ]);
  const comp=doc.data();
  if(!doc.exists||comp?.type!=='EUROPEAN_LEAGUE_PHASE'||comp?.seasonId!=='season-2026-27')
   throw Error('EUROPEAN_CATALOG_NOT_READY');
- const competitions:Array<Record<string,any>&{id:string}>=compsSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
- const seasonFixtures:Array<Record<string,any>&{id:string}>=seasonFixSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
- const domesticLeaguesCompleted=domesticSeasonComplete(competitions,seasonFixtures,'season-2026-27');
- const qualificationMathematicallyReady=domesticEuropeanQualificationReady(competitions,seasonFixtures,'season-2026-27');
- const qualificationFinal=comp.europeanQualificationMode==='final'&&Boolean(comp.europeanQualificationToken);
-
- const drawPublished=europeanDrawPublished(comp);
  const participants=partSnap.docs.map(d=>d.data()).filter(p=>p.seasonId==='season-2026-27');
  const manualQualification=europeanManualQualification(comp)&&participants.length===32&&
   new Set(participants.map(p=>p.clubId)).size===32&&
   europeanManualRosterToken(id,participants.map(p=>p.clubId))===comp.europeanQualificationToken;
+ // An admin-signed roster does not need the hundreds of domestic fixtures
+ // loaded again whenever the management screen is opened.
+ let domesticLeaguesCompleted=false;
+ let qualificationMathematicallyReady=false;
+ if(!manualQualification){
+  const [compsSnap,seasonFixSnap]=await Promise.all([
+   db.collection(COLLECTIONS.COMPETITIONS).where('seasonId','==','season-2026-27').get(),
+   db.collection(COLLECTIONS.FIXTURES).where('seasonId','==','season-2026-27').get(),
+  ]);
+  const competitions:Array<Record<string,any>&{id:string}>=compsSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
+  const seasonFixtures:Array<Record<string,any>&{id:string}>=seasonFixSnap.docs.map(d=>({...(d.data() as Record<string,any>),id:d.id}));
+  domesticLeaguesCompleted=domesticSeasonComplete(competitions,seasonFixtures,'season-2026-27');
+  qualificationMathematicallyReady=domesticEuropeanQualificationReady(competitions,seasonFixtures,'season-2026-27');
+ }
+ const qualificationFinal=comp.europeanQualificationMode==='final'&&Boolean(comp.europeanQualificationToken);
+ const drawPublished=europeanDrawPublished(comp);
  const uniqueIds=new Set(participants.map(p=>p.clubId));
- const rows=seasonFixtures.filter(f=>f.competitionId===id);
+ const rows=cupFixturesSnap.docs.filter(d=>d.data().seasonId==='season-2026-27')
+  .map(d=>({...(d.data() as Record<string,any>),id:d.id}));
  const leaguePhase=rows.filter(f=>Number(f.matchday)>=1&&Number(f.matchday)<=8);
  const leaguePhaseComplete=leaguePhase.length===128&&leaguePhase.every(f=>f.status==='CONFIRMED');
  const knockoutFixtures=rows.filter(f=>Number(f.matchday)>8);
