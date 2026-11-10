@@ -58,6 +58,24 @@ export const AdminSupercupPanel:React.FC=()=>{
  const [chosen,setChosen]=useState<string[]>([]);
  const [roundControl,setRoundControl]=useState<SupercupRoundControl|null>(null);
  const [roundHours,setRoundHours]=useState(30);
+ const [resetPreview,setResetPreview]=useState<{
+  signature:string;competitions:Array<{competitionId:string;fixtures:number;participants:number;locks:number;hasResult:boolean}>
+ }|null>(null);
+ const [resetText,setResetText]=useState('');
+ const [resetBusy,setResetBusy]=useState(false);
+ const resetAll=async()=>{
+  if(!resetPreview||resetText!=='QAYTA BOSHLASH'||resetBusy)return;
+  if(!window.confirm('Barcha 4 ta Superkubokning joriy o‘yinlari va ishtirokchilari arxivga olinadi, turnirlar yangidan boshlash uchun bo‘shatiladi. Davom etasizmi?'))return;
+  setResetBusy(true);
+  try{
+   const result=await guardedRequest<{archivedFixtures:number;archivedParticipants:number}>('/api/admin/supercups/reset-all/restore',{
+    method:'POST',body:JSON.stringify({confirmation:true,expectedSignature:resetPreview.signature})
+   });
+   showToast(result.archivedFixtures+' ta o‘yin, '+result.archivedParticipants+' ta ishtirokchi arxivlandi. Superkuboklar qayta boshlashga tayyor.','success');
+   setResetPreview(null);setResetText('');await refresh();
+  }catch(err:any){showToast(err.message||'Tiklash rad etildi','error');}
+  finally{setResetBusy(false);}
+ };
  const refresh=async()=>{
   setLoading(true);setPreview(null);setChosen([]);setConfirmed(false);setRoundControl(null);
   try{
@@ -123,6 +141,33 @@ export const AdminSupercupPanel:React.FC=()=>{
     Hech bir mavjud o‘yin qayta yozilmaydi.
    </p>
   </header>
+  <div className="rounded-xl border border-[var(--efl-border)] p-3 space-y-2">
+   <div className="flex flex-wrap items-center justify-between gap-2">
+    <div><h4 className="text-sm font-black text-[var(--efl-text)]">Barcha Superkuboklarni qayta boshlash</h4>
+     <p className="text-xs text-[var(--efl-text-2)]">Faqat admin. Eski o‘yinlar va ishtirokchilar arxivda saqlanadi.</p></div>
+    <button type="button" disabled={resetBusy||busy} onClick={async()=>{
+      setResetText('');
+      try{setResetPreview(await guardedRequest('/api/admin/supercups/reset-all/preview'));}
+      catch(err:any){showToast(err.message||'Restore holati olinmadi','error');}
+    }} className="rounded-xl border border-amber-600/50 px-3 py-2 text-xs font-bold text-amber-600 dark:text-amber-300 disabled:opacity-50">
+      Restore tekshirish
+    </button>
+   </div>
+   {resetPreview&&<div className="space-y-2">
+    {resetPreview.competitions.map(c=><p key={c.competitionId} className="text-xs text-[var(--efl-text-2)]">
+      {cupChoices.find(([id])=>id===c.competitionId)?.[1]}: {c.fixtures} o‘yin · {c.participants} klub
+      {c.hasResult?' — Natija mavjud, restore bloklanadi':''}
+    </p>)}
+    <p className="text-xs text-amber-600 dark:text-amber-300">Tasdiqlash uchun QAYTA BOSHLASH deb yozing. Natija yoki bog‘liq murojaat topilsa server rad etadi.</p>
+    <input type="text" value={resetText} onChange={e=>setResetText(e.target.value)}
+      placeholder="QAYTA BOSHLASH" className="w-full rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] text-[var(--efl-text)] px-3 py-2 text-xs"/>
+    <button type="button" onClick={()=>void resetAll()}
+      disabled={resetBusy||resetText!=='QAYTA BOSHLASH'||resetPreview.competitions.some(c=>c.hasResult)}
+      className="rounded-xl bg-amber-700 text-white px-4 py-2 text-xs font-black disabled:opacity-40">
+      {resetBusy?'Arxivlanmoqda...':'Barcha 4 Superkubokni qayta boshlashga tayyorlash'}
+    </button>
+   </div>}
+  </div>
   <div className="flex flex-wrap gap-2">
    <select value={cupId} onChange={e=>setCupId(e.target.value)}
     className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs">
