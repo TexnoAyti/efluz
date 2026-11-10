@@ -31,3 +31,16 @@
 @media(max-width:720px){.awards-overview{grid-template-columns:1fr 1fr}.awards-overview-main{grid-column:1/-1}.awards-leaderboards{grid-template-columns:1fr}.awards-hero-mark{right:52px;opacity:.92}}
 @media(max-width:480px){.season-awards{gap:12px}.awards-hero{min-height:136px;padding:20px 86px 20px 20px}.awards-hero h2{font-size:24px}.awards-hero p{font-size:10px}.awards-hero-mark{right:18px;bottom:18px;width:58px;height:58px;border-radius:18px}.awards-hero-mark svg{width:23px}.awards-hero-mark span{display:none}.awards-overview{gap:8px}.awards-overview-card{align-items:flex-start;min-height:118px;padding:12px}.awards-overview-main{align-items:center;min-height:90px}.awards-overview-card>svg{display:none}.awards-overview-icon{width:34px;height:34px;flex-basis:34px}.awards-overview-card h3{font-size:12px}.awards-overview-card p{white-space:normal}.awards-ballot{padding:0 12px 12px}.awards-ballot-head{margin:0 -12px;padding:14px 12px}.awards-ballot-symbol{width:42px;height:42px;flex-basis:42px}.awards-title h3{font-size:19px}.awards-vote-meter strong{font-size:19px}.awards-deadline{grid-template-columns:auto 1fr}.awards-deadline strong{grid-row:3;grid-column:2}.awards-deadline small{grid-row:2}.awards-shortlist>summary{align-items:flex-start;flex-direction:column;justify-content:center;gap:2px}.awards-nominees li{gap:7px;padding:9px 8px}.awards-rank{width:27px;height:27px;flex-basis:27px}.awards-player small{max-width:150px}.awards-points{min-width:29px}.awards-reorder{grid-template-columns:38px}.awards-reorder button{width:38px;height:36px}.awards-submit{grid-template-columns:1fr}.awards-submit button{grid-row:auto;grid-column:1;width:100%}.awards-submit>small{grid-column:1}.awards-board{padding:12px}}
 @media(max-width:350px){.awards-player small{max-width:116px}.awards-player>span{max-width:112px}.awards-vote-meter span{max-width:54px}.awards-hero{padding-right:68px}.awards-hero-mark{width:50px;height:50px;right:12px}}
+
+
+/* EFL uploaded award PNG — no generated trophy icons or opaque backgrounds. */
+.season-awards .awards-photo {
+ display:block; width:34px; height:38px; object-fit:contain; flex-shrink:0; background:transparent;
+}
+.season-awards .awards-photo-hero { width:60px; height:62px; }
+.season-awards .awards-photo-ballot { width:48px; height:52px; }
+.season-awards .awards-photo-winner { width:92px; height:103px; margin:0 auto 10px; }
+.season-awards .awards-photo-small { width:23px; height:25px; }
+.season-awards .awards-overview-icon { overflow:visible; }
+.season-awards .awards-overview-icon .awards-photo { width:36px; height:40px; }
+.season-awards .awards-board summary span { display:inline-flex; align-items:center; gap:7px; }
