@@ -70,22 +70,26 @@ export function domesticEuropeanQualificationReady(competitions:any[],fixtures:a
 }
 
 export async function assertEuropeanDrawReady(comp: any): Promise<void> {
+  if (comp.europeanQualificationMode !== 'final' || !comp.europeanQualificationToken)
+    blocked('EUROPEAN_QUALIFICATION_NOT_FINAL','Avval yakuniy Yevropa saralashini tasdiqlang, so‘ng qur’a yarating.');
   const db = getFirestoreDb();
-  const [comps, fixtures] = await Promise.all([
-    db.collection('competitions').where('seasonId','==',comp.seasonId).get(),
-    db.collection('fixtures').where('seasonId','==',comp.seasonId).get(),
-  ]);
+  // For an admin-finalized 32-club roster the signed roster itself is the
+  // source of truth. Do NOT scan hundreds of unrelated domestic fixtures.
   if(europeanManualQualification(comp)){
     const participants=await db.collection('competition_participants').where('competitionId','==',comp.id).get();
     const roster=participants.docs.filter(d=>d.data().seasonId===comp.seasonId).map(d=>d.data().clubId);
     if(roster.length!==32||new Set(roster).size!==32||
       europeanManualRosterToken(comp.id,roster)!==comp.europeanQualificationToken)
       blocked('EUROPEAN_MANUAL_ROSTER_CHANGED','Admin tasdiqlagan 32 klub ro‘yxati o‘zgargan. Qayta tasdiqlang.');
+    return;
   }
-  if (!europeanManualQualification(comp) && !domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})), fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
+  const [comps,fixtures]=await Promise.all([
+    db.collection('competitions').where('seasonId','==',comp.seasonId).get(),
+    db.collection('fixtures').where('seasonId','==',comp.seasonId).get(),
+  ]);
+  if(!domesticEuropeanQualificationReady(comps.docs.map(d=>({...d.data(),id:d.id})),
+    fixtures.docs.map(d=>({...d.data(),id:d.id})),comp.seasonId))
     blocked('DOMESTIC_LEAGUES_INCOMPLETE','UCL/UEL uchun barcha ligalarda saralash o‘rinlari matematik aniq bo‘lishi yoki barcha liga o‘yinlari tugashi kerak.');
-  if (comp.europeanQualificationMode !== 'final' || !comp.europeanQualificationToken)
-    blocked('EUROPEAN_QUALIFICATION_NOT_FINAL','Avval yakuniy Yevropa saralashini tasdiqlang, so‘ng qur’a yarating.');
 }
 export function assertEuropeanDrawPublished(comp: any): void {
   if (!europeanDrawPublished(comp)) blocked('EUROPEAN_DRAW_NOT_PUBLISHED','UCL/UEL o‘yinlari yakuniy saralash va qur’adan keyin ochiladi.');
