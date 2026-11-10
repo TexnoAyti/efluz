@@ -1,6 +1,6 @@
 import crypto, {randomUUID} from 'node:crypto';
 import type {User} from '../../types';
-import type {MatchChatAdminReport,MatchChatKind,MatchChatMessage,MatchChatView} from '../../types/matchChat';
+import type {MatchChatAdminReport,MatchChatKind,MatchChatMessage,MatchChatMatchInfo,MatchChatView} from '../../types/matchChat';
 import {COLLECTIONS} from '../firebase/collections';
 import {getFirestoreDb} from '../firebase/admin';
 import {readUState} from './uzeflifeService';
@@ -12,9 +12,9 @@ const MAX_MESSAGES=200;
 const QUICK_MESSAGES=['Assalomu alaykum, qachon o‘ynaymiz?','Xona ID yuboring.','Hozir o‘ynay olaman.','Hisobni tasdiqlang.'];
 
 type Participant={id:string;name:string;username?:string|null;photoUrl?:string|null};
-type MatchContext={kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];closed:boolean};
+type MatchContext={kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];closed:boolean;matchInfo?:MatchChatMatchInfo|null};
 type ChatReport={id:string;reporterId:string;reason:string;createdAt:string;status:'OPEN'|'RESOLVED'};
-type ChatRoom={id:string;kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];messages:MatchChatMessage[];unread:Record<string,number>;blockedBy:string[];reports:ChatReport[];createdAt:string;updatedAt:string;lastMessageAt:string|null;closed:boolean};
+type ChatRoom={id:string;kind:MatchChatKind;matchId:string;seasonId:string;title:string;subtitle:string;participants:[Participant,Participant];messages:MatchChatMessage[];unread:Record<string,number>;blockedBy:string[];reports:ChatReport[];createdAt:string;updatedAt:string;lastMessageAt:string|null;closed:boolean;typingUntil?:Record<string,number>;readThrough?:Record<string,string>;pinnedMessageId?:string|null};
 
 export class MatchChatError extends Error { constructor(message:string,public statusCode=400,public code='MATCH_CHAT_ERROR'){super(message);} }
 const cleanId=(value:string)=>{if(!/^[A-Za-z0-9:_-]{1,180}$/.test(value))throw new MatchChatError('O‘yin identifikatori noto‘g‘ri.',400,'INVALID_MATCH_ID');return value;};
@@ -39,7 +39,15 @@ async function fixtureContext(matchId:string):Promise<MatchContext>{
  if(!ids[0]||!ids[1]||ids[0]===ids[1])throw new MatchChatError('Ikki raqibning akkaunti topilmadi.',409,'PARTICIPANTS_UNAVAILABLE');
  const [homeUser,awayUser,homeClub,awayClub]=await Promise.all([db.collection(COLLECTIONS.USERS).doc(ids[0]).get(),db.collection(COLLECTIONS.USERS).doc(ids[1]).get(),db.collection(COLLECTIONS.CLUBS).doc(clubIds[0]).get(),db.collection(COLLECTIONS.CLUBS).doc(clubIds[1]).get()]);
  const homeName=String(homeClub.data()?.name||clubIds[0]).slice(0,80),awayName=String(awayClub.data()?.name||clubIds[1]).slice(0,80);
- return {kind:'fixture',matchId,seasonId,title:`${homeName} — ${awayName}`,subtitle:`${fixture.competitionName||fixture.competitionId||'EFLUZ'} · ${fixture.roundName||`${fixture.matchday||1}-tur`}`,participants:[{id:ids[0],name:displayName(homeUser.data(),ids[0]),username:homeUser.data()?.username||null,photoUrl:homeUser.data()?.photoUrl||null},{id:ids[1],name:displayName(awayUser.data(),ids[1]),username:awayUser.data()?.username||null,photoUrl:awayUser.data()?.photoUrl||null}],closed:['CONFIRMED','CANCELLED'].includes(String(fixture.status))};
+ const score=(x:unknown)=>typeof x==='number'&&Number.isFinite(x)?x:null;
+ const safeLogo=(x:unknown)=>typeof x==='string'&&/^https:\/\//.test(x)?x:null;
+ const matchInfo:MatchChatMatchInfo={
+  homeName,awayName,homeLogoUrl:safeLogo(homeClub.data()?.logoUrl||homeClub.data()?.logo),
+  awayLogoUrl:safeLogo(awayClub.data()?.logoUrl||awayClub.data()?.logo),
+  homeScore:score(fixture.homeScore),awayScore:score(fixture.awayScore),
+  status:String(fixture.status||'SCHEDULED'),matchday:Number(fixture.matchday)||1
+ };
+ return {kind:'fixture',matchId,seasonId,title:`${homeName} — ${awayName}`,subtitle:`${fixture.competitionName||fixture.competitionId||'EFLUZ'} · ${fixture.roundName||`${fixture.matchday||1}-tur`}`,participants:[{id:ids[0],name:displayName(homeUser.data(),ids[0]),username:homeUser.data()?.username||null,photoUrl:homeUser.data()?.photoUrl||null},{id:ids[1],name:displayName(awayUser.data(),ids[1]),username:awayUser.data()?.username||null,photoUrl:awayUser.data()?.photoUrl||null}],closed:['CONFIRMED','CANCELLED'].includes(String(fixture.status)),matchInfo};
 }
 
 async function uzeflifeContext(matchId:string):Promise<MatchContext>{
@@ -59,21 +67,28 @@ async function context(kind:MatchChatKind,rawId:string,user:User){
 }
 
 function initialRoom(value:MatchContext):ChatRoom{const now=new Date().toISOString();return {id:roomId(value.kind,value.matchId,value.participants.map(p=>p.id)),kind:value.kind,matchId:value.matchId,seasonId:value.seasonId,title:value.title,subtitle:value.subtitle,participants:value.participants,messages:[],unread:Object.fromEntries(value.participants.map(p=>[p.id,0])),blockedBy:[],reports:[],createdAt:now,updatedAt:now,lastMessageAt:null,closed:value.closed};}
-function view(room:ChatRoom,userId:string,context?:MatchContext):MatchChatView{const opponent=(context?.participants||room.participants).find(p=>p.id!==userId)!;return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,opponentPhotoUrl:opponent.photoUrl?.startsWith('https://')?opponent.photoUrl:null,messages:room.messages||[],unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
+function view(room:ChatRoom,userId:string,context?:MatchContext):MatchChatView{const opponent=(context?.participants||room.participants).find(p=>p.id!==userId)!;return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,opponentPhotoUrl:opponent.photoUrl?.startsWith('https://')?opponent.photoUrl:null,messages:room.messages||[],unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,
+ opponentTyping:!room.closed&&Number(room.typingUntil?.[opponent.id]||0)>Date.now(),
+ opponentReadThroughId:room.readThrough?.[opponent.id]||null,
+ pinnedMessageId:(room.messages||[]).some(m=>m.id===room.pinnedMessageId)?room.pinnedMessageId||null:null,
+ matchInfo:context?.matchInfo||null,
+ quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
 
 export async function readMatchChat(kind:MatchChatKind,matchId:string,user:User):Promise<MatchChatView>{
  const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);
  return db.runTransaction(async tx=>{
   const snap=await tx.get(ref),previous=(snap.exists?snap.data():base) as ChatRoom;
   const unread=Number(previous.unread?.[user.id]||0);
-  const needsUpdate=!snap.exists||unread>0||previous.title!==value.title||previous.subtitle!==value.subtitle||previous.closed!==value.closed;
+  const latestMessageId=previous.messages?.at(-1)?.id||null;
+  const needsReceipt=Boolean(latestMessageId&&previous.readThrough?.[user.id]!==latestMessageId);
+  const needsUpdate=!snap.exists||unread>0||needsReceipt||previous.title!==value.title||previous.subtitle!==value.subtitle||previous.closed!==value.closed;
   if(!needsUpdate)return view(previous,user.id,value);
-  const room:ChatRoom={...previous,title:value.title,subtitle:value.subtitle,closed:value.closed,unread:{...(previous.unread||{}),[user.id]:0},updatedAt:new Date().toISOString()};
+  const room:ChatRoom={...previous,title:value.title,subtitle:value.subtitle,closed:value.closed,unread:{...(previous.unread||{}),[user.id]:0},readThrough:{...(previous.readThrough||{}),...(latestMessageId?{[user.id]:latestMessageId}:{})},updatedAt:new Date().toISOString()};
   tx.set(ref,room);return view(room,user.id,value);
  });
 }
 
-export async function sendMatchChatMessage(kind:MatchChatKind,matchId:string,user:User,rawText:unknown):Promise<MatchChatView>{
+export async function sendMatchChatMessage(kind:MatchChatKind,matchId:string,user:User,rawText:unknown,rawReplyToId?:unknown):Promise<MatchChatView>{
  const text=textValue(rawText);if(!text)throw new MatchChatError('Xabar yozing.');if(text.length>500)throw new MatchChatError('Xabar 500 belgidan oshmasin.');
  const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id),now=new Date().toISOString();
  const result=await db.runTransaction(async tx=>{const snap=await tx.get(ref),room=(snap.exists?snap.data():base) as ChatRoom;
@@ -81,12 +96,36 @@ export async function sendMatchChatMessage(kind:MatchChatKind,matchId:string,use
   if(value.closed)throw new MatchChatError('Bu o‘yin chati yopilgan.',409,'CHAT_CLOSED');
   const recent=(room.messages||[]).filter(m=>m.senderId===user.id&&Date.now()-Date.parse(m.createdAt)<10000);if(recent.length>=5)throw new MatchChatError('Juda tez yozyapsiz. Bir necha soniya kuting.',429,'CHAT_RATE_LIMIT');
   const sender=value.participants.find(p=>p.id===user.id)!,opponent=value.participants.find(p=>p.id!==user.id)!;
-  const message:MatchChatMessage={id:randomUUID(),senderId:user.id,senderName:sender.name,text,createdAt:now};const previous=Number(room.unread?.[opponent.id]||0);
-  const next:ChatRoom={...room,title:value.title,subtitle:value.subtitle,participants:value.participants,messages:[...(room.messages||[]),message].slice(-MAX_MESSAGES),unread:{...(room.unread||{}),[opponent.id]:previous+1,[user.id]:0},lastMessageAt:now,updatedAt:now,closed:false};tx.set(ref,next);return {room:next,opponent,notify:previous===0};});
+  const replyToId=typeof rawReplyToId==='string'?rawReplyToId:'';
+  if(replyToId&&!(room.messages||[]).some(m=>m.id===replyToId))throw new MatchChatError('Javob beriladigan xabar topilmadi.',409,'REPLY_NOT_FOUND');
+  const message:MatchChatMessage={id:randomUUID(),senderId:user.id,senderName:sender.name,text,createdAt:now,...(replyToId?{replyToId}:{})};const previous=Number(room.unread?.[opponent.id]||0);
+  const next:ChatRoom={...room,title:value.title,subtitle:value.subtitle,participants:value.participants,messages:[...(room.messages||[]),message].slice(-MAX_MESSAGES),unread:{...(room.unread||{}),[opponent.id]:previous+1,[user.id]:0},typingUntil:{...(room.typingUntil||{}),[user.id]:0},lastMessageAt:now,updatedAt:now,closed:false};tx.set(ref,next);return {room:next,opponent,notify:previous===0};});
  if(result.notify){const body=`${result.room.title}\n${result.opponent.name}, raqibingiz sizga chatda xabar yubordi.`;await Promise.allSettled([createNotification(result.opponent.id,'MATCH_CHAT','Raqibingizdan yangi xabar',body,{kind,matchId,fixtureId:`${kind}:${matchId}`,roomId:result.room.id}),enqueueSmartTelegramNotification({userId:result.opponent.id,seasonId:value.seasonId,eventId:`match-chat:${result.room.id}:${now}`,title:'💬 Raqibingizdan yangi xabar',body:`<b>${result.room.title}</b>\nEFLUZ ichidagi o‘yin chatini ochib javob bering.`,replyMarkup:chatReplyMarkup(kind,matchId)})]);}
  return view(result.room,user.id,value);
 }
 
+export async function setMatchChatTyping(kind:MatchChatKind,matchId:string,user:User,typing:boolean):Promise<void>{
+ const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);
+ await db.runTransaction(async tx=>{
+  const snap=await tx.get(ref),room=(snap.exists?snap.data():base) as ChatRoom;
+  if(room.closed||value.closed||(room.blockedBy||[]).length)return;
+  const until=Number(room.typingUntil?.[user.id]||0);
+  const now=Date.now();
+  if(typing&&until>now+3500)return;
+  if(!typing&&until<=now)return;
+  tx.set(ref,{...room,typingUntil:{...(room.typingUntil||{}),[user.id]:typing?now+8000:0}});
+ });
+}
+export async function setMatchChatPin(kind:MatchChatKind,matchId:string,user:User,messageId:string|null):Promise<MatchChatView>{
+ const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);
+ return db.runTransaction(async tx=>{
+  const snap=await tx.get(ref),room=(snap.exists?snap.data():base) as ChatRoom;
+  if(messageId&&!(room.messages||[]).some(m=>m.id===messageId))throw new MatchChatError('Mahkamlanadigan xabar topilmadi.',409,'PIN_NOT_FOUND');
+  if(room.pinnedMessageId===messageId)return view(room,user.id,value);
+  const next={...room,pinnedMessageId:messageId,updatedAt:new Date().toISOString()};
+  tx.set(ref,next);return view(next,user.id,value);
+ });
+}
 export async function setMatchChatBlock(kind:MatchChatKind,matchId:string,user:User,blocked:boolean){const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);return db.runTransaction(async tx=>{const snap=await tx.get(ref),room=(snap.exists?snap.data():base) as ChatRoom,set=new Set(room.blockedBy||[]);blocked?set.add(user.id):set.delete(user.id);const next={...room,blockedBy:[...set],updatedAt:new Date().toISOString()};tx.set(ref,next);return view(next,user.id,value);});}
 export async function reportMatchChat(kind:MatchChatKind,matchId:string,user:User,rawReason:unknown){const reason=textValue(rawReason);if(reason.length<3||reason.length>300)throw new MatchChatError('Shikoyat sababini 3–300 belgi bilan yozing.');const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);return db.runTransaction(async tx=>{const snap=await tx.get(ref),room=(snap.exists?snap.data():base) as ChatRoom;if((room.reports||[]).some(r=>r.reporterId===user.id&&r.status==='OPEN'))throw new MatchChatError('Bu chat bo‘yicha shikoyatingiz allaqachon yuborilgan.',409,'ALREADY_REPORTED');const next={...room,reports:[...(room.reports||[]),{id:randomUUID(),reporterId:user.id,reason,createdAt:new Date().toISOString(),status:'OPEN' as const}],updatedAt:new Date().toISOString()};tx.set(ref,next);return view(next,user.id,value);});}
 

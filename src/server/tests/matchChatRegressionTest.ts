@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
 import {initialUState} from '../services/uzeflifeService';
-import {listMatchChatReports,readMatchChat,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
+import {listMatchChatReports,readMatchChat,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,setMatchChatPin,setMatchChatTyping,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
 import type {User} from '../../types';
 
 await initDatabase();
@@ -35,4 +35,22 @@ const replacementView=await readMatchChat('fixture',fixtureId,replacement);asser
 const uState=initialUState();uState.status='playing';uState.round=1;uState.participants=[{id:first.id,name:'Birinchi',status:'approved'},{id:second.id,name:'Ikkinchi',status:'approved'}];uState.matches=[{id:'u-chat-match',round:1,bracket:1,home:first.id,away:second.id,homeScore:null,awayScore:null,penaltyHome:null,penaltyAway:null,winner:null,proposal:null,deadlineAt:null,scheduledAt:null,dispute:null}];
 await db.collection('uzeflife').doc('championship').set(uState);
 const uView=await sendMatchChatMessage('uzeflife','u-chat-match',first,'UZEFLIFE uchun tayyormisiz?');assert.equal(uView.kind,'uzeflife');assert.equal((await readMatchChat('uzeflife','u-chat-match',second)).messages.length,1);
+// Additional chat controls must preserve the original room and its message history.
+let upgraded=await readMatchChat('fixture',fixtureId,replacement);
+upgraded=await sendMatchChatMessage('fixture',fixtureId,replacement,'Yangi klub egasi salom.');
+const baseMessage=upgraded.messages.at(-1)!;
+await setMatchChatTyping('fixture',fixtureId,second,true);
+assert.equal((await readMatchChat('fixture',fixtureId,replacement)).opponentTyping,true);
+await setMatchChatTyping('fixture',fixtureId,second,false);
+assert.equal((await readMatchChat('fixture',fixtureId,replacement)).opponentTyping,false);
+const reply=await sendMatchChatMessage('fixture',fixtureId,second,'Salom!',baseMessage.id);
+assert.equal(reply.messages.at(-1)?.replyToId,baseMessage.id);
+const pinned=await setMatchChatPin('fixture',fixtureId,replacement,baseMessage.id);
+assert.equal(pinned.pinnedMessageId,baseMessage.id);
+await assert.rejects(setMatchChatPin('fixture',fixtureId,outsider,baseMessage.id),(error:any)=>error.code==='NOT_MATCH_PARTICIPANT');
+const seen=await readMatchChat('fixture',fixtureId,replacement);
+assert.equal(seen.opponentReadThroughId,reply.messages.at(-1)?.id,'Read receipts must acknowledge the latest received message');
+assert.equal((await setMatchChatPin('fixture',fixtureId,replacement,null)).pinnedMessageId,null);
+assert.equal(seen.matchInfo?.homeName,'Chat Home');
+console.log('PASS upgraded chat: typing, read receipt, reply, pinned message and fixture context.');
 console.log('PASS match chat: participants only, unread-burst notification dedupe, text delivery, block/unblock, report/admin review, transfer privacy and UZEFLIFE isolation.');
