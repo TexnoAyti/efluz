@@ -14,7 +14,7 @@ import {
   advanceDomesticCupRoundSafe,
 } from '../tournament/domesticCupRoundOps';
 import { DOMESTIC_CUPS, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
-import {getSeasonOneSupercupPreview,createSeasonOneSupercup,controlSeasonOneSupercupRound,archiveLegacySupercupParticipants} from '../tournament/seasonOneSupercupService';
+import {getSeasonOneSupercupPreview,createSeasonOneSupercup,controlSeasonOneSupercupRound,archiveLegacySupercupParticipants,previewAllSupercupReset,resetAllSeasonOneSupercups} from '../tournament/seasonOneSupercupService';
 import {getSeasonOneEuropeanOverview,replaceSeasonOneEuropeanRoster,finalizeSeasonOneEuropeanManualRoster,publishSeasonOneEuropeanDraw,createSeasonOneEuropeanKnockout,openSeasonOneEuropeanRound,archiveUnplayedLegacyEuropeanDraw} from '../tournament/seasonOneEuropeanOperations';
 import { refreshChangedFixtureReadModel, invalidateFixtureReadModels } from '../readModel/readModelStore';
 
@@ -108,6 +108,21 @@ adminCupOpsRouter.post('/season-one/european/:competitionId/next-round',async(re
 
 // First-season Super Cups: verified source preview -> explicit confirmed creation.
 // Admin authorization is enforced by the router-level requireAdmin middleware.
+adminCupOpsRouter.get('/supercups/reset-all/preview',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ try{res.setHeader('Cache-Control','no-store');res.json(await previewAllSupercupReset());}
+ catch(err:any){res.status(409).json({error:err.message});}
+});
+adminCupOpsRouter.post('/supercups/reset-all/restore',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ if(req.body?.confirmation!==true||typeof req.body?.expectedSignature!=='string'){
+  res.status(400).json({error:'Explicit confirmation and expectedSignature required.'});return;
+ }
+ try{res.setHeader('Cache-Control','no-store');res.json(await resetAllSeasonOneSupercups({
+   confirmation:true,expectedSignature:req.body.expectedSignature,adminUserId:req.user!.id
+ }));}
+ catch(err:any){res.status(409).json({error:err.message});}
+});
 adminCupOpsRouter.post('/supercups/:supercupId/round',async(req:Request,res:Response)=>{
  if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
  const {action,expectedUpdatedAt,durationHours}=req.body||{};
