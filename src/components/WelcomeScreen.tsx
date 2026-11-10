@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, Globe2, Moon, Sun, Trophy, Footprints, Award } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, Globe2, Moon, Sun } from 'lucide-react';
 import { useI18n } from '../i18n';
 import type { AppTheme } from './Header';
 import './welcome-screen.css';
@@ -92,6 +92,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
               <select aria-label={c.language} value={language} onChange={e => setLanguage(e.target.value as typeof language)}>
                 <option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option>
               </select>
+              <ChevronDown size={14} className="welcome-language-chevron" aria-hidden="true" />
             </div>
           </div>
         </header>
@@ -126,21 +127,24 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
           ) : (
             <>
               <p className="welcome-eyebrow">{c.secondEyebrow}</p>
-              <h1 id="welcome-title" className="welcome-season-heading">{c.secondTitle}</h1>
+              <h1 id="welcome-title" className="welcome-season-heading">
+                <span>{c.secondTitle.split('. ')[0]}.</span>
+                <span className="welcome-season-flame">{c.secondTitle.split('. ').slice(1).join('. ')}</span>
+              </h1>
               <p className="welcome-description">{c.secondDescription}</p>
               <div className="welcome-awards" aria-label={c.goldenBall + ', ' + c.goldenBoot}>
                 <article className="welcome-award-card">
-                  <span className="welcome-award-icon welcome-award-gold"><Trophy size={42} strokeWidth={1.4} aria-hidden="true" /></span>
+                  <img className="welcome-award-art" src="/welcome-awards/golden-ball.svg" alt="" width="116" height="124" />
                   <strong>{c.goldenBall}</strong>
                   <p>{c.goldenBallNote}</p>
                 </article>
                 <article className="welcome-award-card">
-                  <span className="welcome-award-icon welcome-award-gold"><Footprints size={42} strokeWidth={1.4} aria-hidden="true" /></span>
+                  <img className="welcome-award-art" src="/welcome-awards/golden-boot.svg" alt="" width="116" height="124" />
                   <strong>{c.goldenBoot}</strong>
                   <p>{c.goldenBootNote}</p>
                 </article>
               </div>
-              <div className="welcome-weekly"><Award size={19} aria-hidden="true" /><div><strong>{c.weekly}</strong><p>{c.weeklyNote}</p></div></div>
+              <div className="welcome-weekly"><img className="welcome-weekly-art" src="/welcome-awards/weekly-motm.svg" alt="" width="70" height="78" /><div><strong>{c.weekly}</strong><p>{c.weeklyNote}</p></div></div>
             </>
           )}
         </main>
