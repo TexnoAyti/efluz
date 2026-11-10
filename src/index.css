@@ -462,3 +462,11 @@
  .match-chat-keyboard-open .match-chat-compose{padding-bottom:10px}
 }
 @media(min-width:640px){.match-chat-telegram .match-chat-header{padding-top:10px}}
+
+/* Keep chat pinned to the real screen bottom, not a stale Telegram viewport height.
+   A portal to document.body avoids fixed-position containment in animated app shells. */
+@media(max-width:639px){
+ .match-chat-backdrop:not(.match-chat-keyboard-open){top:0;bottom:0;height:auto;min-height:100dvh}
+ .match-chat-keyboard-open.match-chat-backdrop{bottom:auto;top:var(--match-chat-viewport-top,0px);height:var(--match-chat-viewport-height,100dvh)}
+ .match-chat-sheet{flex:1 1 auto;min-height:0;height:100%}
+}

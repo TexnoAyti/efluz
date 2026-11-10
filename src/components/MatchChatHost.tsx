@@ -1,4 +1,5 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {AlertTriangle,ArrowLeft,Check,Flag,LoaderCircle,Lock,MessageCircle,MoreVertical,RefreshCw,Send,ShieldAlert,Unlock,X} from 'lucide-react';
 import {matchChatApi,onMatchChatOpen,readMatchChatLaunch,type MatchChatTarget} from '../lib/matchChat';
 import type {MatchChatView} from '../types/matchChat';
@@ -32,7 +33,7 @@ export function MatchChatHost(){
  const send=async(value=text)=>{const body=value.trim();if(!body||busy||!chat?.canSend)return;setBusy(true);setError('');try{setChat(await matchChatApi.send(target,body));setText('');input.current?.focus();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  const toggleBlock=async()=>{if(!chat||busy)return;setBusy(true);try{setChat(await matchChatApi.block(target,!chat.blockedByMe));setMenu(false);setError('');}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  const report=async()=>{if(busy||reportReason.trim().length<3)return;setBusy(true);try{setChat(await matchChatApi.report(target,reportReason));setReporting(false);setReportReason('');setMenu(false);setError('Shikoyat adminga yuborildi.');}catch(e:any){setError(e.message);}finally{setBusy(false);}};
- return <div ref={backdrop} className={`match-chat-backdrop${inTelegram?' match-chat-telegram':''}`} role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}>
+ return createPortal(<div ref={backdrop} className={`match-chat-backdrop${inTelegram?' match-chat-telegram':''}`} role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}>
   <section className="match-chat-sheet" role="dialog" aria-modal="true" aria-label="Raqib bilan chat">
    <header className="match-chat-header">
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
@@ -62,5 +63,5 @@ export function MatchChatHost(){
     </>}
    </footer>
   </section>
- </div>;
+ </div>,document.body);
 }
