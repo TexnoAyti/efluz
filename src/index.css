@@ -478,3 +478,14 @@
 .match-chat-avatar span{z-index:2}
 .match-chat-header .match-chat-presence{font-size:10px;line-height:1.25;font-weight:700;color:var(--efl-primary,#2563eb);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .match-chat-header .match-chat-presence + p{font-size:9px}
+
+/* Telegram's Android safe-area inset can include the native top panel twice.
+   Bound the chat header offset so its title sits directly below Telegram controls. */
+@media(max-width:639px){
+ .match-chat-telegram .match-chat-header{
+  padding-top:clamp(76px,var(--tg-content-safe-area-inset-top,84px),104px);
+ }
+ .match-chat-telegram.match-chat-keyboard-open .match-chat-header{
+  padding-top:clamp(76px,var(--tg-content-safe-area-inset-top,84px),104px);
+ }
+}
