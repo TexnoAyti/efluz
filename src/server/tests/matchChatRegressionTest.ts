@@ -48,6 +48,7 @@ assert.equal(reply.messages.at(-1)?.replyToId,baseMessage.id);
 const pinned=await setMatchChatPin('fixture',fixtureId,replacement,baseMessage.id);
 assert.equal(pinned.pinnedMessageId,baseMessage.id);
 await assert.rejects(setMatchChatPin('fixture',fixtureId,outsider,baseMessage.id),(error:any)=>error.code==='NOT_MATCH_PARTICIPANT');
+await readMatchChat('fixture',fixtureId,second);
 const seen=await readMatchChat('fixture',fixtureId,replacement);
 assert.equal(seen.opponentReadThroughId,reply.messages.at(-1)?.id,'Read receipts must acknowledge the latest received message');
 assert.equal((await setMatchChatPin('fixture',fixtureId,replacement,null)).pinnedMessageId,null);
