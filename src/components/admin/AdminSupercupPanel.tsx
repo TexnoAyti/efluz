@@ -52,11 +52,14 @@ export const AdminSupercupPanel:React.FC=()=>{
  const [roundHours,setRoundHours]=useState(30);
  const refresh=async()=>{
   setLoading(true);setPreview(null);setChosen([]);setConfirmed(false);setRoundControl(null);
-  try{const data=await guardedRequest<Preview>('/api/admin/supercups/'+cupId+'/preview');setPreview(data);setChosen(Array(data.size).fill(''));
-   if(data.blockReasons.includes('SUPERCUP_ALREADY_GENERATED')) {
-    setRoundControl(await api.getMatchdayControl(cupId) as SupercupRoundControl);
-   }}
-  catch(err:any){showToast(err.message||'Superkubok ma’lumoti olinmadi','error');}
+  try{
+   const data=await guardedRequest<Preview>('/api/admin/supercups/'+cupId+'/preview');
+   setPreview(data);setChosen(Array(data.size).fill(''));
+   if(data.blockReasons.includes('SUPERCUP_ALREADY_GENERATED')){
+    try { setRoundControl(await api.getMatchdayControl(cupId) as SupercupRoundControl); }
+    catch(err:any) { showToast(err.message||'Yaratilgan Superkubok turini yuklab bo‘lmadi','error'); }
+   }
+  }catch(err:any){showToast(err.message||'Superkubok ma’lumoti olinmadi','error');}
   finally{setLoading(false);}
  };
  useEffect(()=>{void refresh();},[cupId]);
@@ -110,8 +113,8 @@ export const AdminSupercupPanel:React.FC=()=>{
   {preview&&<>
    <p className="text-xs text-slate-300">Format: <strong>{preview.size} klub</strong></p>
    {preview.blockReasons.length>0&&<div className="rounded-xl border border-amber-500/40 p-3 text-xs text-amber-200 space-y-1">
-    <strong>Hozir yaratib bo‘lmaydi:</strong>
-    {preview.blockReasons.map(code=><p key={code}>{labels[code]||code}</p>)}
+    <strong>{preview.blockReasons.includes('SUPERCUP_ALREADY_GENERATED') ? 'Uchrashuvlar avval yaratilgan — quyidagi boshqaruvdan foydalaning:' : 'Hozir yaratib bo‘lmaydi:'}</strong>
+    {preview.blockReasons.map(code=><p key={code}>{labels[code]||code}{code==='SUPERCUP_PARTICIPANTS_ALREADY_REGISTERED' ? ' — eski ishtirokchilar bor, o‘yinlarni yaratishdan oldin ro‘yxatni tekshirish zarur.' : ''}</p>)}
    </div>}
    {preview.canCreate&&<div className="space-y-2">
     <p className="text-xs text-slate-300">Ishtirokchilarni tartib bilan tanlang. {preview.size===2?'Ikki klub bir final o‘ynaydi.':'1–4 va 2–3 yarim finalda uchrashadi.'}</p>
