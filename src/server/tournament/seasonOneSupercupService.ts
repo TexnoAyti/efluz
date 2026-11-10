@@ -86,6 +86,57 @@ export async function getSeasonOneSupercupPreview(id:string):Promise<Preview>{
   existingParticipants:participants.size,existingParticipantClubs,existingFixtureCount:existing.size,
   qualificationPreview,availableClubs};
 }
+/**
+ * Safe one-time recovery for old participant-only Super Cup records.
+ * No live fixture may exist. Copies the original participant records into
+ * immutable archive documents before retiring their active copies atomically.
+ */
+export async function archiveLegacySupercupParticipants(id:string,params:{
+ previewToken:string;confirmation:boolean;adminUserId:string
+}):Promise<{success:true;archived:number;competitionId:string}>{
+ if(!isSeasonOneSupercup(id)||!params.confirmation)
+  throw Error('SUPERCUP_LEGACY_ARCHIVE_CONFIRMATION_REQUIRED');
+ const before=await getSeasonOneSupercupPreview(id);
+ if(before.sourceToken!==params.previewToken||before.existingFixtureCount!==0||
+    before.existingParticipants===0)throw Error('SUPERCUP_LEGACY_ARCHIVE_NOT_READY');
+ const db=getFirestoreDb();
+ const compRef=db.collection(COLLECTIONS.COMPETITIONS).doc(id);
+ const participantCol=db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS);
+ const participants=await participantCol.where('competitionId','==',id).get();
+ const original=participants.docs.filter(doc=>doc.data().seasonId==='season-2026-27')
+  .map(doc=>({id:doc.id,data:doc.data()}));
+ if(original.length!==before.existingParticipants||original.length>30)
+  throw Error('SUPERCUP_LEGACY_ARCHIVE_COUNT_CHANGED');
+ const archive=db.collection('supercup_legacy_participant_archives');
+ const manifestRef=archive.doc(id+'-pre-two-club-format-20261110');
+ const timestamp=new Date().toISOString();
+ await db.runTransaction(async tx=>{
+  const [comp,manifest,...snapshot]=await Promise.all([
+   tx.get(compRef),tx.get(manifestRef),
+   ...original.map(item=>tx.get(participantCol.doc(item.id)))
+  ]);
+  if(!comp.exists||comp.data()?.hasFixtures||manifest.exists)
+   throw Error('SUPERCUP_LEGACY_ARCHIVE_CONFLICT');
+  for(let i=0;i<original.length;i++){
+   if(!snapshot[i].exists||JSON.stringify(snapshot[i].data())!==JSON.stringify(original[i].data))
+    throw Error('SUPERCUP_LEGACY_ARCHIVE_STALE');
+  }
+  for(const item of original){
+   tx.create(archive.doc(id+'-'+item.id),{
+    id:item.id,competitionId:id,seasonId:'season-2026-27',
+    original:item.data,archivedAt:timestamp,archivedBy:params.adminUserId,
+    reason:'legacy-participants-before-confirmed-new-supercup-format'
+   });
+   tx.delete(participantCol.doc(item.id));
+  }
+  tx.create(manifestRef,{competitionId:id,seasonId:'season-2026-27',
+   originalCount:original.length,originalIds:original.map(x=>x.id),
+   archivedAt:timestamp,archivedBy:params.adminUserId
+  });
+ });
+ return {success:true,archived:original.length,competitionId:id};
+}
+
 /** Explicit admin-only apply, idempotent create (never force-delete old matches). */
 export async function createSeasonOneSupercup(id:string,params:{
  previewToken:string;confirmed:boolean;selectedClubIds:string[];adminUserId:string;adminUsername?:string
