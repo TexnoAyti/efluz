@@ -1,5 +1,3 @@
-import { SeasonPreparationCard } from './SeasonPreparationCard';
-import { CURRENT_SEASON_ID, isSeasonLeagueEnabled } from '../lib/seasonParticipationPolicy';
 import React, { useEffect } from 'react';
 import { ArrowRight, Globe2, Moon, Sun } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -8,35 +6,30 @@ import './welcome-screen.css';
 
 const copy = {
   uz: {
-    eyebrow: 'EFOOTBALL HAMJAMIYATI', title: ['Sizning klubingiz.', 'Sizning', 'mavsumingiz.'],
-    description: 'Klub tanlang. O‘ynang. Natijangizni tasdiqlang.', leagues: 'MAVSUM LIGALARI',
-    steps: ['Klubingizni tanlang', 'Raqib bilan o‘ynang', 'Natijani tasdiqlang'],
-    start: 'Boshlash', footer: 'EFL UZ · eFootball hamjamiyati', language: 'Tilni tanlang',
-    light: 'Light rejimga o‘tish', dark: 'Dark rejimga o‘tish',
+    eyebrow: 'EFLUZ · 2-MAVSUM',
+    title: ['Yangi mavsum.', 'Yangi', 'imkoniyatlar.'],
+    description: '2-mavsum uchun klubingizni tanlang va EFL musobaqalariga qo‘shiling.',
+    steps: ['Yevropa yoki Osiyo ligasini tanlang', 'Bo‘sh klubni tanlang', 'Musobaqalarni kuzating va o‘ynang'],
+    start: '2-mavsumga kirish', footer: 'EFLUZ · eFootball hamjamiyati',
+    language: 'Tilni tanlang', light: 'Light rejimga o‘tish', dark: 'Dark rejimga o‘tish',
   },
   ru: {
-    eyebrow: 'СООБЩЕСТВО EFOOTBALL', title: ['Ваш клуб.', 'Ваш', 'сезон.'],
-    description: 'Выберите клуб. Играйте. Подтверждайте результат.', leagues: 'ЛИГИ СЕЗОНА',
-    steps: ['Выберите свой клуб', 'Сыграйте с соперником', 'Подтвердите результат'],
-    start: 'Начать', footer: 'EFL UZ · Сообщество eFootball', language: 'Выберите язык',
-    light: 'Светлая тема', dark: 'Тёмная тема',
+    eyebrow: 'EFLUZ · СЕЗОН 2',
+    title: ['Новый сезон.', 'Новые', 'возможности.'],
+    description: 'Выберите клуб на второй сезон и присоединяйтесь к турнирам EFL.',
+    steps: ['Выберите европейскую или азиатскую лигу', 'Выберите свободный клуб', 'Следите за турнирами и играйте'],
+    start: 'Перейти к сезону 2', footer: 'EFLUZ · Сообщество eFootball',
+    language: 'Выберите язык', light: 'Светлая тема', dark: 'Тёмная тема',
   },
   en: {
-    eyebrow: 'EFOOTBALL COMMUNITY', title: ['Your club.', 'Your', 'season.'],
-    description: 'Choose a club. Play. Confirm your result.', leagues: 'SEASON LEAGUES',
-    steps: ['Choose your club', 'Play your opponent', 'Confirm the result'],
-    start: 'Get started', footer: 'EFL UZ · eFootball community', language: 'Choose language',
-    light: 'Switch to light mode', dark: 'Switch to dark mode',
+    eyebrow: 'EFLUZ · SEASON 2',
+    title: ['New season.', 'New', 'possibilities.'],
+    description: 'Choose your Season 2 club and join EFL competitions.',
+    steps: ['Choose a European or Asian league', 'Pick an available club', 'Follow competitions and play'],
+    start: 'Enter Season 2', footer: 'EFLUZ · eFootball community',
+    language: 'Choose language', light: 'Switch to light mode', dark: 'Switch to dark mode',
   },
 };
-
-const leagues = [
-  { name: 'Premier League', icon: 'premier-league', monochrome: true },
-  { name: 'La Liga', icon: 'la-liga', monochrome: false },
-  { name: 'Serie A', icon: 'serie-a', monochrome: false },
-  { name: 'Bundesliga', icon: 'bundesliga', monochrome: false },
-  { name: 'Ligue 1', icon: 'ligue-1', monochrome: true },
-];
 
 interface WelcomeScreenProps {
   seasonId?: string;
@@ -45,7 +38,7 @@ interface WelcomeScreenProps {
   onStart: () => void;
 }
 
-export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChange, onStart, seasonId = CURRENT_SEASON_ID }) => {
+export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChange, onStart }) => {
   const { language, setLanguage } = useI18n();
   const c = copy[language];
 
@@ -59,7 +52,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
     <section className={`efl-welcome efl-welcome--${theme}`} lang={language} aria-labelledby="welcome-title">
       <div className="welcome-layout">
         <header className="welcome-header">
-          <img className="welcome-brand" src={theme === 'dark' ? '/efluz-logo.png' : '/efluz-logo-light.png'} alt="EFL UZ" width="132" height="46" />
+          <img className="welcome-brand" src={theme === 'dark' ? '/efluz-logo.png' : '/efluz-logo-light.png'} alt="EFLUZ" width="132" height="46" />
           <div className="welcome-controls">
             <button type="button" className="welcome-theme" onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? c.light : c.dark}>
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
@@ -77,24 +70,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
           <p className="welcome-eyebrow">{c.eyebrow}</p>
           <h1 id="welcome-title">{c.title.map((line, index) => <span key={index} className={index === 2 ? 'welcome-accent' : undefined}>{line}</span>)}</h1>
           <p className="welcome-description">{c.description}</p>
-
-          <svg className="welcome-pitch" viewBox="0 0 320 70" fill="none" aria-hidden="true">
-            <path d="M1 1h318v68H1zM160 1v68M1 14h30v42H1M319 14h-30v42h30M1 25h5v20H1M319 25h-5v20h5" />
-            <circle cx="160" cy="35" r="21" />
-          </svg>
-
-          <section className="welcome-leagues" aria-labelledby="welcome-leagues-title">
-            <h2 id="welcome-leagues-title">{c.leagues}</h2>
-            <ul className="welcome-league-icons">
-              {leagues.filter(league => isSeasonLeagueEnabled('league-' + league.icon, seasonId)).map((league) => (
-                <li key={league.icon}>
-                  <img src={`/welcome/${league.icon}.svg`} alt={league.name} className={league.monochrome ? 'welcome-monochrome' : undefined} width="40" height="44" />
-                </li>
-              ))}
-            </ul>
-            {seasonId === CURRENT_SEASON_ID && <SeasonPreparationCard compact />}
-          </section>
-
           <ol className="welcome-steps">
             {c.steps.map((step, index) => <li key={index}><span aria-hidden="true">0{index + 1}</span><span>{step}</span></li>)}
           </ol>
