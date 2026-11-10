@@ -65,3 +65,33 @@
 .efl-welcome button:focus-visible, .efl-welcome select:focus-visible { outline: 2px solid var(--efl-primary); outline-offset: 4px; }
 @media (max-width: 370px) { .efl-welcome .welcome-layout { padding-left: 20px; padding-right: 20px; } }
 @media (prefers-reduced-motion: no-preference) { .efl-welcome .welcome-start { transition: opacity .15s; } .efl-welcome .welcome-start:hover { opacity: .9; } }
+
+/* Season 2 welcome preview uses the existing EFL palette, spacing and controls. */
+.efl-welcome .welcome-asia { margin-top: 20px; }
+.efl-welcome .welcome-asian-icons { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-flow: row; }
+.efl-welcome .welcome-asian-icons li { min-width: 0; }
+.efl-welcome .welcome-season-heading { max-width: 13ch; margin-top: 16px; }
+.efl-welcome .welcome-awards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 32px; }
+.efl-welcome .welcome-award-card { min-height: 200px; padding: 18px 10px; border-radius: 14px; border: 1px solid var(--efl-border); background: var(--efl-surface); display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: center; gap: 8px; }
+.efl-welcome .welcome-award-icon { display: flex; align-items: center; justify-content: center; width: 74px; height: 74px; border-radius: 16px; background: var(--efl-surface-2); }
+.efl-welcome .welcome-award-gold { color: #c58d27; }
+.efl-welcome--dark .welcome-award-gold { color: #f5c66b; }
+.efl-welcome .welcome-award-card strong { color: var(--efl-text); font-size: 15px; }
+.efl-welcome .welcome-award-card p { color: var(--efl-text-2); margin: 0; font-size: 11px; line-height: 1.55; }
+.efl-welcome .welcome-weekly { margin-top: 12px; padding: 15px 16px; border-radius: 14px; background: var(--efl-surface); border: 1px solid var(--efl-border); display: flex; gap: 12px; align-items: center; color: var(--efl-text-2); }
+.efl-welcome .welcome-weekly strong { color: var(--efl-text); font-size: 13px; }
+.efl-welcome .welcome-weekly p { margin: 3px 0 0; font-size: 11px; }
+.efl-welcome .welcome-progress { display: flex; justify-content: center; gap: 6px; margin-bottom: 16px; }
+.efl-welcome .welcome-progress span { height: 5px; width: 21px; border-radius: 6px; background: var(--efl-border); }
+.efl-welcome .welcome-progress span.active { background: var(--efl-primary); width: 31px; }
+.efl-welcome .welcome-actions { display: flex; align-items: stretch; gap: 8px; }
+.efl-welcome .welcome-actions .welcome-start { flex: 1; min-width: 0; }
+.efl-welcome .welcome-actions .welcome-back { display: flex; gap: 7px; align-items: center; justify-content: center; border: 1px solid var(--efl-border); background: var(--efl-surface); color: var(--efl-text); border-radius: 12px; min-height: 54px; padding: 0 13px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+@media (max-width: 370px) {
+ .efl-welcome .welcome-content { margin-top: 20px; }
+ .efl-welcome h1 { font-size: 30px; }
+ .efl-welcome .welcome-pitch { height: 45px; margin: 12px 0; }
+ .efl-welcome .welcome-league-icons li { height: 57px; }
+ .efl-welcome .welcome-asia { margin-top: 14px; }
+ .efl-welcome .welcome-awards { margin-top: 20px; }
+}
