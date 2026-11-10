@@ -14,7 +14,7 @@ import {
   advanceDomesticCupRoundSafe,
 } from '../tournament/domesticCupRoundOps';
 import { DOMESTIC_CUPS, advanceDomesticCupWinnerSafe } from '../tournament/domesticCupService';
-import {getSeasonOneSupercupPreview,createSeasonOneSupercup,controlSeasonOneSupercupRound} from '../tournament/seasonOneSupercupService';
+import {getSeasonOneSupercupPreview,createSeasonOneSupercup,controlSeasonOneSupercupRound,archiveLegacySupercupParticipants} from '../tournament/seasonOneSupercupService';
 import {getSeasonOneEuropeanOverview,replaceSeasonOneEuropeanRoster,finalizeSeasonOneEuropeanManualRoster,publishSeasonOneEuropeanDraw,createSeasonOneEuropeanKnockout,openSeasonOneEuropeanRound,archiveUnplayedLegacyEuropeanDraw} from '../tournament/seasonOneEuropeanOperations';
 import { refreshChangedFixtureReadModel, invalidateFixtureReadModels } from '../readModel/readModelStore';
 
@@ -134,6 +134,18 @@ adminCupOpsRouter.get('/supercups/:supercupId/preview',async(req:Request,res:Res
  }catch(err:any){
   res.status(400).json({error:err.message,code:'SUPERCUP_PREVIEW_FAILED'});
  }
+});
+adminCupOpsRouter.post('/supercups/:supercupId/archive-legacy-participants',async(req:Request,res:Response)=>{
+ if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
+ if(req.body?.confirmation!==true||typeof req.body?.previewToken!=='string'){
+  res.status(400).json({error:'Explicit confirmation and previewToken are required.'});return;
+ }
+ try{
+  res.setHeader('Cache-Control','no-store');
+  res.json(await archiveLegacySupercupParticipants(req.params.supercupId,{
+   confirmation:true,previewToken:req.body.previewToken,adminUserId:req.user!.id
+  }));
+ }catch(err:any){res.status(409).json({error:err.message});}
 });
 adminCupOpsRouter.post('/supercups/:supercupId/create',async(req:Request,res:Response)=>{
  if(!canUseDangerZone(req.user)){res.status(403).json({error:'Global administrator required.'});return;}
