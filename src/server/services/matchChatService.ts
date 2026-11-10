@@ -61,7 +61,14 @@ function view(room:ChatRoom,userId:string):MatchChatView{const opponent=room.par
 
 export async function readMatchChat(kind:MatchChatKind,matchId:string,user:User):Promise<MatchChatView>{
  const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);
- return db.runTransaction(async tx=>{const snap=await tx.get(ref);let room=(snap.exists?snap.data():base) as ChatRoom;room={...room,title:value.title,subtitle:value.subtitle,closed:value.closed,unread:{...(room.unread||{}),[user.id]:0},updatedAt:new Date().toISOString()};tx.set(ref,room);return view(room,user.id);});
+ return db.runTransaction(async tx=>{
+  const snap=await tx.get(ref),previous=(snap.exists?snap.data():base) as ChatRoom;
+  const unread=Number(previous.unread?.[user.id]||0);
+  const needsUpdate=!snap.exists||unread>0||previous.title!==value.title||previous.subtitle!==value.subtitle||previous.closed!==value.closed;
+  if(!needsUpdate)return view(previous,user.id);
+  const room:ChatRoom={...previous,title:value.title,subtitle:value.subtitle,closed:value.closed,unread:{...(previous.unread||{}),[user.id]:0},updatedAt:new Date().toISOString()};
+  tx.set(ref,room);return view(room,user.id);
+ });
 }
 
 export async function sendMatchChatMessage(kind:MatchChatKind,matchId:string,user:User,rawText:unknown):Promise<MatchChatView>{
