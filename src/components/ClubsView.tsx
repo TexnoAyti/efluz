@@ -618,6 +618,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
               const welcomeIcon = EFL_2_DESIGN_ENABLED ? welcomeLeagueIcons[league.id] : undefined;
               const secondSeason = activeSeasonId === EFL_SECOND_SEASON.id;
               const logoOnly = secondSeason && EFL_2_DESIGN_ENABLED;
+              const asianLogo = logoOnly && ['league-uzbekistan-superliga','league-saudi-pro-league','league-j1','league-turkey-super-lig'].includes(league.id);
               const logoUrl = logoOnly ? secondSeasonLeagueLogos[league.id] : welcomeIcon ? `/welcome/${welcomeIcon}.svg` : league.logoUrl;
               const flag =
                 league.country === 'England'
@@ -648,12 +649,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
                       : (logoOnly ? 'opacity-70 hover:opacity-100' : 'bg-[var(--efl-surface)] border-[var(--efl-border)] text-[var(--efl-text-2)] hover:bg-[var(--efl-surface-2)] hover:text-[var(--efl-text)]')
                   }`}
                 >
+                  {asianLogo && <span aria-hidden="true" className="absolute inset-[4px] rounded-xl bg-[#f7f9fd] border border-[#cbd5e1] dark:bg-[#f7f9fd] dark:border-[#aab8ce]" />}
                   {Boolean(logoUrl) && <img
                     src={logoUrl}
                     alt={league.name}
                     loading="lazy"
                     className={logoOnly
-                      ? `block h-[60px] w-[60px] shrink-0 object-contain drop-shadow-sm dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.08)] ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'dark:brightness-0 dark:invert' : ''}`
+                      ? `relative z-10 block h-[60px] w-[60px] shrink-0 object-contain drop-shadow-sm dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.08)] ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'dark:brightness-0 dark:invert' : ''}`
                       : `w-4 h-4 object-contain shrink-0 ${welcomeIcon ? `efl-league-icon ${welcomeIcon === 'premier-league' || welcomeIcon === 'ligue-1' ? 'efl-league-icon-monochrome' : ''}` : 'efl-theme-league-logo'}`}
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
