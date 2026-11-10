@@ -14,6 +14,14 @@ type Preview={
  qualifiers:Array<{clubId:string;reason:string}>;
  pairings:Array<{homeClubId:string;awayClubId:string}>;
  existingParticipants:number;
+ existingParticipantClubs:Array<{id:string;name:string}>;
+ existingFixtureCount:number;
+ qualificationPreview:{
+  ready:boolean;leagueCompleted:boolean;cupFinalConfirmed:boolean;
+  qualifiers:Array<{clubId:string;name:string;reason:string}>;
+  rankingPreview:Array<{clubId:string;name:string;position:number}>;
+  blockReasons:string[];
+ };
  availableClubs:Array<{id:string;name:string}>;
 };
 type SupercupRoundControl={
@@ -112,12 +120,38 @@ export const AdminSupercupPanel:React.FC=()=>{
   </div>
   {preview&&<>
    <p className="text-xs text-slate-300">Format: <strong>{preview.size} klub</strong></p>
+   <section className="rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-3 space-y-2">
+    <h4 className="text-sm font-black text-[var(--efl-text)]">Yo‘llanma oladigan klublar</h4>
+    <p className="text-[11px] text-[var(--efl-text-2)]">
+      Liga: {preview.qualificationPreview.leagueCompleted?'Yakunlangan':'Hali yakunlanmagan'} ·
+      Milliy kubok finali: {preview.qualificationPreview.cupFinalConfirmed?'Tasdiqlangan':'Tasdiqlanmagan'}
+    </p>
+    {preview.qualificationPreview.qualifiers.length>0
+     ? <ol className="space-y-1 text-xs text-[var(--efl-text)]">
+        {preview.qualificationPreview.qualifiers.map((q,i)=><li key={q.clubId}>{i+1}. <strong>{q.name}</strong> · {q.reason}</li>)}
+       </ol>
+     : <p className="text-xs text-amber-600 dark:text-amber-300">Rasmiy yo‘llanmalar uchun liga jadvali va milliy kubok finali tekshiruvdan o‘tishi kerak.</p>}
+    {preview.qualificationPreview.rankingPreview.length>0&&<details className="text-xs text-[var(--efl-text-2)]">
+      <summary className="cursor-pointer font-bold">Liga jadvalidagi hozirgi yetakchilar (kvota tasdiqlangani emas)</summary>
+      {preview.qualificationPreview.rankingPreview.map(q=><p key={q.clubId}>{q.position}. {q.name}</p>)}
+    </details>}
+    {preview.canCreate&&preview.qualificationPreview.qualifiers.length===preview.size&&
+      <button type="button" className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs font-bold text-[var(--efl-text)]"
+       onClick={()=>{setChosen(preview.qualificationPreview.qualifiers.map(q=>q.clubId));setConfirmed(false);}}>
+       Kvota olganlarni tanlashga qo‘shish
+      </button>}
+    {preview.existingParticipantClubs.length>0&&<div className="border-t border-[var(--efl-border)] pt-2 text-xs text-[var(--efl-text-2)]">
+      <strong>Bazada saqlangan eski ishtirokchilar ({preview.existingParticipantClubs.length}):</strong>
+      <p>{preview.existingParticipantClubs.map(q=>q.name).join(', ')}</p>
+      <p>Bu yozuvlar o‘chirilmadi. Ularni xavfsiz moslashtirmasdan qayta turnir yaratish bloklanadi.</p>
+    </div>}
+   </section>
    {preview.blockReasons.length>0&&<div className="rounded-xl border border-amber-500/40 p-3 text-xs text-amber-200 space-y-1">
     <strong>{preview.blockReasons.includes('SUPERCUP_ALREADY_GENERATED') ? 'Uchrashuvlar avval yaratilgan — quyidagi boshqaruvdan foydalaning:' : 'Hozir yaratib bo‘lmaydi:'}</strong>
     {preview.blockReasons.map(code=><p key={code}>{labels[code]||code}{code==='SUPERCUP_PARTICIPANTS_ALREADY_REGISTERED' ? ' — eski ishtirokchilar bor, o‘yinlarni yaratishdan oldin ro‘yxatni tekshirish zarur.' : ''}</p>)}
    </div>}
    {preview.canCreate&&<div className="space-y-2">
-    <p className="text-xs text-slate-300">Ishtirokchilarni tartib bilan tanlang. {preview.size===2?'Ikki klub bir final o‘ynaydi.':'1–4 va 2–3 yarim finalda uchrashadi.'}</p>
+    <p className="text-xs text-slate-300">Qo‘lda tanlash ham mavjud. Ishtirokchilarni tartib bilan tanlang. {preview.size===2?'Ikki klub bir final o‘ynaydi.':'1–4 va 2–3 yarim finalda uchrashadi.'}</p>
     {chosen.map((id,i)=><label key={i} className="flex items-center gap-3 text-xs text-slate-200">
      <span className="w-16">{i+1}-klub</span>
      <select value={id} onChange={e=>{setChosen(old=>old.map((v,j)=>j===i?e.target.value:v));setConfirmed(false);}}
