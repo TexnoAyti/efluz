@@ -450,4 +450,15 @@
 .match-chat-quick{max-width:100%;touch-action:pan-x}
 .match-chat-quick button{max-width:min(70vw,230px);overflow:hidden;text-overflow:ellipsis}
 .match-chat-messages{-webkit-overflow-scrolling:touch}
+.match-chat-quick{background:var(--efl-surface,#fff);color:var(--efl-text,#111827)}
+.match-chat-compose{background:var(--efl-surface,#fff)}
+/* Full-height mobile chat: message list flexes, composer stays at the bottom. */
+@media(max-width:639px){
+ .match-chat-backdrop{top:var(--match-chat-viewport-top,0px);bottom:auto;height:var(--match-chat-viewport-height,100dvh);min-height:0;padding-top:0;align-items:stretch}
+ .match-chat-sheet{width:100%;height:100%;max-height:none;min-height:0;margin:0;border-radius:0;border-left:0;border-right:0;border-bottom:0}
+ .match-chat-telegram .match-chat-header{padding-top:max(64px,env(safe-area-inset-top))}
+ .match-chat-keyboard-open .match-chat-header{padding-top:max(12px,env(safe-area-inset-top))}
+ .match-chat-compose{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+ .match-chat-keyboard-open .match-chat-compose{padding-bottom:10px}
+}
 @media(min-width:640px){.match-chat-telegram .match-chat-header{padding-top:10px}}

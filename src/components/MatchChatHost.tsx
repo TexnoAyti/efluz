@@ -16,9 +16,12 @@ export function MatchChatHost(){
  // Keep the composer visible when the native keyboard opens, including Android WebView.
  useEffect(()=>{if(!target)return;const viewport=window.visualViewport;
   const sync=()=>{const element=backdrop.current;if(!element)return;
-   const height=viewport?.height||window.innerHeight;
+   const keyboardOpen=Boolean(viewport&&window.innerHeight-viewport.height>120);
+   // On Android Telegram, visualViewport can be shorter even without the keyboard.
+   const height=keyboardOpen?viewport!.height:window.innerHeight;
    element.style.setProperty('--match-chat-viewport-height',Math.round(height)+'px');
-   element.classList.toggle('match-chat-keyboard-open',Boolean(viewport&&window.innerHeight-height>120));
+   element.style.setProperty('--match-chat-viewport-top',Math.round(keyboardOpen?(viewport!.offsetTop||0):0)+'px');
+   element.classList.toggle('match-chat-keyboard-open',keyboardOpen);
   };
   sync();viewport?.addEventListener('resize',sync);window.addEventListener('resize',sync);
   return()=>{viewport?.removeEventListener('resize',sync);window.removeEventListener('resize',sync);};
