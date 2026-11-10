@@ -24,8 +24,13 @@ function AwardCard({ award, language }: { award: ProfileAward; language: Languag
     GOLDEN_BALL: 'Золотой мяч', MOST_WINS: 'Больше всего побед', MOST_GOALS: 'Больше всего голов', BEST_DEFENCE: 'Лучшая защита', LONGEST_UNBEATEN: 'Самая длинная серия без поражений', LONGEST_WIN_STREAK: 'Самая длинная победная серия',
   } : {};
   const units: Record<string, string> = language === 'uz' ? { winner: 'sohibi', wins: 'g‘alaba', goals: 'gol', conceded: 'gol o‘tkazildi', matches: 'o‘yin' } : language === 'ru' ? { winner: 'лауреат', wins: 'побед', goals: 'голов', conceded: 'пропущено', matches: 'матчей' } : {};
+  const trophyImage = award.id === 'GOLDEN_BALL' ? '/welcome-awards/golden-ball-photo.png'
+    : award.id === 'MOST_GOALS' || award.id === 'GOLDEN_BOOT' ? '/welcome-awards/golden-boot-photo.png'
+    : award.id === 'PLAYER_OF_WEEK' || award.id === 'WEEKLY_MVP' || award.id === 'MOTM' ? '/welcome-awards/weekly-motm-photo.png' : null;
   return <article className="efl-honour-award">
-    <div className="efl-honour-award-icon"><Medal aria-hidden="true" /></div>
+    <div className="efl-honour-award-icon">{trophyImage
+      ? <img src={trophyImage} alt="" className="efl-honour-award-photo" />
+      : <Medal aria-hidden="true" />}</div>
     <div className="efl-honour-award-copy">
       <div className="efl-honour-award-topline"><span>{seasonLabel(award.seasonId)}</span><strong>{award.value} {units[award.unit] || award.unit}</strong></div>
       <h3>{labels[award.id] || award.label}</h3>
