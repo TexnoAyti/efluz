@@ -137,6 +137,150 @@ export async function archiveLegacySupercupParticipants(id:string,params:{
  return {success:true,archived:original.length,competitionId:id};
 }
 
+/**
+ * Reset all four season-one Supercups for a fresh, manual admin start.
+ * Never silently delete results. Archive original documents transactionally.
+ * Reject if a game was played or has linked submissions/disputes/chat.
+ * Triggered only by the owner-admin reset route and explicit confirmation.
+ */
+export async function resetAllSeasonOneSupercups(params:{
+ confirmation:boolean;adminUserId:string;expectedSignature:string
+}):Promise<{success:true;reset:string[];archivedFixtures:number;archivedParticipants:number}>{
+ if(!params.confirmation)throw Error('SUPERCUP_RESET_CONFIRMATION_REQUIRED');
+ const ids=Object.keys(SEASON_ONE_SUPERCUPS);
+ const db=getFirestoreDb();
+ const collections=[COLLECTIONS.FIXTURES,COLLECTIONS.COMPETITION_PARTICIPANTS,COLLECTIONS.MATCHDAY_LOCKS];
+ const entries=await Promise.all(ids.map(async id=>{
+  const [competition,fixtures,participants,locks]=await Promise.all([
+   db.collection(COLLECTIONS.COMPETITIONS).doc(id).get(),
+   db.collection(COLLECTIONS.FIXTURES).where('competitionId','==',id).get(),
+   db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS).where('competitionId','==',id).get(),
+   db.collection(COLLECTIONS.MATCHDAY_LOCKS).where('competitionId','==',id).get(),
+  ]);
+  if(!competition.exists||competition.data()?.type!=='SUPER_CUP'||
+     competition.data()?.seasonId!=='season-2026-27')
+   throw Error('SUPERCUP_RESET_CATALOG_INCOMPLETE:'+id);
+  const items=[fixtures,participants,locks].flatMap((snap,index)=>
+   snap.docs.filter(d=>d.data().seasonId==='season-2026-27').map(d=>({
+    collection:collections[index],id:d.id,data:d.data() as Row
+   })));
+  const played=items.filter(item=>item.collection===COLLECTIONS.FIXTURES)
+   .some(item=>{
+    const d=item.data;
+    return !['SCHEDULED','PENDING'].includes(String(d.status||'').toUpperCase()) ||
+     [d.homeScore,d.awayScore,d.homeExtraTimeScore,d.awayExtraTimeScore,
+      d.homePenaltyScore,d.awayPenaltyScore,d.winnerClubId,d.resultConfirmedAt]
+      .some(value=>value!==null&&value!==undefined);
+   });
+  if(played)throw Error('SUPERCUP_RESET_PLAYED_MATCHES_FOUND:'+id);
+  return {id,competition:competition.data() as Row,items};
+ }));
+ const signature=fingerprint(entries.map(e=>({
+  id:e.id,competition:e.competition,
+  items:e.items.map(i=>[i.collection,i.id,i.data]).sort((a,b)=>String(a[1]).localeCompare(String(b[1])))
+ })));
+ if(params.expectedSignature!==signature)throw Error('SUPERCUP_RESET_PREVIEW_CHANGED');
+ const fixtureIds=entries.flatMap(e=>e.items.filter(i=>i.collection===COLLECTIONS.FIXTURES).map(i=>i.id));
+ for(const name of [COLLECTIONS.RESULT_SUBMISSIONS,COLLECTIONS.DISPUTES,
+   COLLECTIONS.MATCH_CHAT_ROOMS,'durable_fixture_overrides']){
+  const col=db.collection(name);
+  for(const id of ids){
+   if(!(await col.where('competitionId','==',id).limit(1).get()).empty)
+    throw Error('SUPERCUP_RESET_LINKED_RECORDS_FOUND:'+name);
+  }
+  for(let i=0;i<fixtureIds.length;i+=30){
+   if(!(await col.where('fixtureId','in',fixtureIds.slice(i,i+30)).limit(1).get()).empty)
+    throw Error('SUPERCUP_RESET_LINKED_RECORDS_FOUND:'+name);
+  }
+ }
+ const archive=db.collection('supercup_full_reset_archives');
+ const manifest=archive.doc('season-2026-27-reset-20261110');
+ const now=new Date().toISOString();
+ await db.runTransaction(async tx=>{
+  const refs=entries.flatMap(e=>[
+   db.collection(COLLECTIONS.COMPETITIONS).doc(e.id),
+   ...e.items.map(i=>db.collection(i.collection).doc(i.id))
+  ]);
+  const [existingManifest,...latest]=await Promise.all([
+   tx.get(manifest),...refs.map(ref=>tx.get(ref))
+  ]);
+  if(existingManifest.exists)throw Error('SUPERCUP_RESET_ALREADY_APPLIED');
+  let cursor=0;
+  for(const entry of entries){
+   const currentCompetition=latest[cursor++];
+   if(!currentCompetition.exists||JSON.stringify(currentCompetition.data())!==JSON.stringify(entry.competition))
+    throw Error('SUPERCUP_RESET_COMPETITION_CHANGED:'+entry.id);
+   for(const item of entry.items){
+    const doc=latest[cursor++];
+    if(!doc.exists||JSON.stringify(doc.data())!==JSON.stringify(item.data))
+     throw Error('SUPERCUP_RESET_ITEMS_CHANGED:'+item.id);
+   }
+  }
+  for(const entry of entries){
+   const compRef=db.collection(COLLECTIONS.COMPETITIONS).doc(entry.id);
+   tx.create(archive.doc('competition-'+entry.id),{
+    original:entry.competition,collection:COLLECTIONS.COMPETITIONS,
+    originalId:entry.id,archivedAt:now,actor:params.adminUserId
+   });
+   tx.update(compRef,{
+    status:'upcoming',hasFixtures:false,fixtureCount:0,fixturesCount:0,
+    generationStatus:'not-generated',currentMatchday:1,totalMatchdays:entry.id==='comp-supercopa-espana-2026'?2:1,
+    isMatchdayOpen:false,updatedAt:now
+   });
+   for(const item of entry.items){
+    const key=item.collection+'-'+item.id;
+    tx.create(archive.doc(key),{
+     original:item.data,collection:item.collection,originalId:item.id,
+     competitionId:entry.id,archivedAt:now,actor:params.adminUserId
+    });
+    tx.delete(db.collection(item.collection).doc(item.id));
+   }
+  }
+  tx.create(manifest,{
+   seasonId:'season-2026-27',competitionIds:ids,archivedAt:now,
+   actor:params.adminUserId,signature,
+   fixtureCount:fixtureIds.length,
+   participantCount:entries.reduce((total,e)=>total+e.items.filter(i=>i.collection===COLLECTIONS.COMPETITION_PARTICIPANTS).length,0)
+  });
+ });
+ const {invalidateFixtureReadModels,invalidateCompetitionReadModels}=await import('../readModel/readModelStore');
+ await Promise.all(ids.map(id=>invalidateFixtureReadModels(id,'season-2026-27')));
+ await invalidateCompetitionReadModels('season-2026-27');
+ return {
+  success:true,reset:ids,archivedFixtures:fixtureIds.length,
+  archivedParticipants:entries.reduce((total,e)=>total+e.items.filter(i=>i.collection===COLLECTIONS.COMPETITION_PARTICIPANTS).length,0)
+ };
+}
+
+/** Read-only checksum required by the owner-admin reset confirmation. */
+export async function previewAllSupercupReset(){
+ const db=getFirestoreDb(),ids=Object.keys(SEASON_ONE_SUPERCUPS);
+ const collections=[COLLECTIONS.FIXTURES,COLLECTIONS.COMPETITION_PARTICIPANTS,COLLECTIONS.MATCHDAY_LOCKS];
+ const entries=await Promise.all(ids.map(async id=>{
+  const [comp,...snapshots]=await Promise.all([
+   db.collection(COLLECTIONS.COMPETITIONS).doc(id).get(),
+   ...collections.map(name=>db.collection(name).where('competitionId','==',id).get())
+  ]);
+  return {id,competition:comp.data(),items:snapshots.flatMap((snapshot,index)=>
+   snapshot.docs.filter(d=>d.data().seasonId==='season-2026-27').map(d=>({
+    collection:collections[index],id:d.id,data:d.data()
+   })))};
+ }));
+ const signature=fingerprint(entries.map(e=>({
+  id:e.id,competition:e.competition,
+  items:e.items.map(i=>[i.collection,i.id,i.data]).sort((a,b)=>String(a[1]).localeCompare(String(b[1])))
+ })));
+ return {signature,competitions:entries.map(e=>({
+  competitionId:e.id,fixtures:e.items.filter(i=>i.collection===COLLECTIONS.FIXTURES).length,
+  participants:e.items.filter(i=>i.collection===COLLECTIONS.COMPETITION_PARTICIPANTS).length,
+  locks:e.items.filter(i=>i.collection===COLLECTIONS.MATCHDAY_LOCKS).length,
+  hasResult:e.items.some(i=>i.collection===COLLECTIONS.FIXTURES&&(
+   !['SCHEDULED','PENDING'].includes(String(i.data.status||'').toUpperCase())||
+   [i.data.homeScore,i.data.awayScore,i.data.winnerClubId,i.data.resultConfirmedAt]
+    .some(v=>v!=null)))
+ }))};
+}
+
 /** Explicit admin-only apply, idempotent create (never force-delete old matches). */
 export async function createSeasonOneSupercup(id:string,params:{
  previewToken:string;confirmed:boolean;selectedClubIds:string[];adminUserId:string;adminUsername?:string
