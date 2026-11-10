@@ -220,11 +220,6 @@ const AppContent: React.FC = () => {
     }
   }, [canUseGlobalAdminTools, activeTab]);
 
-  // Preview branch only. Protected by Vercel SSO; no production alias or database writes.
-  if (window.location.pathname === '/welcome-preview') {
-    return <WelcomeScreen seasonId={activeSeasonId} theme={theme} onThemeChange={changeTheme} onStart={() => window.location.assign('/')} />;
-  }
-
   if (isLoading) return <AppLoading mode="screen" />;
 
   if(isAndroidApp&&(authStatus==='AUTH_ANONYMOUS'||authStatus==='AUTH_ERROR'))return <AndroidLoginView/>;
