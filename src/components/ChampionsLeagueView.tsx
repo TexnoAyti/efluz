@@ -471,7 +471,9 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                         <p className="text-slate-500 efl-theme-text-2">{t.europeanQualificationHint}</p>
                       </div>
                     ) : (
-                      <p>{t.matchesBeingScheduled}</p>
+                      <p>{participants.length===32&&!drawPublished
+                        ? '32 klub ro‘yxati mavjud. Rasmiy qur’a admin tomonidan yaratilgach, o‘yinlar shu yerda ko‘rinadi.'
+                        : t.matchesBeingScheduled}</p>
                     )}
                   </div>
                 ) : (
@@ -684,7 +686,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               <Sparkles className="w-8 h-8 text-indigo-400 efl-theme-indigo mx-auto" />
               <h4 className="text-sm font-bold text-white efl-theme-text">{drawPublished ? 'Knockout bosqichi kutilmoqda' : 'Yevropa qur’asi kutilmoqda'}</h4>
               <p className="text-xs text-slate-300 efl-theme-text-2 max-w-md mx-auto">
-                {drawPublished ? '32 jamoalik Liga bosqichi yakunlangach, 1–8-o‘rinlar Nimchorak finalga, 9–24-o‘rinlar Play-offga yo‘l oladi.' : 'Ichki ligalar yakunlanib, yakuniy saralash tasdiqlangach va qur’a yaratilgach o‘yinlar chiqadi.'}
+                {drawPublished ? '32 jamoalik Liga bosqichi yakunlangach, 1–8-o‘rinlar Nimchorak finalga, 9–24-o‘rinlar Play-offga yo‘l oladi.' : (participants.length===32 ? '32 klub ro‘yxati tayyor. Admin rasmiy qur’ani yaratgach, uchrashuvlar shu yerda ochiladi.' : 'Saralash tasdiqlanib, 32 klub aniqlangach va qur’a yaratilgach o‘yinlar chiqadi.')}
               </p>
               {drawPublished && canUseDangerZone(user) && (
                 <button
