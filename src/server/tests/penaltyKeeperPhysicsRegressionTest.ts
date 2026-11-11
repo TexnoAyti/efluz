@@ -25,6 +25,11 @@ for(const [width,height] of [[320,568],[360,640],[390,844],[430,932],[844,390]])
  const goal=vm.runInContext('goalCoords()',sandbox);
  assert.ok(goal.x>=0&&goal.y>=0&&goal.x+goal.w<=width&&goal.y+goal.h<=height,'Goal fits visible viewport');
  assert.ok(goal.w/goal.h>2.5&&goal.w/goal.h<4,'Goal maintains football proportions');
+ assert.ok(goal.y+goal.h<height,'Entire goal remains in viewport');
+ if(height>600&&width<height){
+   assert.ok(goal.y>=height*.33,'Goal is not distant at the top on portrait screens');
+   assert.ok(goal.w>=width*.90,'Goal occupies enough screen width to feel close');
+ }
  assert.ok(vm.runInContext('ballStartY()',sandbox)<height-95,'Ball is above scoreboard');
 }
 sandbox.W=390;sandbox.H=844;
@@ -50,4 +55,10 @@ assert.equal(contact(make(.80,bodyY),390,844),false,'Ball outside keeper reach s
 assert.equal(contact(make(keeperX,bodyY,{out:true}),390,844),false,'Out ball is never counted as save');
 assert.match(html,/if\(s\.resultT>\.43\)/,'New shot ready after shorter result pause');
 assert.match(html,/height:100dvh;min-height:0;max-height:none;max-width:none/,'Fullscreen shell does not retain portrait size cap');
-console.log('PASS penalty: real finger target, sub-second shot, short reload, geometric goal, real Munfiz saves and fullscreen bounds');
+const host=fs.readFileSync('src/components/MatchChatHost.tsx','utf8');
+const css=fs.readFileSync('src/index.css','utf8');
+assert.match(host,/gameOpen&&chat\?\.matchInfo&&createPortal\(<div className="match-chat-game-layer"/,'Penalty is portaled outside the chat sheet');
+assert.match(host,/<\/div>,document\.body\)\}/,'Portal mounts at document.body');
+assert.match(css,/body > \.match-chat-game-layer\s*\{/,'Portal gets body-level fullscreen rules');
+assert.match(css,/height:var\(--efl-viewport-height,100dvh\)!important/,'Telegram viewport controls the full-height overlay');
+console.log('PASS penalty: closer goal, full-body fullscreen portal, shot targeting and saves');
