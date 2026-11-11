@@ -10,8 +10,13 @@ export function requestMaintenance(workers = {
   recover: scheduleMutationReconciliation,
 }): RequestHandler {
   return (req, res, next) => {
-    const mutation = ['POST','PUT','PATCH','DELETE'].includes(req.method);
-    const notificationPoll = req.method === 'GET' && req.originalUrl.split('?')[0].replace(/\/+$/, '') === '/api/me/notifications';
+    const path = req.originalUrl.split('?')[0].replace(/\/+$/, '');
+    // An authenticated login is identity establishment, not a club mutation.
+    // Starting membership/tag and notification workers on every login can
+    // multiply database traffic precisely while PostgREST is degraded.
+    const identityRequest = path.startsWith('/api/auth/');
+    const mutation = ['POST','PUT','PATCH','DELETE'].includes(req.method) && !identityRequest;
+    const notificationPoll = req.method === 'GET' && path === '/api/me/notifications';
     if (mutation || notificationPoll) res.once('finish', () => {
       if (res.statusCode >= 400) return;
       if (mutation) workers.tags();
