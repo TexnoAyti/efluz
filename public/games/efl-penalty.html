@@ -34,7 +34,7 @@
    520/820px game cap or 520px minimum height on compact phones. */
 html,body{width:100%;height:100%;overflow:hidden}
 .shell{width:100%;height:100%;height:100dvh;min-height:0;max-height:none;max-width:none}
-@supports(height:100svh){.shell{height:100svh}}
+/* The dynamically resized iframe is authoritative; svh can remain collapsed. */
 @media(max-height:640px){
  .hud{padding-top:6px!important}
  .match-banner{top:56px!important;font-size:9px}
