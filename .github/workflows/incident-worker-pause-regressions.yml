@@ -31,5 +31,10 @@ jobs:
             for(const path of paths){if(!fs.readFileSync(path,'utf8').includes('DISABLE_BACKGROUND_WORKERS'))throw Error('Missing pause guard: '+path)}
             console.log('Worker routes and schedules honor incident pause guard');
           "
-      - name: Type check
-        run: bun run lint
+      - name: Production build and startup self-check
+        env:
+          NODE_ENV: test
+          FIREBASE_FORCE_LOCAL_FALLBACK: 'true'
+        run: |
+          bun run build
+          node scripts/verify-startup-build.mjs
