@@ -4,6 +4,8 @@ import { getFirebaseStatus, getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getQueueStats, processPendingMutations } from '../sync/mutationQueue';
+import { reconcileDurableMutations } from '../sync/scheduleReconciliation';
+import { workerLaneEnabled, workerRecoveryMode } from '../services/backgroundWorkerRecovery';
 
 export const healthRouter = Router();
 
@@ -85,17 +87,30 @@ healthRouter.get('/resilience', requireAdmin, (req: Request, res: Response) => {
 });
 
 healthRouter.post('/sync', requireAdmin, async (req: Request, res: Response) => {
+  // This admin endpoint must not bypass the global incident pause or revive
+  // the legacy Firestore outbox after the PostgreSQL cutover.
+  if (!workerLaneEnabled('reconciliation')) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(423).json({
+      success: false,
+      code: 'RECONCILIATION_PAUSED',
+      recoveryMode: workerRecoveryMode(),
+    });
+    return;
+  }
   try {
-    const result = await processPendingMutations();
+    const result = process.env.DATABASE_PROVIDER === 'supabase'
+      ? await reconcileDurableMutations()
+      : await processPendingMutations();
     res.status(200).json({
       success: true,
       result,
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {
-    res.status(500).json({
+    res.status(503).json({
       success: false,
-      error: err.message,
+      code: 'RECONCILIATION_UNAVAILABLE',
     });
   }
 });
