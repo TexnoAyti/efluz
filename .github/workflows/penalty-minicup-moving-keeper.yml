@@ -2,7 +2,7 @@ name: Fast responsive penalty and fullscreen regression
 on:
   push:
     branches:
-      - fix/penalty-close-goal-portal-fullscreen-20261111
+      - fix/penalty-video-proportions-header-20261111
 permissions:
   contents: read
 jobs:
