@@ -550,3 +550,31 @@
   width:100%!important;min-height:0;height:100%;
 }
 .match-chat-game-top{padding-top:max(8px,env(safe-area-inset-top,0px));}
+
+/* The game is a separate React portal (a body child), not a descendant
+   of the animated/width-limited match-chat sheet.  Its dimensions follow
+   the visible Telegram WebView instead of the 460px chat dialog. */
+body > .match-chat-game-layer {
+  position:fixed!important;
+  z-index:500!important;
+  inset:auto 0 auto 0!important;
+  top:var(--efl-viewport-top,0px)!important;
+  width:100%!important;
+  height:var(--efl-viewport-height,100dvh)!important;
+  min-height:0!important;
+  max-width:none!important;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  background:#080c14;
+}
+body > .match-chat-game-layer > iframe {
+  flex:1 1 auto;
+  min-height:0;
+  height:100%;
+  width:100%;
+}
+body > .match-chat-game-layer .match-chat-game-top {
+  flex:0 0 auto;
+  padding-top:max(8px,var(--safe-top,env(safe-area-inset-top,0px)));
+}

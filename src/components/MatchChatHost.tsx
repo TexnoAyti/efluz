@@ -127,13 +127,13 @@ export function MatchChatHost(){
       <button className="match-chat-send" disabled={busy||!text.trim()||!chat?.canSend} onClick={()=>void send()} aria-label="Xabarni yuborish">{busy?<LoaderCircle size={19} className="animate-spin"/>:<Send size={19}/>}</button>
     </>}
    </footer>
-   {gameOpen&&chat?.matchInfo&&<div className="match-chat-game-layer" role="dialog" aria-modal="true" aria-label="EFL Penalti">
+   {gameOpen&&chat?.matchInfo&&createPortal(<div className="match-chat-game-layer" role="dialog" aria-modal="true" aria-label="EFL Penalti">
      <div className="match-chat-game-top"><strong>⚽ EFL PENALTY</strong><span>Mashg‘ulot · rasmiy natija o‘zgarmaydi</span><button type="button" onClick={closeGame} aria-label="O‘yinni yopish"><X size={21}/></button></div>
      <iframe title="EFL Penalti — Munfiz" src="/games/efl-penalty.html" sandbox="allow-scripts allow-same-origin" onLoad={event=>{
        const f=chat.matchInfo!;
        event.currentTarget.contentWindow?.postMessage({type:'EFL_PENALTY_CURRENT_FIXTURE',version:1,fixture:{id:chat.matchId,home:f.homeName,away:f.awayName,homeLogo:f.homeLogoUrl,awayLogo:f.awayLogoUrl,round:f.matchday},side:f.viewerSide==='away'?'away':'home'},window.location.origin);
      }}/>
-   </div>}
+   </div>,document.body)}
   </section>
  </div>,document.body);
 }
