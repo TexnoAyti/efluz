@@ -1,8 +1,8 @@
-name: Mini Cup keeper mechanics regression
+name: Fast responsive penalty and fullscreen regression
 on:
   push:
     branches:
-      - feat/penalty-moving-keeper-minicup-20261111
+      - fix/penalty-fast-aim-goal-fullscreen-20261111
 permissions:
   contents: read
 jobs:
@@ -17,7 +17,7 @@ jobs:
         run: npm install -g bun@1.3.3
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Keeper movement regression
+      - name: Finger target, keeper saves and mobile viewport regression
         env:
           NODE_ENV: test
           FIREBASE_FORCE_LOCAL_FALLBACK: 'true'
