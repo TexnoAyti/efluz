@@ -1,3 +1,4 @@
+import { workerLaneEnabled } from './backgroundWorkerRecovery';
 import {writeURoundSummaries,processURoundSummary,sweepURoundSummaries} from './uzeflifeRoundSummary';
 import {NotificationOutboxCursor} from './notificationOutboxCursor';
 import {persistLiveUserNotification,publishLiveUserNotifications} from './liveNotifications';
@@ -140,7 +141,7 @@ export async function prepareUNotifications(){
  ]);
 }
 export function scheduleUNotices(hop=0){
- if(process.env.DISABLE_BACKGROUND_WORKERS==='true')return;
+ if(!workerLaneEnabled('uzeflife'))return;
  if(process.env.VERCEL!=='1'&&!process.env.K_SERVICE)return;
  const task=(async()=>{
   const queue=await import('./telegramNotificationQueue');
