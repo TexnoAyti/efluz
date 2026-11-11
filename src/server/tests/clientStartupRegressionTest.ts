@@ -135,6 +135,7 @@ try {
     failedGetCount++;
     return new Response(JSON.stringify({error:'DATABASE_TEMPORARILY_UNAVAILABLE'}), {status:503});
   }) as typeof fetch;
+  invalidateClientCache('/api/me');
   await assert.rejects(api.getMe(season.id, true), (error:any) => error.httpStatus === 503);
   assert.equal(failedGetCount, 1, 'An already-failed database GET must not fan out into another request');
   // Headers alone do not mean the response finished: a stalled body must abort.
