@@ -26,9 +26,11 @@ for(const [width,height] of [[320,568],[360,640],[390,844],[430,932],[844,390]])
  assert.ok(goal.x>=0&&goal.y>=0&&goal.x+goal.w<=width&&goal.y+goal.h<=height,'Goal fits visible viewport');
  assert.ok(goal.w/goal.h>2.5&&goal.w/goal.h<4,'Goal maintains football proportions');
  assert.ok(goal.y+goal.h<height,'Entire goal remains in viewport');
+ assert.ok(goal.x>=width*.055,'Left goal post and perspective remain visible');
+ assert.ok(goal.x+goal.w<=width*.945,'Right goal post and perspective remain visible');
  if(height>600&&width<height){
    assert.ok(goal.y>=height*.33,'Goal is not distant at the top on portrait screens');
-   assert.ok(goal.w>=width*.90,'Goal occupies enough screen width to feel close');
+   assert.ok(goal.w>=width*.79,'Goal is framed with visible side margins');
  }
  assert.ok(vm.runInContext('ballStartY()',sandbox)<height-95,'Ball is above scoreboard');
 }

@@ -578,3 +578,14 @@ body > .match-chat-game-layer .match-chat-game-top {
   flex:0 0 auto;
   padding-top:max(8px,var(--safe-top,env(safe-area-inset-top,0px)));
 }
+
+/* In Telegram the native Close toolbar is already present. Keep our fallback
+   exit control but do not spend another tall row on duplicate details. */
+body > .match-chat-game-layer .match-chat-game-top{
+  min-height:40px;
+  padding:5px 12px;
+  padding-top:max(5px,var(--safe-top,0px));
+}
+body > .match-chat-game-layer .match-chat-game-top span{display:none}
+body > .match-chat-game-layer .match-chat-game-top strong{font-size:11px}
+body > .match-chat-game-layer .match-chat-game-top button{width:30px;height:30px}
