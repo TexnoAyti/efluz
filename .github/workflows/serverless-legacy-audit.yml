@@ -1,0 +1,37 @@
+name: Serverless legacy-dependency audit
+on:
+  push:
+    branches:
+      - audit/serverless-legacy-dependencies-20261111
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Bun
+        run: npm install -g bun@1.3.3
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Inventory legacy code without database access
+        run: node scripts/audit-serverless-legacy.mjs
+      - name: Verify guarded admin sync and existing worker boundaries
+        env:
+          NODE_ENV: test
+          FIREBASE_FORCE_LOCAL_FALLBACK: 'true'
+          DISABLE_BACKGROUND_WORKERS: 'true'
+        run: |
+          node scripts/run-isolated-test.mjs src/server/tests/serverlessLegacySyncSafetyRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/serverlessRecoveryLanesRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/requestMaintenanceRegressionTest.ts
+      - name: Production bundle build
+        env:
+          NODE_ENV: test
+          FIREBASE_FORCE_LOCAL_FALLBACK: 'true'
+        run: |
+          bun run build
+          node scripts/verify-startup-build.mjs
