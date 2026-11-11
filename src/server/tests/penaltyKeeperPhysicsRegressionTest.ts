@@ -30,8 +30,6 @@ for(const [width,height] of [[320,568],[360,640],[390,844],[430,932],[844,390]])
 sandbox.W=390;sandbox.H=844;
 const g=vm.runInContext('goalCoords()',sandbox);
 const releaseX=g.x+g.w*.64,releaseY=g.y+g.h*.42;
-vm.runInContext('tryShot(195,670,releaseX,releaseY)',vm.createContext({...sandbox,releaseX,releaseY}));
-// The actual game state is checked separately to avoid cross-realm lexical scope.
 vm.runInContext('tryShot(195,670,releaseX,releaseY)',Object.assign(sandbox,{releaseX,releaseY}));
 const shot=sandbox.shot;
 assert.ok(shot,'Upward swipe fires');
