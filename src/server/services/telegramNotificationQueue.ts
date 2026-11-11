@@ -1,3 +1,4 @@
+import { workerLaneEnabled, workerRecoveryBatch } from './backgroundWorkerRecovery';
 import {getPostgresNotificationRecipient} from './postgresNotificationRecipients';
 import {getNotificationStore} from './postgresNotificationStore';
 import { trackFirestoreRead } from '../firebase/firestoreStore';
@@ -153,7 +154,7 @@ export async function drainNotificationQueue(options: {
 } = {}): Promise<void> {
   // Emergency free-tier protection: pause background Telegram draining while
   // Supabase is I/O-throttled. Durable jobs remain in Redis for later recovery.
-  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
+  if (!workerLaneEnabled('notifications')) return;
   if (process.env.MIGRATION_WRITE_FREEZE === 'true') return;
   // The preview uses a copied database, but the Redis notification queue is live.
   if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return;
@@ -163,7 +164,7 @@ export async function drainNotificationQueue(options: {
   const deadline = Math.min(options.deadline ?? Date.now() + DRAIN_BUDGET_MS,
     (getDeadline()?.getTime() ?? Infinity) - 15000);
   while (Date.now() + 12000 < deadline) {
-    const result = await processNotificationQueue(25, deadline - 12000);
+    const result = await processNotificationQueue(workerRecoveryBatch(), deadline - 12000);
     // The active lock owner is responsible for continuation.
     if (result.locked) return;
     const state = await pendingQueueState();
@@ -185,7 +186,7 @@ export async function drainNotificationQueue(options: {
 }
 
 export async function triggerNotificationContinuation(hop: number): Promise<void> {
-  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
+  if (!workerLaneEnabled('notifications')) return;
   if (process.env.VERCEL === '1') {
     // Use only Vercel-provided project/deployment hosts, never a request Host.
     // Production uses the public production domain; protected previews may need
@@ -209,7 +210,7 @@ export async function triggerNotificationContinuation(hop: number): Promise<void
 }
 
 export function scheduleNotificationQueueDrain(hop = 0): void {
-  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
+  if (!workerLaneEnabled('notifications')) return;
   if (process.env.VERCEL !== '1' && !process.env.K_SERVICE) return;
   const work = drainNotificationQueue({ hop }).catch(error => {
     console.warn('[NOTIF_QUEUE] Drain interrupted; durable jobs retained for recovery:', error?.message || error);
