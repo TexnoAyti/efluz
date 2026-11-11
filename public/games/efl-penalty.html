@@ -217,15 +217,26 @@ function drawMunfiz(xnorm,pose='idle',progress=0,dir=1){
  else if(pose==='recover')frameIndex=p<.6?7:0;
  const img=munfizFrames[frameIndex];
  // Takeoff, flight and landing are distinct phases. No teleporting to ball.
- const takeoff=diving?Math.sin(Math.PI*Math.min(1,p))*.038*H:0;
+ const takeoff=diving?Math.sin(Math.PI*Math.min(1,p))*.060*H:0;
  const fall=pose==='save'?Math.max(0,p-.55)*H*.025:0;
- const tilt=diving?dir*(p<.24?.09:p<.72?.22:.13):pose==='sad'?.03:Math.sin(frame*1.5)*.007;
+ const tilt=diving?dir*(p<.24?.10:p<.72?.30:.19):pose==='sad'?.03:Math.sin(frame*1.5)*.007;
  ctx.save();ctx.translate(W*xnorm,ground-takeoff+fall+(diving?0:breath));ctx.rotate(tilt);
  ctx.scale(dir<0?-1:1,pose==='focus'?.96:1);
  ctx.save();ctx.globalAlpha=.28;ctx.scale(1,.20);circle(0,17,size*.36,'#000b');ctx.restore();
  if(img&&img.complete&&img.naturalWidth)ctx.drawImage(img,-size/2,-fullH,size,fullH);
  else roundRect(-size*.18,-fullH*.80,size*.36,fullH*.70,8,'#c82c40');
- if(diving&&p>.12&&p<.84){ctx.globalAlpha=.3*Math.sin(p*Math.PI);ctx.strokeStyle='#eafaff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(size*.20,-fullH*.56,size*.1,0,Math.PI*2);ctx.stroke()}
+ if(diving&&p>.12&&p<.90){
+  // Reach is visible: sleeve and glove follow the same overhead dive arc.
+  const reach=Math.sin(Math.PI*p);
+  ctx.save();ctx.globalAlpha=.90*reach;
+  ctx.strokeStyle='#f3e8d1';ctx.lineWidth=size*.095;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(size*.10,-fullH*.53);
+  ctx.quadraticCurveTo(size*.33,-fullH*.79,size*(.38+.11*reach),-fullH*(.82+.06*reach));ctx.stroke();
+  circle(size*(.38+.11*reach),-fullH*(.82+.06*reach),size*.068,'#f7fafc');
+  ctx.restore();
+  ctx.globalAlpha=.22*reach;ctx.strokeStyle='#eafaff';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(size*.20,-fullH*.56,size*.1,0,Math.PI*2);ctx.stroke();
+ }
  ctx.restore();
 }
 function football(x,y,r,spin=0,opacity=1){ctx.save();ctx.translate(x,y);ctx.rotate(spin);ctx.globalAlpha=opacity;
