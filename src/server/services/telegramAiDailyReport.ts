@@ -1,3 +1,4 @@
+import { workerLaneEnabled } from './backgroundWorkerRecovery';
 import { waitUntil } from '@vercel/functions';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { getTelegramAiConfig, PRIMARY_OWNER_TELEGRAM_ID } from './telegramAiConfigService';
@@ -119,7 +120,7 @@ export async function deliverAiDailyReport(now = new Date(), prepare = () => bui
   } catch {await state().set(key,{status:'unknown',at:now.toISOString(),reportVersion:2},{ex:172800});return {status:'unknown'};}
 }
 export function scheduleAiDailyReport() {
-  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return Promise.resolve();
+  if (!workerLaneEnabled('daily-report')) return Promise.resolve();
   const job=deliverAiDailyReport().catch(()=>console.warn('[AI_DAILY_REPORT_UNAVAILABLE]'));
   if(process.env.VERCEL==='1')waitUntil(job);
   return job;
