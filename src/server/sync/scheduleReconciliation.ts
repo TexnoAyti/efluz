@@ -8,7 +8,7 @@ export const RECONCILIATION_COOLDOWN_KEY = `${KEY_PREFIX}:outbox:recovery-cooldo
 /** Request/cron-driven recovery: one batch per minute across instances, no new
  * Firestore reads when the durable outbox is empty, no timers in serverless. */
 export async function reconcileDurableMutations(): Promise<SyncResult | null> {
-  if (process.env.MIGRATION_WRITE_FREEZE === 'true') return null;
+  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true' || process.env.MIGRATION_WRITE_FREEZE === 'true') return null;
   if (process.env.DATABASE_PROVIDER === 'supabase') {
     const {processPendingResultRefresh}=await import('../services/resultRefreshJobs');
     await processPendingResultRefresh();
@@ -30,6 +30,7 @@ export async function reconcileDurableMutations(): Promise<SyncResult | null> {
 let nextScheduleAt = 0;
 let scheduled = false;
 export function scheduleMutationReconciliation(): void {
+  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
   // A dashboard opens several endpoints at once. Do not start the same workers
   // for each successful read; cron and explicit recovery remain independent.
   if (scheduled || Date.now() < nextScheduleAt) return;
