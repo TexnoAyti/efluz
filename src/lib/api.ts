@@ -164,6 +164,27 @@ interface CacheEntry<T> {
 const memoryCache = new Map<string, CacheEntry<any>>();
 const inFlightRequests = new Map<string, Promise<any>>();
 
+// Keep cold-start dashboard reads from exhausting a degraded PostgREST pool.
+// Identity POSTs and write operations are deliberately not queued here.
+const MAX_CONCURRENT_READS = 4;
+let activeReads = 0;
+const pendingReadSlots: Array<() => void> = [];
+async function acquireReadSlot(): Promise<() => void> {
+  if (activeReads >= MAX_CONCURRENT_READS) {
+    await new Promise<void>(resolve => pendingReadSlots.push(resolve));
+  } else {
+    activeReads++;
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = pendingReadSlots.shift();
+    if (next) next();
+    else activeReads--;
+  };
+}
+
 export function invalidateClientCache(prefix?: string) {
   if (!prefix) {
     memoryCache.clear();
@@ -214,6 +235,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
     while (true) {
       attempt++;
+      const releaseReadSlot = isGet ? await acquireReadSlot() : () => {};
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
         controller.abort();
@@ -311,6 +333,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
           throw err;
         }
         throw new ApiError(err?.message || "Couldn't load data. Please try again.", err?.httpStatus || 0);
+      } finally {
+        releaseReadSlot();
       }
     }
   })();
