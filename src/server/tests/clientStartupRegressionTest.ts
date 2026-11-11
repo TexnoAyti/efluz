@@ -129,6 +129,15 @@ try {
   assert.equal(JSON.parse(String(requests[2].options.body)).initData, 'signed-init-data');
   assert.equal(JSON.parse(String(requests[3].options.body)).devUserId, 'user-dev-a');
   assert.equal(new Headers(requests[4].options.headers).get('authorization'), 'Bearer existing-session');
+  // During an outage, a 500/503 must not trigger another expensive GET.
+  let failedGetCount = 0;
+  globalThis.fetch = (async () => {
+    failedGetCount++;
+    return new Response(JSON.stringify({error:'DATABASE_TEMPORARILY_UNAVAILABLE'}), {status:503});
+  }) as typeof fetch;
+  invalidateClientCache('/api/me');
+  await assert.rejects(api.getMe(season.id, true), (error:any) => error.httpStatus === 503);
+  assert.equal(failedGetCount, 1, 'An already-failed database GET must not fan out into another request');
   // Headers alone do not mean the response finished: a stalled body must abort.
   invalidateClientCache();
   globalThis.fetch = (async (_input, options:any={}) => new Response(new ReadableStream({
