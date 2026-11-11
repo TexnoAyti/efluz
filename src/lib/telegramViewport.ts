@@ -8,7 +8,11 @@ export function installTelegramViewport(){
   frame=0;if(stopped)return;
   const sdk=(window as any).Telegram?.WebApp;
   if(sdk!==app){for(const event of events)app?.offEvent?.(event,schedule);app=sdk;for(const event of events)app?.onEvent?.(event,schedule);}
-  const height=Math.min(...[positive(window.innerHeight),positive(visual?.height),positive(app?.viewportHeight)].filter(Boolean));
+  // Telegram's viewportHeight may lag behind the viewport after entering
+  // native fullscreen. In that mode the rendered WebView is authoritative.
+  const candidates=[positive(window.innerHeight),positive(visual?.height)];
+  if(!app?.isFullscreen)candidates.push(positive(app?.viewportHeight));
+  const height=Math.min(...candidates.filter(Boolean));
   if(Number.isFinite(height))root.style.setProperty('--efl-viewport-height',`${height}px`);
   root.style.setProperty('--efl-viewport-top',`${Math.max(0,visual?.offsetTop||0)}px`);
   const stable=positive(app?.viewportStableHeight)||positive(window.innerHeight);

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="theme-color" content="#101318"><title>EFL Penalty 16.0 | Moving Munfiz Keeper</title>
+<html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="theme-color" content="#101318"><title>EFL Penalty 17.0 | Responsive Fast Shot</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;background:#080b0f;color:#f7f8fa;font:500 14px system-ui,-apple-system,Segoe UI,sans-serif;overscroll-behavior:none}button{font:inherit;cursor:pointer}.shell{height:100dvh;min-height:520px;max-height:820px;max-width:520px;margin:auto;position:relative;overflow:hidden;background:#101b24;isolation:isolate}canvas{width:100%;height:100%;display:block;touch-action:none}.hud{position:absolute;z-index:4;left:0;top:0;right:0;display:flex;align-items:flex-start;justify-content:space-between;padding:16px 14px 24px;pointer-events:none;background:linear-gradient(#090d17e8,#090d17a1 68%,transparent)}.brand{font-size:27px;font-weight:1000;letter-spacing:-1.8px;line-height:.9}.brand b{color:#ee4250}.tag{font-size:9px;letter-spacing:2.3px;font-weight:800;color:#adb7c4;margin-top:8px}.board{display:flex;gap:5px}.digit{background:#111a24d9;border:1px solid #4c5668;border-radius:10px;padding:6px 8px;text-align:center;min-width:58px;box-shadow:0 6px 20px #0003}.digit small{display:block;font-size:8px;letter-spacing:.8px;color:#aeb7c3;font-weight:850}.digit b{font-size:21px;font-weight:950;font-variant-numeric:tabular-nums}.digit.speed b{color:#ffca78}.bottom{position:absolute;z-index:4;bottom:17px;left:0;right:0;text-align:center;pointer-events:none}.hint{display:inline-block;background:#0a141dc9;border:1px solid #95a4b842;box-shadow:0 5px 24px #0005;border-radius:24px;padding:9px 16px;font-size:12px;font-weight:800;color:#e7f0f4}.status{position:absolute;z-index:5;left:0;right:0;top:19%;font-weight:1000;font-size:40px;text-align:center;letter-spacing:-1.3px;color:#fff;text-shadow:0 4px 24px #000,0 0 14px #e44255;opacity:0;transform:translateY(10px) scale(.92);transition:opacity .15s,transform .18s;pointer-events:none}.status.visible{opacity:1;transform:translateY(0) scale(1)}.combo{position:absolute;top:27%;left:0;right:0;z-index:5;text-align:center;pointer-events:none;color:#ffdc8a;font-weight:950;font-size:18px;text-shadow:0 3px 12px #000}.sound{position:absolute;right:12px;bottom:14px;z-index:5;background:#161e28d9;color:#fff;border:1px solid #bfc5d260;border-radius:12px;padding:9px 11px;font-size:17px}.overlay{position:absolute;inset:0;z-index:8;display:grid;place-items:center;background:linear-gradient(155deg,#090e17ef,#080e18d9);padding:22px}.panel{width:100%;max-width:345px;background:linear-gradient(156deg,#222b38,#111822);border:1px solid #5660709c;border-radius:24px;padding:28px 23px 23px;text-align:center;box-shadow:0 22px 85px #0009}.panel .ico{font-size:44px;margin-bottom:10px}.panel h1{font-size:31px;font-weight:1000;letter-spacing:-1.5px;margin:0 0 8px}.panel h1 b{color:#f14c5b}.panel p{line-height:1.55;color:#b7c2cf;font-size:13px;margin:0 0 20px}.choices{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}.mode{padding:12px 7px;border:1px solid #556070;border-radius:11px;background:#111c28;color:#d6dce6;font-size:12px;font-weight:850}.mode.selected{border-color:#ff5668;background:#602531;color:#fff}.primary{border:0;width:100%;padding:15px 12px;border-radius:13px;font-weight:950;font-size:15px;color:#fff;background:linear-gradient(105deg,#c9283b,#f04a55);box-shadow:0 9px 27px #c9244055}.panel .small{font-size:11px;color:#9eaabb;margin:15px 0 0}.metrics{display:flex;gap:9px;justify-content:center;margin:14px auto 19px}.metrics>div{min-width:78px;border:1px solid #4c5867;border-radius:12px;padding:9px 4px}.metrics small{font-size:10px;color:#9eacbd;display:block}.metrics strong{font-size:24px}.hidden{display:none!important}.sr{position:absolute;left:-10000px}
 @media(max-width:355px){.brand{font-size:20px}.board{gap:3px}.digit{min-width:45px;padding:5px}.digit b{font-size:17px}}
@@ -30,6 +30,21 @@
 .status{top:21%;font-size:35px}.combo{top:31%}
 @media(max-width:390px){.raceboard{padding-left:7px!important;padding-right:7px!important}.crest{width:31px;height:37px}.race-team{gap:5px!important}.race-team span{font-size:10px!important}.race-score{gap:5px}.race-score b{font-size:25px}.board{gap:3px}.digit{min-width:44px;padding:4px}.digit b{font-size:16px}}
 @media(max-height:600px){.raceboard{min-height:89px!important}.bottom{bottom:98px!important}.sound{bottom:105px!important}.match-banner{top:60px!important}}
+/* Fullscreen uses the actual Telegram iframe viewport; never impose a
+   520/820px game cap or 520px minimum height on compact phones. */
+html,body{width:100%;height:100%;overflow:hidden}
+.shell{width:100%;height:100%;height:100dvh;min-height:0;max-height:none;max-width:none}
+/* The dynamically resized iframe is authoritative; svh can remain collapsed. */
+@media(max-height:640px){
+ .hud{padding-top:6px!important}
+ .match-banner{top:56px!important;font-size:9px}
+ .status{top:14%;font-size:27px}
+ .hint{font-size:10px;padding:6px 9px}
+ .raceboard{min-height:78px!important;padding-top:6px!important}
+ .bottom{bottom:88px!important}
+ .sound{bottom:94px!important}
+}
+@media(min-width:600px){.shell{max-width:none}}
 </style></head><body><main class="shell" id="shell"><canvas id="field" aria-label="EFL Penalty o‘yini: to‘pni yuqoriga surib penalti teping"></canvas>
 <div class="hud"><div><div class="brand">EFL<b>UZ.</b></div><div class="tag">MUNFIZ · MATCH GOAL RACE</div></div><div class="board"><div class="digit"><small>GOLLAR</small><b id="goals">0</b></div><div class="digit"><small>JAMI</small><b id="matchGoals">0</b></div><div class="digit speed"><small>TEZLIK</small><b id="speed">1.0×</b></div><div class="digit"><small>REKORD</small><b id="best">0</b></div></div></div>
 <div class="match-banner" id="matchBanner">⚽ EFL · MASHG‘ULOT</div>
@@ -179,7 +194,20 @@ if(window.parent===window){
  window.parent.postMessage({type:'EFL_PENALTY_READY',version:1},window.location.origin);
 }
 
-function resize(){const r=shell.getBoundingClientRect();W=r.width;H=r.height;DPR=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0)}window.addEventListener('resize',resize);resize();
+function resize(){
+ const r=shell.getBoundingClientRect();
+ W=Math.max(1,r.width);H=Math.max(1,r.height);DPR=Math.min(2,window.devicePixelRatio||1);
+ canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
+ ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+const visibleViewport=window.visualViewport;
+const scheduleResize=()=>requestAnimationFrame(resize);
+window.addEventListener('resize',scheduleResize);
+visibleViewport?.addEventListener('resize',scheduleResize);
+try{new ResizeObserver(scheduleResize).observe(shell)}catch{}
+const tg=window.Telegram?.WebApp;
+try{tg?.ready?.();tg?.expand?.();tg?.onEvent?.('viewportChanged',scheduleResize);tg?.onEvent?.('fullscreenChanged',scheduleResize)}catch{}
+resize();
 function fill(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(x,y,w,h)}
 function circle(x,y,r,color){ctx.beginPath();ctx.arc(x,y,Math.max(.1,r),0,pi*2);ctx.fillStyle=color;ctx.fill()}
 function line(x,y,x2,y2,color='#fff',width=2){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
@@ -197,7 +225,13 @@ function stadium(){
  polygon([[W*.22,H*.43],[W*.78,H*.43],[W*1.19,H],[W*-.19,H]],'#174d3952','#e2f4e65c',1.5);
  ctx.beginPath();ctx.ellipse(W*.5,H*.95,W*.33,H*.117,0,pi*1.08,pi*1.92);ctx.strokeStyle='#dae9e366';ctx.lineWidth=2;ctx.stroke();
 }
-function goalCoords(){return{x:W*.095,y:H*.245,w:W*.81,h:H*.29}}
+function ballStartY(){return Math.min(H*.775,H-120)}
+function goalCoords(){
+ // Realistic goal proportions use WIDTH as the visual size anchor, not
+ // viewport height; tall fullscreen phones must not stretch the posts.
+ const w=Math.min(W*.82,H*.95),h=Math.min(w*.36,H*.26);
+ return {x:(W-w)/2,y:H*.275,w,h};
+}
 function goalBack(){const {x,y,w,h}=goalCoords();polygon([[x+12,y+8],[x+w-12,y+8],[x+w+W*.037,y+h],[x-W*.037,y+h]],'#0b1a24f0')}
 function net(front=false){const {x,y,w,h}=goalCoords();ctx.save();ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+w,y);ctx.lineTo(x+w+W*.036,y+h);ctx.lineTo(x-W*.036,y+h);ctx.closePath();ctx.clip();
  function warp(px,py){if(!netHit)return [0,0];const dx=(px-netHit.x)/W,dy=(py-netHit.y)/H,r=Math.hypot(dx*1.6,dy*2.7);const strength=Math.exp(-r*r*24)*netHit.life;const wave=Math.sin(netHit.t*28-r*23);return [dx*18*strength*wave,(13+dy*23)*strength*wave]}
@@ -205,7 +239,8 @@ function net(front=false){const {x,y,w,h}=goalCoords();ctx.save();ctx.beginPath(
  for(let j=0;j<=11;j++){ctx.beginPath();for(let i=0;i<=32;i++){let fx=i/32,fy=j/11,px=x+w*fx+(fx-.5)*W*.07*fy,py=y+h*fy,[ax,ay]=warp(px,py);if(i)ctx.lineTo(px+ax,py+ay);else ctx.moveTo(px+ax,py+ay)}ctx.lineWidth=front?.85:.65;ctx.strokeStyle=front?'#e8f7ff79':'#bbd3e657';ctx.stroke()}
  ctx.restore();if(front){line(x,y,x+w,y,'#f8faff',5);line(x,y,x-W*.035,y+h,'#f8faff',4);line(x+w,y,x+w+W*.035,y+h,'#f8faff',4);circle(x,y,3,'#fff');circle(x+w,y,3,'#fff')}}
 function drawMunfiz(xnorm,pose='idle',progress=0,dir=1){
- const size=W*.196,fullH=H*.174,ground=H*.558;
+ const goal=goalCoords(),size=W*.205;
+ const fullH=Math.min(W*.295,goal.h*.90),ground=goal.y+goal.h+W*.045;
  const p=clamp(progress,0,1),diving=pose==='dive'||pose==='save';
  const breath=Math.sin(frame*2.3)*1.3;
  let frameIndex=0;
@@ -260,19 +295,20 @@ function tryShot(sx,sy,ex,ey){
  if(!run||phase!=='ready')return;
  const dx=ex-sx,dy=sy-ey,dist=Math.hypot(dx,dy);
  if(dy<22||dist<28)return;
- // Real flick: upward speed controls power, horizontal motion gives placement + curl.
- const power=clamp(dy/(H*.37),.46,1.15);
- const side=clamp(dx/W,-.50,.50);
- const targetX=.5+side*.87;
- const targetY=H*(.465-clamp((dy/H)*.22,.062,.169));
- const out=targetX<.095||targetX>.905||targetY<H*.25||targetY>H*.505;
+ // The ball lands at the FINGER RELEASE POINT, not an estimated offset
+ // from its original position. Canvas coordinates are the actual aim.
+ const goal=goalCoords();
+ const targetX=clamp(ex/W,0,1),targetY=clamp(ey,0,H);
+ const out=ex<goal.x||ex>goal.x+goal.w||ey<goal.y||ey>goal.y+goal.h;
+ // A quick natural flick travels in roughly a third of a second.
+ const power=clamp(dy/(H*.36),.80,1.45);
  // No random prediction or last-second teleport. Once kicked, the keeper
  // keeps traversing the same visible path at the speed shown in the HUD.
  // A good goal comes from timing the shot while Munfiz is out of position.
- const flight=.81/power;
+ const flight=clamp(.42/power,.29,.51);
  shot={elapsed:-.105,power,flight,tx:targetX,ty:targetY,out,
   startPhase:goaliePhase,travelSpeed:goalieSpeed,
-  hit:false,success:false,finished:false,dir:Math.cos(goaliePhase)>=0?1:-1,spinOffset:side*.09,
+  hit:false,success:false,finished:false,dir:Math.cos(goaliePhase)>=0?1:-1,spinOffset:0,
   resultT:0};
  phase='flight';anim='anticipate';poseT=0;aim=null;
  $('hint').textContent='';shotCount++;sound(107,.16,'triangle',.05);
@@ -281,17 +317,21 @@ canvas.addEventListener('pointerdown',e=>{if(phase!=='ready')return;pointerStart
 canvas.addEventListener('pointermove',e=>{if(pointerStart)aim={x:e.offsetX,y:e.offsetY}});
 canvas.addEventListener('pointerup',e=>{if(!pointerStart)return;let p=pointerStart;pointerStart=null;aim=null;tryShot(p.x,p.y,e.offsetX,e.offsetY)});
 canvas.addEventListener('pointercancel',()=>{pointerStart=null;aim=null});
-// Predict the *same visible* sweep at goal-line contact, including the
-// 105ms wind-up. Only real body/glove overlap counts as a save.
+// A save uses PIXEL positions in both axes, matching the visible frame.
+// The keeper remains on its predictable sweep, including the kick wind-up.
 function keeperContact(s, width, height) {
  if(s.out)return false;
+ const goal=goalCoords();
  const phase=s.startPhase+s.travelSpeed*(s.flight*.86+.105);
- const x=keeperXAt(phase);
- const direction=Math.cos(phase)>=0?1:-1;
- const dx=s.tx-x;
- const bodyContact=Math.hypot(dx/.066,(s.ty-.435)/.080)<1;
- const gloveX=x+direction*.041;
- const gloveContact=Math.hypot((s.tx-gloveX)/.068,(s.ty-.342)/.061)<1;
+ const x=keeperXAt(phase)*width;
+ const movingRight=Math.cos(phase)>=0;
+ const fullH=Math.min(width*.295,goal.h*.90);
+ const ground=goal.y+goal.h+width*.045;
+ const bodyY=ground-fullH*.52;
+ const gloveY=ground-fullH*.84;
+ const bodyContact=Math.hypot((s.tx*width-x)/(width*.073),(s.ty-bodyY)/(fullH*.40))<1;
+ const gloveX=x+(movingRight?1:-1)*width*.044;
+ const gloveContact=Math.hypot((s.tx*width-gloveX)/(width*.080),(s.ty-gloveY)/(fullH*.34))<1;
  return bodyContact||gloveContact;
 }
 function resolve(){if(!shot||shot.finished)return;shot.finished=true;
@@ -306,7 +346,7 @@ function draw(dt){frame+=dt;ctx.save();if(shake>0){ctx.translate((Math.random()-
  if(zoom>0){const z=1+zoom;ctx.translate(W*.5,H*.4);ctx.scale(z,z);ctx.translate(-W*.5,-H*.4);zoom=Math.max(0,zoom-dt*.14)}
  stadium();goalBack();net(false);
  if(flash>0){fill(0,H*.16,W,H*.23,`rgba(245,250,255,${flash*.17})`);flash=Math.max(0,flash-dt*1.2)}
- let ballX=W*.5,ballY=H*.775,ballR=W*.065,spin=0,drawFront=true,keeperDrawX=goalieX,keeperPose=anim,keeperP=0,keeperDir=shot?.dir||1;
+ let ballX=W*.5,ballY=ballStartY(),ballR=W*.065,spin=0,drawFront=true,keeperDrawX=goalieX,keeperPose=anim,keeperP=0,keeperDir=shot?.dir||1;
  if(run&&(phase==='ready'||phase==='flight')){
   goaliePhase+=dt*goalieSpeed;goalieX=keeperXAt(goaliePhase);
   keeperDrawX=goalieX;
@@ -325,21 +365,21 @@ function draw(dt){frame+=dt;ctx.save();if(shake>0){ctx.translate((Math.random()-
   keeperDrawX=goalieX;keeperPose=anim;
   keeperP=anim==='save'?Math.max(.12,1-s.resultT*.44):0;
   s.resultT+=dt;
-  if(s.resultT>1.22){if(mode==='five'&&shotCount>=5){finish(false)}else if(mode==='endless'&&!s.success){finish(false)}else{shot=null;phase='ready';anim='idle';$('hint').textContent='⚽ Darvozabonni kuzating, vaqtida teping!'}}
+  if(s.resultT>.43){if(mode==='five'&&shotCount>=5){finish(false)}else if(mode==='endless'&&!s.success){finish(false)}else{shot=null;phase='ready';anim='idle';$('hint').textContent='⚽ Yana tepishingiz mumkin!'}}
  }
- if(s.elapsed<0){const windup=clamp((s.elapsed+.105)/.105,0,1);ballX=W*.5;ballY=H*.775+Math.sin(windup*Math.PI)*H*.007;ballR=W*.065;}
+ if(s.elapsed<0){const windup=clamp((s.elapsed+.105)/.105,0,1);ballX=W*.5;ballY=ballStartY()+Math.sin(windup*Math.PI)*H*.007;ballR=W*.060;}
  else if(p<.86){
-  const a=p/.86,curve=a*a*(3-2*a),lift=Math.sin(a*Math.PI)*H*.092;
+  const a=p/.86,curve=a*a*(3-2*a),lift=Math.sin(a*Math.PI)*H*.045;
   // Arc bends smoothly toward the target. Ball shrinks with perspective.
-  ballX=lerp(W*.5,W*s.tx,curve)+Math.sin(a*Math.PI)*W*s.spinOffset;
-  ballY=lerp(H*.775,s.ty,curve)-lift;
-  ballR=W*.065*(1-.68*curve);
+  ballX=lerp(W*.5,W*s.tx,curve);
+  ballY=lerp(ballStartY(),s.ty,curve)-lift;
+  ballR=W*.060*(1-.71*curve);
   spin=s.elapsed*(14+s.power*8);
  }else{
   const a=clamp((p-.86)/.14,0,1);
   ballX=W*s.tx+Math.sin(a*Math.PI)*W*.003;
   ballY=s.ty+(s.success?H*.055*a:s.hit?-H*.09*a:H*.02*a);
-  ballR=W*.065*(.32-(s.success?.06*a:0));spin=s.elapsed*19;
+  ballR=W*.060*(.29-(s.success?.03*a:0));spin=s.elapsed*19;
  }
  if(p>.86&&!s.finished)resolve();
  if(s.success&&p>.83){drawFront=false;football(ballX,ballY,ballR,spin)}

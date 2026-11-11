@@ -527,3 +527,26 @@
 .match-chat-game-top button{display:grid;place-items:center;width:35px;height:35px;border-radius:10px;border:1px solid #ffffff35}
 .match-chat-game-layer iframe{display:block;width:100%;height:100%;min-height:0;flex:1 1 auto;border:0;background:#101b24}
 @media(max-width:420px){.match-chat-game-launch small{font-size:8px}.match-chat-game-top span{font-size:8px}}
+
+/* Mini Cup must fill the Telegram WebView, not the 460px chat sheet.
+   These overrides apply only while the penalty game is open. */
+.match-chat-backdrop:has(.match-chat-game-layer){
+  inset:auto 0 auto 0;
+  top:var(--match-chat-viewport-top,0px);
+  height:var(--match-chat-viewport-height,var(--efl-viewport-height,100dvh));
+  min-height:0;
+  padding:0;
+  border-radius:0;
+}
+.match-chat-backdrop:has(.match-chat-game-layer) .match-chat-sheet{
+  width:100%;max-width:none!important;height:100%!important;max-height:none!important;
+  border:0;border-radius:0;box-shadow:none;
+}
+.match-chat-backdrop:has(.match-chat-game-layer) .match-chat-game-layer{
+  inset:0;
+  height:100%;
+}
+.match-chat-game-layer iframe{
+  width:100%!important;min-height:0;height:100%;
+}
+.match-chat-game-top{padding-top:max(8px,env(safe-area-inset-top,0px));}
