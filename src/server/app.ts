@@ -7,6 +7,7 @@ import { disciplineRouter } from './routes/discipline.routes';
 import {scheduleUNotices,prepareUNotifications} from './services/uzeflifeNotifications';
 import { scheduleAiDailyReport } from './services/telegramAiDailyReport';
 import { adminImageExportsRouter, imageExportDownloadRouter } from './routes/tournamentImageDownload.routes';
+import { workerLaneEnabled, workerRecoveryMode } from './services/backgroundWorkerRecovery';
 import express from 'express';
 import { readCostMiddleware } from './services/durableReadCosts';
 import { timingSafeEqual } from 'node:crypto';
@@ -165,7 +166,7 @@ export function createApp() {
     if(!secret||actual.length!==expected.length||!timingSafeEqual(actual,expected)){res.status(401).json({error:'UNAUTHORIZED'});return;}
     if(!['GET','POST'].includes(req.method)){res.sendStatus(405);return;}
     // Incident throttle: authorized background posts are deferred, never deleted.
-    if(process.env.DISABLE_BACKGROUND_WORKERS==='true'){res.status(202).json({paused:true});return;}
+    if(!workerLaneEnabled('round-post')){res.status(202).json({paused:true});return;}
     const round=Number(req.query.round),hop=Number(req.query.hop||0);
     if(!Number.isInteger(round)||round<1||round>15||!Number.isInteger(hop)||hop<0||hop>32){res.sendStatus(400);return;}
     try{
@@ -184,15 +185,31 @@ export function createApp() {
     const expected = Buffer.from(`Bearer ${secret || ''}`);
     if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) { res.status(401).json({ error: 'UNAUTHORIZED' }); return; }
     if (!['GET', 'POST'].includes(req.method)) { res.sendStatus(405); return; }
-    // Recovery switch leaves durable queues and receipts intact for replay.
-    if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') { res.status(202).json({ paused: true }); return; }
+    // When the incident pause is active, only the explicitly selected lane
+    // can resume; an unset or malformed mode stays safely paused.
+    const mode = workerRecoveryMode();
+    if (mode === 'paused') { res.status(202).json({ paused: true }); return; }
     const hop= Number(req.query.hop || 0);
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
       await ensureDbReady();
-      if (hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
-      if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleUNotices(hop); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
-      else { await reconcileDurableMutations(); await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]')); await processTeamInvitationNotices().catch(()=>console.warn('[TEAM_INVITATION_OUTBOX_DEFERRED]')); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
+      if (hop === 0 && workerLaneEnabled('daily-report')) {
+        if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport();
+      }
+      if (process.env.VERCEL === '1') {
+        if (workerLaneEnabled('reconciliation')) scheduleMutationReconciliation();
+        if (workerLaneEnabled('uzeflife')) scheduleUNotices(hop);
+        if (workerLaneEnabled('notifications')) scheduleNotificationQueueDrain(hop);
+        res.status(202).json({ accepted: true, lane: mode });
+      } else {
+        if (workerLaneEnabled('reconciliation')) await reconcileDurableMutations();
+        if (workerLaneEnabled('uzeflife')) {
+          await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]'));
+          await processTeamInvitationNotices().catch(()=>console.warn('[TEAM_INVITATION_OUTBOX_DEFERRED]'));
+        }
+        if (workerLaneEnabled('notifications')) await drainNotificationQueue({ hop });
+        res.json({ drained: true, lane: mode });
+      }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 
