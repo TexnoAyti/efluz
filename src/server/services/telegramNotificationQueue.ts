@@ -167,6 +167,10 @@ export async function drainNotificationQueue(options: {
     const result = await processNotificationQueue(workerRecoveryBatch(), deadline - 12000);
     // The active lock owner is responsible for continuation.
     if (result.locked) return;
+    // With the global incident pause still on, a single bounded batch per
+    // invocation avoids replaying months of messages in one hot burst.
+    // The next authenticated worker invocation resumes the durable queue.
+    if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
     const state = await pendingQueueState();
     if (!state.pending) return;
     const delay = Math.max(0, state.nextAt - Date.now());
