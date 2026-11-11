@@ -19,8 +19,10 @@ try {
  await request('/api/me/notifications/', 'GET',false);assert.deepEqual([tags,recovery],[0,1],'Anonymous polls cannot trigger recovery');
  for(const method of ['POST','PUT','PATCH','DELETE'])await request('/api/change',method);
  assert.deepEqual([tags,recovery],[4,5],'Successful authenticated changes retain recovery and tag updates');
- await request('/api/auth/telegram','POST',false);assert.deepEqual([tags,recovery],[5,5],'Successful login can refresh tags without claiming an authenticated recovery actor');
+ await request('/api/auth/telegram','POST',false);assert.deepEqual([tags,recovery],[4,5],'Telegram login cannot start club/tag workers');
+ await request('/api/auth/telegram','POST');assert.deepEqual([tags,recovery],[4,5],'Even signed Telegram refresh cannot start background workers');
+ await request('/api/auth/android/callback','POST');assert.deepEqual([tags,recovery],[4,5],'Android identity routes also do not start background workers');
  for(const status of [400,401,403,500,503])await request('/api/change?status='+status,'POST');
- await request('/api/me/notifications?status=503');assert.deepEqual([tags,recovery],[5,5],'Failed requests must not multiply background work');
+ await request('/api/me/notifications?status=503');assert.deepEqual([tags,recovery],[4,5],'Failed requests must not multiply background work');
 }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
 console.log('PASS HTTP maintenance boundaries: 30 opening reads/HEAD/OPTIONS start no workers; authenticated notification polls and successful mutations recover work; anonymous/error requests do not fan out');
