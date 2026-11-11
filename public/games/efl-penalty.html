@@ -295,7 +295,7 @@ function keeperContact(s, width, height) {
  const atContact=lerp(s.startX,s.keeperEnd,smooth(t));
  const reach=Math.sin(Math.PI*clamp(t,.08,.92));
  const gloveX=atContact+(s.direction||0)*(.014+.026*reach);
- const gloveY=height*(.405-.093*reach);
+ const gloveY=.405-.093*reach; // both glove and ball targets use 0..1 field coordinates
  const dx=s.tx-atContact, dy=s.ty-.438;
  const bodyContact=Math.hypot(dx/.061,dy/.087)<1;
  const gloveContact=t>.14&&Math.hypot((s.tx-gloveX)/(.072+.019*reach),(s.ty-gloveY)/(.057+.016*reach))<1;
