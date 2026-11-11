@@ -294,11 +294,13 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
           }
         }
 
-        const isNetworkOr5xx = !err.httpStatus || err.httpStatus >= 500 || err.name === 'AbortError';
-        // An explicit database outage already consumed the server timeout.
-        // Repeating it immediately doubles the spinner and database pressure.
-        const databaseUnavailable = err.httpStatus === 503 && err.data?.code === 'DATABASE_TEMPORARILY_UNAVAILABLE';
-        if (attempt <= maxRetries && isNetworkOr5xx && !databaseUnavailable) {
+        // An HTTP 500/503 is a completed server response, not a lost packet.
+        // Retrying DB outages on every GET doubles traffic and multiplies
+        // PostgREST queueing. An already-timed-out request is not retried.
+        // Preserve one bounded retry for genuine transport failures only.
+        const retryableTransportError = !err.httpStatus &&
+          err.name !== 'AbortError' && !/abort|timed?\s*out/i.test(String(err.message || ''));
+        if (attempt <= maxRetries && retryableTransportError) {
           const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 2500);
           console.warn(`[API RETRY ${attempt}/${maxRetries}] ${endpoint} failed (${err.message}). Retrying in ${backoffMs}ms...`);
           await new Promise((r) => setTimeout(r, backoffMs));
