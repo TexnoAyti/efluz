@@ -216,6 +216,7 @@ export async function reconcileClubMemberTags(): Promise<Summary|null> {
 }
 let nextScheduleAt=0;
 export function scheduleClubMemberTags(): void {
+  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
   if (!clubMemberTagsEnabled() || Date.now()<nextScheduleAt) return;
   nextScheduleAt=Date.now()+60000;
   const work=reconcileClubMemberTags().catch(()=>{ console.warn('[CLUB_MEMBER_TAGS_DEFERRED]'); });
