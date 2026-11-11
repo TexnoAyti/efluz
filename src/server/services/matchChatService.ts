@@ -71,7 +71,7 @@ function view(room:ChatRoom,userId:string,context?:MatchContext):MatchChatView{c
  opponentTyping:!room.closed&&Number(room.typingUntil?.[opponent.id]||0)>Date.now(),
  opponentReadThroughId:room.readThrough?.[opponent.id]||null,
  pinnedMessageId:(room.messages||[]).some(m=>m.id===room.pinnedMessageId)?room.pinnedMessageId||null:null,
- matchInfo:context?.matchInfo||null,
+ matchInfo:context?.matchInfo?{...context.matchInfo,viewerSide:context.participants[0].id===userId?'home':'away'}:null,
  quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
 
 export async function readMatchChat(kind:MatchChatKind,matchId:string,user:User):Promise<MatchChatView>{

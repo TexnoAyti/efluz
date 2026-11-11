@@ -18,6 +18,7 @@ export interface MatchChatMatchInfo {
   awayScore: number | null;
   status: string;
   matchday: number;
+  viewerSide?: 'home' | 'away';
 }
 export interface MatchChatView {
   roomId: string;

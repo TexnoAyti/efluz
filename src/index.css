@@ -515,3 +515,15 @@
 .match-chat-jump-latest{display:flex;align-items:center;gap:8px;flex:0 0 auto;width:100%;padding:9px 12px;font-size:11px;font-weight:750;line-height:1.3;text-align:left;color:var(--efl-primary,#2563eb);background:color-mix(in srgb,var(--efl-primary,#2563eb) 9%,var(--efl-surface,#fff));border-top:1px solid var(--efl-border,#e2e6ec)}
 .match-chat-jump-latest span{margin-left:auto;font-size:10px;font-weight:700;opacity:.8}
 .match-chat-jump-latest:focus-visible{outline:2px solid var(--efl-primary,#2563eb);outline-offset:-2px}
+
+/* Existing Munfiz penalty game opens within the current authenticated match chat. */
+.match-chat-sheet{position:relative}
+.match-chat-game-launch{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--efl-border,#e2e6ec);color:var(--efl-primary,#2563eb);background:color-mix(in srgb,var(--efl-primary,#2563eb) 9%,var(--efl-surface,#fff));font-weight:800;font-size:12px;text-align:left}
+.match-chat-game-launch small{margin-left:auto;font-size:9px;font-weight:650;color:var(--efl-text-2,#64748b)}
+.match-chat-game-layer{position:absolute;z-index:55;inset:0;display:flex;flex-direction:column;min-height:0;background:#080c14}
+.match-chat-game-top{flex:0 0 auto;display:flex;gap:9px;align-items:center;min-height:52px;padding:10px 12px 8px;background:#111925;color:#fff;box-shadow:0 1px 0 #ffffff1a}
+.match-chat-game-top strong{font-size:13px;white-space:nowrap}
+.match-chat-game-top span{font-size:9px;color:#b5c2d4;flex:1;text-align:right}
+.match-chat-game-top button{display:grid;place-items:center;width:35px;height:35px;border-radius:10px;border:1px solid #ffffff35}
+.match-chat-game-layer iframe{display:block;width:100%;height:100%;min-height:0;flex:1 1 auto;border:0;background:#101b24}
+@media(max-width:420px){.match-chat-game-launch small{font-size:8px}.match-chat-game-top span{font-size:8px}}

@@ -1,20 +1,20 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {AlertTriangle,ArrowLeft,Check,CheckCheck,CornerUpLeft,Flag,LoaderCircle,Lock,MessageCircle,MoreVertical,Pin,PinOff,RefreshCw,Send,ShieldAlert,Unlock,X} from 'lucide-react';
+import {AlertTriangle,ArrowLeft,Check,CheckCheck,CornerUpLeft,Flag,LoaderCircle,Lock,MessageCircle,MoreVertical,Gamepad2,Pin,PinOff,RefreshCw,Send,ShieldAlert,Unlock,X} from 'lucide-react';
 import {matchChatApi,onMatchChatOpen,readMatchChatLaunch,type MatchChatTarget} from '../lib/matchChat';
 import type {MatchChatView} from '../types/matchChat';
 import {useAuth} from '../context/AuthContext';
 import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
 
 export function MatchChatHost(){
- const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null),[hasNewMessages,setHasNewMessages]=useState(false);
+ const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null),[hasNewMessages,setHasNewMessages]=useState(false),[gameOpen,setGameOpen]=useState(false);
  const input=useRef<HTMLTextAreaElement>(null),loading=useRef(false),messages=useRef<HTMLDivElement>(null),backdrop=useRef<HTMLDivElement>(null),stickToBottom=useRef(true),typingSentAt=useRef(0),typingIdleTimer=useRef<number|null>(null),lastMessageId=useRef<string|null>(null);
  const inTelegram=typeof window!=='undefined'&&Boolean((window as any).Telegram?.WebApp?.initData);
 
  const stopTyping=()=>{if(typingIdleTimer.current!==null){window.clearTimeout(typingIdleTimer.current);typingIdleTimer.current=null;}
   if(typingSentAt.current&&target){typingSentAt.current=0;void matchChatApi.typing(target,false).catch(()=>{});}
  };
- const close=()=>{stopTyping();setTarget(null);setChat(null);setText('');setReplyTo(null);setError('');setMenu(false);setReporting(false);setHasNewMessages(false);};
+ const close=()=>{setGameOpen(false);stopTyping();setTarget(null);setChat(null);setText('');setReplyTo(null);setError('');setMenu(false);setReporting(false);setHasNewMessages(false);};
  const typing=(value:string)=>{
   if(!target||!chat?.canSend||document.visibilityState!=='visible')return;
   if(!value.trim()){stopTyping();return;}
@@ -30,7 +30,7 @@ export function MatchChatHost(){
    if(silent&&!stickToBottom.current&&latest!==lastMessageId.current&&lastMessageId.current!==null)setHasNewMessages(true);
    lastMessageId.current=latest;
    setChat(next);setError('');const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
- useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
+ useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setGameOpen(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
  useEffect(()=>()=>{if(typingIdleTimer.current!==null)window.clearTimeout(typingIdleTimer.current);},[]);
  useEffect(()=>{if(!target)return;void load();
   const refresh=()=>{if(document.visibilityState==='visible')void load(true);};
@@ -78,6 +78,7 @@ export function MatchChatHost(){
      <div className="match-chat-score"><strong>{chat.matchInfo.homeScore===null?'–':chat.matchInfo.homeScore} : {chat.matchInfo.awayScore===null?'–':chat.matchInfo.awayScore}</strong><small>{chat.matchInfo.matchday}-tur · {chat.matchInfo.status==='CONFIRMED'?'Yakunlangan':'O‘yin'}</small></div>
      <div className="match-chat-team">{chat.matchInfo.awayLogoUrl&&<img src={chat.matchInfo.awayLogoUrl} alt="" loading="lazy" onError={e=>{e.currentTarget.hidden=true;}}/>}<span>{chat.matchInfo.awayName}</span></div>
    </section>}
+   {target.kind==='fixture'&&chat?.matchInfo&&chat.canSend&&<button type="button" className="match-chat-game-launch" onClick={()=>{stopTyping();setGameOpen(true);}}><Gamepad2 size={17}/><span>Penalti o‘ynash</span><small>Joriy uchrashuv · mashg‘ulot rejimi</small></button>}
    {chat?.pinnedMessageId&&chat.messages.some(m=>m.id===chat.pinnedMessageId)&&<button className="match-chat-pinned" onClick={()=>focusMessage(chat.pinnedMessageId!)}><Pin size={15}/><span>{chat.messages.find(m=>m.id===chat.pinnedMessageId)?.text}</span><span>Ko‘rish</span></button>}
    {reporting&&<div className="match-chat-report"><label>Shikoyat sababi<textarea maxLength={300} value={reportReason} onChange={e=>setReportReason(e.target.value)} placeholder="Muammoni qisqa va aniq yozing"/></label><div><button onClick={()=>setReporting(false)}>Bekor qilish</button><button className="primary" disabled={busy||reportReason.trim().length<3} onClick={()=>void report()}><Flag size={14}/>Yuborish</button></div></div>}
    <div ref={messages} className="match-chat-messages" aria-live="polite" onScroll={e=>{const el=e.currentTarget;stickToBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<90;if(stickToBottom.current)setHasNewMessages(false);}}>
@@ -114,6 +115,13 @@ export function MatchChatHost(){
       <button className="match-chat-send" disabled={busy||!text.trim()||!chat?.canSend} onClick={()=>void send()} aria-label="Xabarni yuborish">{busy?<LoaderCircle size={19} className="animate-spin"/>:<Send size={19}/>}</button>
     </>}
    </footer>
+   {gameOpen&&chat?.matchInfo&&<div className="match-chat-game-layer" role="dialog" aria-modal="true" aria-label="EFL Penalti">
+     <div className="match-chat-game-top"><strong>⚽ EFL PENALTY</strong><span>Mashg‘ulot · rasmiy natija o‘zgarmaydi</span><button type="button" onClick={()=>setGameOpen(false)} aria-label="O‘yinni yopish"><X size={21}/></button></div>
+     <iframe title="EFL Penalti — Munfiz" src="/games/efl-penalty.html" sandbox="allow-scripts allow-same-origin" onLoad={event=>{
+       const f=chat.matchInfo!;
+       event.currentTarget.contentWindow?.postMessage({type:'EFL_PENALTY_CURRENT_FIXTURE',version:1,fixture:{id:chat.matchId,home:f.homeName,away:f.awayName,homeLogo:f.homeLogoUrl,awayLogo:f.awayLogoUrl,round:f.matchday},side:f.viewerSide==='away'?'away':'home'},window.location.origin);
+     }}/>
+   </div>}
   </section>
  </div>,document.body);
 }
