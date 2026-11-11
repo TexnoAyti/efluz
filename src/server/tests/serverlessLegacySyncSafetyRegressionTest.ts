@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { workerLaneEnabled } from '../services/backgroundWorkerRecovery';
+const route=fs.readFileSync('src/server/routes/health.routes.ts','utf8');
+const sync=route.slice(route.indexOf("healthRouter.post('/sync'"));
+assert.ok(sync.length>400,'Admin sync implementation exists');
+assert.match(sync,/requireAdmin/,'Sync remains restricted to administrators');
+assert.match(sync,/if \(!workerLaneEnabled\('reconciliation'\)\)/,'Paused reconciliation blocks manual sync too');
+assert.match(sync,/status\(423\)/,'Incident lock returns a deterministic non-success status');
+assert.match(sync,/DATABASE_PROVIDER === 'supabase'/,'Sync selects the PostgreSQL provider');
+assert.match(sync,/await reconcileDurableMutations\(\)/,'Supabase uses the durable recovery implementation');
+assert.match(sync,/await processPendingMutations\(\)/,'Legacy fallback is only the non-Supabase branch');
+assert.equal(workerLaneEnabled('reconciliation',{DISABLE_BACKGROUND_WORKERS:'true',SERVERLESS_WORKER_RECOVERY_MODE:'notifications'}),false);
+assert.equal(workerLaneEnabled('reconciliation',{DISABLE_BACKGROUND_WORKERS:'true',SERVERLESS_WORKER_RECOVERY_MODE:'reconciliation'}),true);
+assert.equal(workerLaneEnabled('reconciliation',{DISABLE_BACKGROUND_WORKERS:'true',SERVERLESS_WORKER_RECOVERY_MODE:'all',MIGRATION_WRITE_FREEZE:'true'}),false);
+console.log('PASS manual sync cannot bypass incident pause, Supabase uses PostgreSQL reconciliation');
