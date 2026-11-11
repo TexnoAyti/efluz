@@ -164,6 +164,8 @@ export function createApp() {
     const secret=process.env.CRON_SECRET,actual=Buffer.from(req.headers.authorization||''),expected=Buffer.from(`Bearer ${secret||''}`);
     if(!secret||actual.length!==expected.length||!timingSafeEqual(actual,expected)){res.status(401).json({error:'UNAUTHORIZED'});return;}
     if(!['GET','POST'].includes(req.method)){res.sendStatus(405);return;}
+    // Incident throttle: authorized background posts are deferred, never deleted.
+    if(process.env.DISABLE_BACKGROUND_WORKERS==='true'){res.status(202).json({paused:true});return;}
     const round=Number(req.query.round),hop=Number(req.query.hop||0);
     if(!Number.isInteger(round)||round<1||round>15||!Number.isInteger(hop)||hop<0||hop>32){res.sendStatus(400);return;}
     try{
@@ -182,7 +184,9 @@ export function createApp() {
     const expected = Buffer.from(`Bearer ${secret || ''}`);
     if (!secret || actual.length !== expected.length || !timingSafeEqual(actual, expected)) { res.status(401).json({ error: 'UNAUTHORIZED' }); return; }
     if (!['GET', 'POST'].includes(req.method)) { res.sendStatus(405); return; }
-    const hop = Number(req.query.hop || 0);
+    // Recovery switch leaves durable queues and receipts intact for replay.
+    if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') { res.status(202).json({ paused: true }); return; }
+    const hop= Number(req.query.hop || 0);
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
       await ensureDbReady();
