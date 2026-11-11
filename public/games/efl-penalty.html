@@ -225,10 +225,11 @@ function stadium(){
  polygon([[W*.22,H*.43],[W*.78,H*.43],[W*1.19,H],[W*-.19,H]],'#174d3952','#e2f4e65c',1.5);
  ctx.beginPath();ctx.ellipse(W*.5,H*.95,W*.33,H*.117,0,pi*1.08,pi*1.92);ctx.strokeStyle='#dae9e366';ctx.lineWidth=2;ctx.stroke();
 }
+function ballStartY(){return Math.min(H*.775,H-120)}
 function goalCoords(){
  // Realistic goal proportions use WIDTH as the visual size anchor, not
  // viewport height; tall fullscreen phones must not stretch the posts.
- const w=W*.82,h=Math.min(W*.43,H*.25);
+ const w=Math.min(W*.82,H*.95),h=Math.min(w*.36,H*.26);
  return {x:(W-w)/2,y:H*.275,w,h};
 }
 function goalBack(){const {x,y,w,h}=goalCoords();polygon([[x+12,y+8],[x+w-12,y+8],[x+w+W*.037,y+h],[x-W*.037,y+h]],'#0b1a24f0')}
@@ -345,7 +346,7 @@ function draw(dt){frame+=dt;ctx.save();if(shake>0){ctx.translate((Math.random()-
  if(zoom>0){const z=1+zoom;ctx.translate(W*.5,H*.4);ctx.scale(z,z);ctx.translate(-W*.5,-H*.4);zoom=Math.max(0,zoom-dt*.14)}
  stadium();goalBack();net(false);
  if(flash>0){fill(0,H*.16,W,H*.23,`rgba(245,250,255,${flash*.17})`);flash=Math.max(0,flash-dt*1.2)}
- let ballX=W*.5,ballY=H*.775,ballR=W*.065,spin=0,drawFront=true,keeperDrawX=goalieX,keeperPose=anim,keeperP=0,keeperDir=shot?.dir||1;
+ let ballX=W*.5,ballY=ballStartY(),ballR=W*.065,spin=0,drawFront=true,keeperDrawX=goalieX,keeperPose=anim,keeperP=0,keeperDir=shot?.dir||1;
  if(run&&(phase==='ready'||phase==='flight')){
   goaliePhase+=dt*goalieSpeed;goalieX=keeperXAt(goaliePhase);
   keeperDrawX=goalieX;
@@ -366,12 +367,12 @@ function draw(dt){frame+=dt;ctx.save();if(shake>0){ctx.translate((Math.random()-
   s.resultT+=dt;
   if(s.resultT>.43){if(mode==='five'&&shotCount>=5){finish(false)}else if(mode==='endless'&&!s.success){finish(false)}else{shot=null;phase='ready';anim='idle';$('hint').textContent='⚽ Yana tepishingiz mumkin!'}}
  }
- if(s.elapsed<0){const windup=clamp((s.elapsed+.105)/.105,0,1);ballX=W*.5;ballY=H*.775+Math.sin(windup*Math.PI)*H*.007;ballR=W*.060;}
+ if(s.elapsed<0){const windup=clamp((s.elapsed+.105)/.105,0,1);ballX=W*.5;ballY=ballStartY()+Math.sin(windup*Math.PI)*H*.007;ballR=W*.060;}
  else if(p<.86){
   const a=p/.86,curve=a*a*(3-2*a),lift=Math.sin(a*Math.PI)*H*.045;
   // Arc bends smoothly toward the target. Ball shrinks with perspective.
   ballX=lerp(W*.5,W*s.tx,curve);
-  ballY=lerp(H*.775,s.ty,curve)-lift;
+  ballY=lerp(ballStartY(),s.ty,curve)-lift;
   ballR=W*.060*(1-.71*curve);
   spin=s.elapsed*(14+s.power*8);
  }else{
