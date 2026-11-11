@@ -231,9 +231,9 @@ function goalCoords(){
  // viewport height; tall fullscreen phones must not stretch the posts.
  // Bring the crossbar into the playable foreground. Width is the main
  // scale anchor, while short landscape screens still keep the entire goal.
- const w=Math.min(W*.94,H*1.24),h=Math.min(w*.48,H*.31);
+ const w=Math.min(W*.94,H),h=Math.min(w*.39,H*.31);
  const bottomSpace=Math.max(H*.20,115);
- const y=Math.min(H*.355,H-bottomSpace-h);
+ const y=Math.min(H*.38,H-bottomSpace-h);
  return {x:(W-w)/2,y:Math.max(H*.22,y),w,h};
 }
 function goalBack(){const {x,y,w,h}=goalCoords();polygon([[x+12,y+8],[x+w-12,y+8],[x+w+W*.037,y+h],[x-W*.037,y+h]],'#0b1a24f0')}
