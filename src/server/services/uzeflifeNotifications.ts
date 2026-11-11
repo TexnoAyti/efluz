@@ -140,6 +140,7 @@ export async function prepareUNotifications(){
  ]);
 }
 export function scheduleUNotices(hop=0){
+ if(process.env.DISABLE_BACKGROUND_WORKERS==='true')return;
  if(process.env.VERCEL!=='1'&&!process.env.K_SERVICE)return;
  const task=(async()=>{
   const queue=await import('./telegramNotificationQueue');

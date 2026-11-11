@@ -119,6 +119,7 @@ export async function deliverAiDailyReport(now = new Date(), prepare = () => bui
   } catch {await state().set(key,{status:'unknown',at:now.toISOString(),reportVersion:2},{ex:172800});return {status:'unknown'};}
 }
 export function scheduleAiDailyReport() {
+  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return Promise.resolve();
   const job=deliverAiDailyReport().catch(()=>console.warn('[AI_DAILY_REPORT_UNAVAILABLE]'));
   if(process.env.VERCEL==='1')waitUntil(job);
   return job;
