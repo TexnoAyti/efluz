@@ -53,7 +53,7 @@ jobs:
       - name: Check static output excludes backend
         run: node scripts/verifyTgcloudStatic.mjs
       - name: Deploy to isolated staging bot only
-        run: npx --yes --package=@tgcloud/cli tgcloud push
+        run: npx --yes --package=@tgcloud/cli tgcloud push --force
       - name: Review proposed staging schema changes (read-only)
         run: npx --yes --package=@tgcloud/cli tgcloud migrate --dry-run
       - name: Apply additive staging schema changes only
