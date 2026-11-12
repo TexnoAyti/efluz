@@ -1,6 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {Check,ChevronDown,ChevronUp,LoaderCircle,RefreshCw,ShieldCheck,AlertCircle} from 'lucide-react';
 import {getAuthHeaders} from '../lib/customTournamentApi';
+import {isDomesticCupResult} from '../lib/cupResult';
 import type {Fixture,MatchSubmission} from '../types';
 
 type Submission = MatchSubmission | {homeScore:number;awayScore:number;submittedByUserId?:string};
@@ -20,6 +21,10 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
  const [fixture,setFixture]=useState<ResultData|null>(null);
  const [home,setHome]=useState('');
  const [away,setAway]=useState('');
+ const [homeExtra,setHomeExtra]=useState('');
+ const [awayExtra,setAwayExtra]=useState('');
+ const [homePenalty,setHomePenalty]=useState('');
+ const [awayPenalty,setAwayPenalty]=useState('');
  const [loading,setLoading]=useState(false);
  const [saving,setSaving]=useState(false);
  const [error,setError]=useState('');
@@ -37,7 +42,7 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
   finally{if(mounted.current&&!silent)setLoading(false);}
  },[fixtureId]);
  useEffect(()=>{
-  mounted.current=true;setFixture(null);setExpanded(false);setHome('');setAway('');setError('');setNotice('');
+  mounted.current=true;setFixture(null);setExpanded(false);setHome('');setAway('');setHomeExtra('');setAwayExtra('');setHomePenalty('');setAwayPenalty('');setError('');setNotice('');
   void refresh();
   const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh(true);},12000);
   return()=>{mounted.current=false;window.clearInterval(timer);};
@@ -48,6 +53,7 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
  const own=fixture?.userSubmission||null;
  const opponent=fixture?.opponentSubmission||null;
  const pending=status==='PENDING_CONFIRMATION'||status==='PENDING';
+ const domesticCup=Boolean(fixture&&isDomesticCupResult(fixture.competitionId));
  const canSubmit=Boolean(fixture&&!finished&&!disputed&&!saving&&!loading&&!own&&
    (['SCHEDULED','READY','PLAYING','AWAITING_RESULT','OVERDUE'].includes(status)||pending));
  const proposed=!own&&opponent&&score(opponent.homeScore)!==null&&score(opponent.awayScore)!==null;
@@ -77,10 +83,21 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
   finally{savingRef.current=false;if(mounted.current)setSaving(false);}
  };
  const manualSubmit=()=>{
-  if(!/^(0|[1-9]\d?)$/.test(home.trim())||!/^(0|[1-9]\d?)$/.test(away.trim())){
-   setError('Ikkala hisobni 0–99 oralig‘ida kiriting.');return;
+  const valid=(v:string)=>/^(0|[1-9]\d?)$/.test(v.trim());
+  if(!valid(home)||!valid(away)){setError('Ikkala hisobni 0–99 oralig‘ida kiriting.');return;}
+  const h=Number(home),a=Number(away);
+  const hasExtra=Boolean(homeExtra||awayExtra),hasPenalty=Boolean(homePenalty||awayPenalty);
+  if(domesticCup&&((hasExtra&&(!valid(homeExtra)||!valid(awayExtra)))||(hasPenalty&&(!valid(homePenalty)||!valid(awayPenalty))))){
+   setError('Qo‘shimcha vaqt yoki penalti kiritilsa, ikkala jamoaning hisobini to‘liq yozing.');return;
   }
-  void submit(Number(home),Number(away));
+  if(domesticCup&&h===a&&!hasExtra&&!hasPenalty){
+   setError('Kubokdagi durang uchun qo‘shimcha vaqt yoki penalti hisobini ham kiriting.');return;
+  }
+  void submit(h,a,domesticCup?{
+   homeScore:h,awayScore:a,
+   ...(hasExtra?{homeExtraTimeScore:Number(homeExtra),awayExtraTimeScore:Number(awayExtra)}:{}),
+   ...(hasPenalty?{homePenaltyScore:Number(homePenalty),awayPenaltyScore:Number(awayPenalty)}:{})
+  }:undefined);
  };
  const title=finished?'Tasdiqlangan hisob':disputed?'Hisob bo‘yicha nizo':own?'Raqib tasdig‘i kutilmoqda':proposed?'Raqib hisob yuborgan':'Uchrashuv hisobini kiritish';
  return <section className="match-chat-result" aria-label="Uchrashuv natijasini kiritish va tasdiqlash">
@@ -110,7 +127,8 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
     <span>:</span>
     <label>Mehmon <input inputMode="numeric" type="number" min="0" max="99" value={away} onChange={e=>setAway(e.target.value)} aria-label="Mehmon jamoa gollari"/></label>
     <button disabled={saving||!home.trim()||!away.trim()} type="button" onClick={manualSubmit}>{saving?<LoaderCircle size={14} className="animate-spin"/>:'Yuborish'}</button>
-   </div>}
+   </div>
+   {domesticCup&&<details className="match-chat-result-extra"><summary>Kubok: qo‘shimcha vaqt va penaltilar</summary><div className="match-chat-result-extra-grid"><label>Qo‘shimcha vaqt, mezbon<input type="number" inputMode="numeric" min="0" max="99" value={homeExtra} onChange={e=>setHomeExtra(e.target.value)}/></label><label>Qo‘shimcha vaqt, mehmon<input type="number" inputMode="numeric" min="0" max="99" value={awayExtra} onChange={e=>setAwayExtra(e.target.value)}/></label><label>Penalti, mezbon<input type="number" inputMode="numeric" min="0" max="99" value={homePenalty} onChange={e=>setHomePenalty(e.target.value)}/></label><label>Penalti, mehmon<input type="number" inputMode="numeric" min="0" max="99" value={awayPenalty} onChange={e=>setAwayPenalty(e.target.value)}/></label></div><small>Qo‘shimcha vaqt hisobi 120-daqiqadagi jami hisobdir. Penalti hisobi alohida yoziladi.</small></details>}}
    {!canSubmit&&!finished&&!disputed&&!own&&fixture&&<p className="match-chat-result-note">Bu uchrashuv uchun hozir hisob kiritish mumkin emas.</p>}
    {notice&&<p className="match-chat-result-note success">{notice}</p>}
    {error&&<p role="alert" className="match-chat-result-note caution">{error}</p>}
