@@ -626,3 +626,11 @@ body > .match-chat-game-layer .match-chat-game-top button{width:30px;height:30px
 .match-chat-result-entry>button{min-height:35px;padding:7px 11px;border-radius:9px;background:#285dd3;color:#fff;font-size:11px;font-weight:800}
 .match-chat-result-entry button:disabled,.match-chat-result-confirm:disabled{opacity:.48;cursor:not-allowed}
 .match-chat-result-refresh{display:inline-flex;align-items:center;gap:6px;padding:6px 2px;margin-top:7px;color:var(--text-secondary,#a2aec4);font-size:10px}
+
+
+.match-chat-result-extra{margin-top:10px;font-size:11px}
+.match-chat-result-extra summary{cursor:pointer;font-weight:700;color:var(--text-secondary,#a2aec4)}
+.match-chat-result-extra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0}
+.match-chat-result-extra-grid label{display:flex;flex-direction:column;gap:4px;color:var(--text-secondary,#a2aec4);font-size:10px}
+.match-chat-result-extra-grid input{width:100%;min-width:0;height:34px;padding:5px 9px;border:1px solid rgba(129,158,202,.33);border-radius:9px;background:var(--bg-primary,#0d1421);color:var(--text-primary,#fff);font-size:16px}
+.match-chat-result-extra>small{display:block;color:var(--text-secondary,#a2aec4);line-height:1.5}
