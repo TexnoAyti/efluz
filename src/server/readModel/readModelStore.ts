@@ -1,5 +1,5 @@
 import {seasonClubs,seasonLeagues,preparedLeagueReadConfig} from '../services/seasonCatalog';
-import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
+import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, isSeasonLeagueAccountVisible } from '../../lib/seasonParticipationPolicy';
 import { clubStadium } from '../../constants/clubStadiums';
 import {filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
@@ -1564,7 +1564,7 @@ export async function getAdminClubsFromReadModel(
     validateData: (data) => Array.isArray(data) && data.length > 0,
   });
 
-  let clubs = result.data.filter(c => isSeasonLeagueEnabled(c.leagueId, seasonId));
+  let clubs = result.data.filter(c => isSeasonLeagueAccountVisible(c.leagueId, seasonId));
   if (leagueId && leagueId !== 'ALL') {
     clubs = clubs.filter((c) => c.leagueId === leagueId);
   }
