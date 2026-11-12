@@ -475,3 +475,16 @@
 .match-chat-bubble p{margin:0;font-size:13px;line-height:1.4}
 .match-chat-day{margin:6px auto 10px}
 @media(max-width:639px){.match-chat-sheet{height:100dvh;min-height:0;max-height:100dvh}.match-chat-game-layer{position:absolute;inset:0}}
+
+
+/* Preserve classic compact chat bubbles with optional reply/pin controls. */
+.match-chat-message-tools{justify-content:flex-end;min-height:12px;margin-top:3px}
+.match-chat-message-tools time{margin:0;font-size:9px;gap:4px}
+.match-chat-message-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,currentColor 20%,transparent)}
+.match-chat-message-actions button{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:5px 9px;border-radius:9px;background:color-mix(in srgb,currentColor 10%,transparent);font-size:11px;font-weight:650}
+.match-chat-message-actions button:disabled{opacity:.45}
+.match-chat-bubble.selected{outline:2px solid color-mix(in srgb,var(--efl-primary,#2563eb) 35%,transparent);outline-offset:1px}
+.match-chat-bubble:focus-visible{outline:2px solid var(--efl-primary,#2563eb);outline-offset:2px}
+.match-chat-message-avatar .match-chat-avatar-fallback{display:none}
+.match-chat-message-avatar.avatar-failed img{display:none}
+.match-chat-message-avatar.avatar-failed .match-chat-avatar-fallback{display:inline}
