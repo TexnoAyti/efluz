@@ -17,6 +17,10 @@ export function isSeasonLeagueEnabled(leagueId: string | undefined, seasonId = C
   // No Season 1 domestic-league selection remains open after rollover.
   return seasonId !== CURRENT_SEASON_ID && Boolean(leagueId);
 }
+/** Existing Season 1 owners remain readable for account, match and history views. */
+export function isSeasonLeagueAccountVisible(leagueId: string | undefined, seasonId = CURRENT_SEASON_ID): boolean {
+  return Boolean(leagueId) && (seasonId === CURRENT_SEASON_ID || isSeasonLeagueEnabled(leagueId, seasonId));
+}
 export function isSeasonCompetitionEnabled(competitionId: string | undefined, seasonId = CURRENT_SEASON_ID): boolean {
   // EFL/Carabao Cup was removed from the official calendar in every season.
   // Apply at read time too: older durable/client snapshots can still contain it.
