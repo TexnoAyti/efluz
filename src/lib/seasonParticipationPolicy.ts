@@ -4,15 +4,26 @@ const WITHDRAWN_COMPETITIONS = new Set([
   'comp-ligue-1-2026', 'comp-coupe-de-france-2026',
   'comp-trophee-champions-2026', 'comp-trophee-des-champions-2026',
 ]);
+// Season 1 is now a residual competition season: only Super Cups and
+// European competitions remain visible/playable. Season 2 is the active
+// domestic-league registration/competition season.
+const CURRENT_SEASON_ALLOWED_COMPETITIONS = new Set([
+  'comp-community-shield-2026', 'comp-supercopa-espana-2026',
+  'comp-supercoppa-italiana-2026', 'comp-dfl-supercup-2026',
+  'comp-uefa-super-cup-2026', 'comp-champions-league-2026',
+  'comp-europa-league-2026',
+]);
 export function isSeasonLeagueEnabled(leagueId: string | undefined, seasonId = CURRENT_SEASON_ID): boolean {
-  return seasonId !== CURRENT_SEASON_ID || !['league-ligue-1', 'league-ligue1'].includes(leagueId || '');
+  // No Season 1 domestic-league selection remains open after rollover.
+  return seasonId !== CURRENT_SEASON_ID && Boolean(leagueId);
 }
 export function isSeasonCompetitionEnabled(competitionId: string | undefined, seasonId = CURRENT_SEASON_ID): boolean {
   // EFL/Carabao Cup was removed from the official calendar in every season.
   // Apply at read time too: older durable/client snapshots can still contain it.
   if (/efl[-_ ]?cup|carabao/i.test(competitionId || '')) return false;
   if (/conference|(?:^|[-_])uecl(?:[-_]|$)/i.test(competitionId || '')) return false;
-  return seasonId !== CURRENT_SEASON_ID || !WITHDRAWN_COMPETITIONS.has(competitionId || '');
+  if (seasonId === CURRENT_SEASON_ID) return CURRENT_SEASON_ALLOWED_COMPETITIONS.has(competitionId || '');
+  return !WITHDRAWN_COMPETITIONS.has(competitionId || '');
 }
 export function filterSeasonFixtures<T extends { competitionId?: string; seasonId?: string }>(fixtures: T[], seasonId = CURRENT_SEASON_ID): T[] {
   return fixtures.filter(f => isSeasonCompetitionEnabled(f.competitionId, f.seasonId || seasonId));
@@ -24,6 +35,6 @@ export function assertSeasonCompetitionEnabled(competitionId: string, seasonId =
 }
 export function assertSeasonLeagueEnabled(leagueId: string | undefined, seasonId = CURRENT_SEASON_ID): void {
   if (!isSeasonLeagueEnabled(leagueId, seasonId)) throw Object.assign(
-    new Error('Ligue 1 bu mavsumda yopilgan. Boshqa ligadan klub tanlang.'),
+    new Error('1-mavsum ligalari yopilgan. 2-mavsumdan klub tanlang.'),
     {code: 'LEAGUE_WITHDRAWN', status: 409, statusCode: 409});
 }
