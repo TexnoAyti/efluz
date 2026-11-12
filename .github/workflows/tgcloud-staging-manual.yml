@@ -111,4 +111,25 @@ jobs:
             done
           done
           echo "STAGING_IMPORT_COMPLETE"
+      - name: Verify staging runtime and imported account
+        run: |
+          ctx="{initData:{user:${TGCLOUD_STAGING_OWNER_TELEGRAM_ID}}}"
+          run_readonly() {
+            local module="$1"
+            local input="$2"
+            local log="/tmp/tgcloud-${module}.log"
+            npx --yes --package=@tgcloud/cli tgcloud run "endpoints/${module}" "$input" --ctx "$ctx" >"$log" 2>&1 || {
+              tail -40 "$log"
+              exit 1
+            }
+            grep -q '"ok"[[:space:]]*:[[:space:]]*true' "$log" || {
+              echo "STAGING_RUNTIME_CHECK_FAILED:${module}"
+              tail -40 "$log"
+              exit 1
+            }
+          }
+          run_readonly health '{}'
+          run_readonly seasons '{}'
+          run_readonly bootstrap '{}'
+          echo "STAGING_RUNTIME_CHECKS_OK"
 
