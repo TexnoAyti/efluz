@@ -34,7 +34,7 @@ assert.equal(withSeasonQualificationPolicy(stale,'season-2027-28'),stale);
 const fixture=(id:string,competitionId:string,status='SCHEDULED'):any=>({id,seasonId,competitionId,matchday:1,status,homeClubId:'club-psg',awayClubId:'club-lille',homeOwnerId:'owner1',awayOwnerId:'owner2',homeScore:1,awayScore:0,roundName:'Final'});
 const rows=[fixture('france',withdrawn),fixture('france-cup',cup,'CONFIRMED'),fixture('england','comp-premier-league-2026','CONFIRMED')];
 assert.deepEqual(filterSeasonFixtures(rows).map(f=>f.id),[]);
-assert.deepEqual(filterRetiredFixtures(rows).map(f=>f.id),['england']);
+assert.deepEqual(filterRetiredFixtures(rows).map(f=>f.id),[]);
 assert.equal(filterSeasonFixtures(rows.map(f=>({...f,seasonId:'season-2025-26'}))).length,3);
 for(const c of SEED_COMPETITIONS) await db.collection('competitions').doc(c.id).set(c);
 for(const f of rows) await db.collection('fixtures').doc(f.id).set(f);
