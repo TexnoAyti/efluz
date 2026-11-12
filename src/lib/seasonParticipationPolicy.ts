@@ -27,7 +27,7 @@ export function isSeasonCompetitionEnabled(competitionId: string | undefined, se
   if (/efl[-_ ]?cup|carabao/i.test(competitionId || '')) return false;
   if (/conference|(?:^|[-_])uecl(?:[-_]|$)/i.test(competitionId || '')) return false;
   if (seasonId === CURRENT_SEASON_ID) return CURRENT_SEASON_ALLOWED_COMPETITIONS.has(competitionId || '');
-  return !WITHDRAWN_COMPETITIONS.has(competitionId || '');
+  return true;
 }
 export function filterSeasonFixtures<T extends { competitionId?: string; seasonId?: string }>(fixtures: T[], seasonId = CURRENT_SEASON_ID): T[] {
   return fixtures.filter(f => isSeasonCompetitionEnabled(f.competitionId, f.seasonId || seasonId));
