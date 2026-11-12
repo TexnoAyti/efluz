@@ -44,7 +44,7 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
  useEffect(()=>{
   mounted.current=true;setFixture(null);setExpanded(false);setHome('');setAway('');setHomeExtra('');setAwayExtra('');setHomePenalty('');setAwayPenalty('');setError('');setNotice('');
   void refresh();
-  const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh(true);},12000);
+  const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh(true);},30000);
   return()=>{mounted.current=false;window.clearInterval(timer);};
  },[fixtureId,refresh]);
  const status=fixture?.status||'';
@@ -90,8 +90,11 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
   if(domesticCup&&((hasExtra&&(!valid(homeExtra)||!valid(awayExtra)))||(hasPenalty&&(!valid(homePenalty)||!valid(awayPenalty))))){
    setError('Qo‘shimcha vaqt yoki penalti kiritilsa, ikkala jamoaning hisobini to‘liq yozing.');return;
   }
-  if(domesticCup&&h===a&&!hasExtra&&!hasPenalty){
-   setError('Kubokdagi durang uchun qo‘shimcha vaqt yoki penalti hisobini ham kiriting.');return;
+  if(domesticCup&&h===a){
+   const finalHome=hasExtra?Number(homeExtra):h,finalAway=hasExtra?Number(awayExtra):a;
+   if(finalHome===finalAway&&(!hasPenalty||Number(homePenalty)===Number(awayPenalty))){
+    setError('Kubokda g‘olib aniqlanishi kerak: qo‘shimcha vaqt yoki penaltilar hisobini kiriting.');return;
+   }
   }
   void submit(h,a,domesticCup?{
    homeScore:h,awayScore:a,
