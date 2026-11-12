@@ -66,7 +66,7 @@ interface ClubsViewProps {
 }
 
 export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub }) => {
-  const { user, currentClub, ownedClubs, activeSeasonId, setActiveSeasonId, refreshUserData, showToast } = useAuth();
+  const { user, currentClub, ownedClubs, activeSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
   const fixtureStatusText: Record<string, string> = {
@@ -536,7 +536,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
 
   return (
     <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${activeSeasonId === EFL_SECOND_SEASON.id ? 'efl-season-two-page' : ''} ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
-      {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3.5 text-[var(--efl-text)] shadow-sm dark:shadow-black/20"><div className="min-w-0"><strong className="text-sm font-black text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="mt-1 text-xs text-[var(--efl-text-2)]">Klub qabuli shu yerda. Davom etayotgan uchrashuvlar 1-mavsumda.</p></div><button type="button" className="min-h-[40px] shrink-0 rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-2 text-xs font-bold text-[var(--efl-text)] transition-colors hover:border-[var(--efl-primary)] hover:text-[var(--efl-primary)] dark:shadow-black/20" onClick={() => setActiveSeasonId(CURRENT_SEASON_ID)}>1-mavsumga qaytish</button></div>}
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!EFL_2_DESIGN_ENABLED && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -1301,4 +1300,5 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
     </div>
   );
 };
+
 
