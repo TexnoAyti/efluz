@@ -2,7 +2,7 @@ import {seasonClubs, seasonLeagues} from '../services/seasonCatalog';
 import { S2_PUBLIC_AT } from '../../lib/seasonTwoAdmissionWindow';
 import {isClubSelectionBanned} from '../services/clubSelectionBan';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
-import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
+import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, isSeasonLeagueAccountVisible, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { assertDisciplineFixtureAllowed, prepareFixtureDiscipline } from '../services/disciplineService';
 import { assertNoDisciplinaryHold } from '../../types/discipline';
 import { clubStadium } from '../../constants/clubStadiums';
@@ -405,7 +405,7 @@ export async function getAllLeaguesFirestore(seasonId = 'season-2026-27'): Promi
   if (cached) return cached;
 
   // Use canonical SEED_LEAGUES directly to achieve ZERO Firestore reads
-  const res: League[] = seasonLeagues(seasonId).filter((l) => isSeasonLeagueEnabled(l.id, seasonId)).map((l) => ({
+  const res: League[] = seasonLeagues(seasonId).map((l) => ({
     id: l.id,
     name: l.name,
     country: l.country,
