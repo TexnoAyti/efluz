@@ -13,6 +13,24 @@ const scope = () => createHash('sha256').update(`${process.env.TELEGRAM_BOT_TOKE
 const statusKey = () => 'club-tags:status:' + scope();
 const records = 'telegram_member_tags';
 const clubs = new Map(SEED_CLUBS.map(c => [c.id, c]));
+const SEASON_ONE_TAG_COMPETITIONS = [
+  'comp-community-shield-2026', 'comp-supercopa-espana-2026',
+  'comp-supercoppa-italiana-2026', 'comp-dfl-supercup-2026',
+  'comp-uefa-super-cup-2026', 'comp-champions-league-2026',
+  'comp-europa-league-2026',
+] as const;
+
+async function tagEligibleClubIds(db: FirebaseFirestore.Firestore, seasonId: string): Promise<Set<string>> {
+  if (seasonId !== 'season-2026-27') return new Set(clubs.keys());
+  const eligible = new Set<string>();
+  const participants = await db.collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+    .where('competitionId', 'in', [...SEASON_ONE_TAG_COMPETITIONS]).get();
+  for (const row of participants.docs) {
+    const clubId = row.data()?.clubId;
+    if (typeof clubId === 'string' && clubs.has(clubId)) eligible.add(clubId);
+  }
+  return eligible;
+}
 const aliases: Record<string,string> = {
   'club-man-city':'Manchester City', 'club-man-utd':'Man United', 'club-nottm-forest':'Nottm Forest',
   'club-brighton':'Brighton', 'club-gladbach':'Mönchengladbach', 'club-tottenham':'Tottenham', 'club-wolves':'Wolves', 'club-psg':'PSG', 'club-real-sociedad':'Real Sociedad', 'club-atletico-madrid':'Atletico Madrid', 'club-athletic-bilbao':'Athletic Bilbao', 'club-eintracht-frankfurt':'Frankfurt', 'club-deportivo-la-coruna':'Deportivo', 'club-bayern':'Bayern München', 'club-dortmund':'Dortmund', 'club-leverkusen':'Leverkusen', 'club-union-berlin':'Union Berlin', 'club-brest':'Stade Brestois', 'club-lyon':'Olympique Lyon', 'club-marseille':'Marseille', 'club-strasbourg':'Strasbourg',
@@ -73,12 +91,13 @@ export async function listMissingGroupClubOwners(input: unknown = {}) {
   const seasons=await db.collection(COLLECTIONS.SEASONS).where('status','in',['active','ACTIVE']).limit(2).get();
   if (seasons.size !== 1) throw Error('ACTIVE_SEASON_UNAVAILABLE');
   const seasonId=seasons.docs[0].id;
+  const eligibleClubIds=await tagEligibleClubIds(db, seasonId);
   const occupancy=await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId','==',seasonId).limit(501).get();
   if (occupancy.size>500) throw Error('OWNER_LIST_INCOMPLETE');
   const owners=new Map<string,string[]>();
   for (const row of occupancy.docs) {
     const o=row.data();
-    if(o.status==='active' && o.userId && clubs.has(o.clubId) && row.id===`${seasonId}_${o.clubId}`)
+    if(o.status==='active' && o.userId && clubs.has(o.clubId) && eligibleClubIds.has(o.clubId) && row.id===`${seasonId}_${o.clubId}`)
       owners.set(o.userId,[...new Set([...(owners.get(o.userId)||[]),o.clubId])]);
   }
   const ids=[...owners.keys()].sort(), users=new Map<string,any>();
@@ -145,13 +164,14 @@ export async function reconcileClubMemberTags(): Promise<Summary|null> {
     const seasons=await db.collection(COLLECTIONS.SEASONS).where('status','in',['active','ACTIVE']).limit(2).get();
     if (seasons.size !== 1) throw Error('ACTIVE_SEASON_UNAVAILABLE');
     const seasonId=seasons.docs[0].id;
+    const eligibleClubIds=await tagEligibleClubIds(db, seasonId);
     const occupancy=await db.collection(COLLECTIONS.CLUB_OCCUPANCIES).where('seasonId','==',seasonId).limit(501).get();
     const previous=await db.collection(records).where('scope','==',key).limit(501).get();
     if (occupancy.size > 500 || previous.size > 500) throw Error('OWNER_LIST_INCOMPLETE');
     const owners=new Map<string,string[]>();
     for (const row of occupancy.docs) {
       const o=row.data();
-      if (o.status !== 'active' || !o.userId || !clubs.has(o.clubId) || row.id !== `${seasonId}_${o.clubId}`) continue;
+      if (o.status !== 'active' || !o.userId || !clubs.has(o.clubId) || !eligibleClubIds.has(o.clubId) || row.id !== `${seasonId}_${o.clubId}`) continue;
       owners.set(o.userId,[...new Set([...(owners.get(o.userId)||[]),o.clubId])]);
     }
     const prior=new Map(previous.docs.map(d=>[d.data().userId,{...d.data(),id:d.id}]));
@@ -221,3 +241,4 @@ export function scheduleClubMemberTags(): void {
   const work=reconcileClubMemberTags().catch(()=>{ console.warn('[CLUB_MEMBER_TAGS_DEFERRED]'); });
   if (process.env.VERCEL==='1') waitUntil(work); else void work;
 }
+
