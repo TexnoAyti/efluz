@@ -27,7 +27,7 @@ jobs:
   deploy-staging:
     if: ${{ inputs.confirmation == 'DEPLOY_STAGING_ONLY' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: tgcloud-staging
     env:
       TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_STAGING_TOKEN }}
@@ -48,6 +48,31 @@ jobs:
         run: |
           node --test scripts/serverlessStagingGate.test.mjs scripts/serverlessStagingIdentity.test.mjs
           node scripts/checkTgcloudModules.mjs
+      - name: Prepare verified private staging import bundle
+        run: |
+          test -n "${EFL_SOURCE_DATABASE_URL}" || { echo "EFL_SOURCE_DATABASE_URL secret is required"; exit 1; }
+          test -n "${TGCLOUD_STAGING_OWNER_TELEGRAM_ID}" || { echo "TGCLOUD_STAGING_OWNER_TELEGRAM_ID secret is required"; exit 1; }
+          [[ "${TGCLOUD_STAGING_OWNER_TELEGRAM_ID}" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "INVALID_STAGING_OWNER_TELEGRAM_ID"; exit 1; }
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          export EFL_REQUIRE_OBSERVED_COUNTS=0
+          bash scripts/exportEflSupabaseRuntime.sh "${RUNNER_TEMP}/efl-production.jsonl"
+          bash scripts/prepareEflMigrationBundle.sh "${RUNNER_TEMP}/efl-production.jsonl" "${RUNNER_TEMP}/efl-migration-bundle"
+          node scripts/verifyEflNormalizedPackets.mjs "${RUNNER_TEMP}/efl-migration-bundle/normalized-source.json" "${RUNNER_TEMP}/efl-migration-bundle/normalized-import"
+      - name: Enable import only in this staging runner
+        run: |
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='tgcloud/lib/importControl.js';
+          const owner=process.env.TGCLOUD_STAGING_OWNER_TELEGRAM_ID;
+          if(!/^[1-9][0-9]{0,19}$/.test(owner||'')) throw new Error('INVALID_STAGING_OWNER_TELEGRAM_ID');
+          let source=readFileSync(file,'utf8');
+          const next=source.replace(
+            /enabled:\s*false,\s*ownerTelegramId:\s*['"][^'"]*['"]/,
+            `enabled:true, ownerTelegramId:'${owner}'`
+          );
+          if(next===source) throw new Error('IMPORT_CONTROL_TEMPLATE_NOT_FOUND');
+          writeFileSync(file,next);
+          NODE
       - name: Build actual EFLUZ React Serverless UI
         run: bun run build:tgcloud:real-ui
       - name: Stage actual EFLUZ UI as the isolated Mini App
@@ -62,3 +87,26 @@ jobs:
         run: npx --yes --package=@tgcloud/cli tgcloud migrate --dry-run
       - name: Apply additive staging schema changes only
         run: npx --yes --package=@tgcloud/cli tgcloud migrate --safe
+      - name: Import verified packets into staging only
+        run: |
+          bundle="${RUNNER_TEMP}/efl-migration-bundle/normalized-import"
+          ctx="{initData:{user:{id:${TGCLOUD_STAGING_OWNER_TELEGRAM_ID}}}}"
+          shopt -s nullglob
+          tables=$(node --input-type=module - "${bundle}/manifest.json" <<'NODE'
+          import {readFile} from 'node:fs/promises';
+          const manifest=JSON.parse(await readFile(process.argv[2],'utf8'));
+          for (const table of manifest.order) if (manifest.tables[table]?.chunks?.length) console.log(table);
+          NODE
+          )
+          for table in $tables; do
+            files=( "${bundle}/${table}-"*.json )
+            for file in "${files[@]}"; do
+              echo "Importing ${table}/$(basename "${file}")"
+              npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "$(<"${file}")" --ctx "${ctx}" >/tmp/tgcloud-import.log 2>&1 || {
+                tail -40 /tmp/tgcloud-import.log
+                exit 1
+              }
+            done
+          done
+          echo "STAGING_IMPORT_COMPLETE"
+
