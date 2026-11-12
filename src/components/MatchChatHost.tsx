@@ -7,14 +7,14 @@ import {useAuth} from '../context/AuthContext';
 import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
 
 export function MatchChatHost(){
- const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null),[hasNewMessages,setHasNewMessages]=useState(false),[gameOpen,setGameOpen]=useState(false);
+ const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null),[activeMessage,setActiveMessage]=useState<string|null>(null),[hasNewMessages,setHasNewMessages]=useState(false),[gameOpen,setGameOpen]=useState(false);
  const input=useRef<HTMLTextAreaElement>(null),loading=useRef(false),messages=useRef<HTMLDivElement>(null),backdrop=useRef<HTMLDivElement>(null),stickToBottom=useRef(true),typingSentAt=useRef(0),typingIdleTimer=useRef<number|null>(null),lastMessageId=useRef<string|null>(null);
  const inTelegram=typeof window!=='undefined'&&Boolean((window as any).Telegram?.WebApp?.initData);
 
  const stopTyping=()=>{if(typingIdleTimer.current!==null){window.clearTimeout(typingIdleTimer.current);typingIdleTimer.current=null;}
   if(typingSentAt.current&&target){typingSentAt.current=0;void matchChatApi.typing(target,false).catch(()=>{});}
  };
- const close=()=>{setGameOpen(false);stopTyping();setTarget(null);setChat(null);setText('');setReplyTo(null);setError('');setMenu(false);setReporting(false);setHasNewMessages(false);};
+ const close=()=>{setGameOpen(false);stopTyping();setTarget(null);setChat(null);setText('');setReplyTo(null);setActiveMessage(null);setError('');setMenu(false);setReporting(false);setHasNewMessages(false);};
  const typing=(value:string)=>{
   if(!target||!chat?.canSend||document.visibilityState!=='visible')return;
   if(!value.trim()){stopTyping();return;}
@@ -30,7 +30,7 @@ export function MatchChatHost(){
    if(silent&&!stickToBottom.current&&latest!==lastMessageId.current&&lastMessageId.current!==null)setHasNewMessages(true);
    lastMessageId.current=latest;
    setChat(next);setError('');const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
- useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setGameOpen(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
+ useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setGameOpen(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);setActiveMessage(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
  useEffect(()=>()=>{if(typingIdleTimer.current!==null)window.clearTimeout(typingIdleTimer.current);},[]);
  useEffect(()=>{if(!target)return;void load();
   const refresh=()=>{if(document.visibilityState==='visible')void load(true);};
@@ -55,7 +55,7 @@ export function MatchChatHost(){
  useEffect(()=>{if(chat?.messages.length&&stickToBottom.current)requestAnimationFrame(()=>{const el=messages.current;if(el)el.scrollTop=el.scrollHeight;});},[chat?.messages.length,target?.matchId]);
  useEffect(()=>{if(!target)return;const key=(event:KeyboardEvent)=>{if(event.key==='Escape')close();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[target]);
  if(!target)return null;
- const send=async(value=text)=>{const body=value.trim();if(!body||busy||!chat?.canSend)return;setBusy(true);setError('');try{stickToBottom.current=true;setHasNewMessages(false);const next=await matchChatApi.send(target,body,replyTo||undefined);lastMessageId.current=next.messages.at(-1)?.id||null;setChat(next);setText('');setReplyTo(null);stopTyping();input.current?.focus();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
+ const send=async(value=text)=>{const body=value.trim();if(!body||busy||!chat?.canSend)return;setBusy(true);setError('');try{stickToBottom.current=true;setHasNewMessages(false);const next=await matchChatApi.send(target,body,replyTo||undefined);lastMessageId.current=next.messages.at(-1)?.id||null;setChat(next);setText('');setReplyTo(null);setActiveMessage(null);stopTyping();input.current?.focus();}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  const toggleBlock=async()=>{if(!chat||busy)return;setBusy(true);try{setChat(await matchChatApi.block(target,!chat.blockedByMe));setMenu(false);setError('');}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  const report=async()=>{if(busy||reportReason.trim().length<3)return;setBusy(true);try{setChat(await matchChatApi.report(target,reportReason));setReporting(false);setReportReason('');setMenu(false);setError('Shikoyat adminga yuborildi.');}catch(e:any){setError(e.message);}finally{setBusy(false);}};
  return createPortal(<div ref={backdrop} className={`match-chat-backdrop${inTelegram?' match-chat-telegram':''}`} role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}>
@@ -85,21 +85,22 @@ export function MatchChatHost(){
     {!chat&&busy&&<div className="match-chat-state"><LoaderCircle className="animate-spin"/><p>Chat ochilmoqda…</p></div>}
     {chat&&!chat.messages.length&&<div className="match-chat-empty"><div><MessageCircle size={28}/></div><h3>Suhbatni boshlang</h3><p>O‘yin vaqtini kelishib oling yoki xona ID yuboring.</p></div>}
     {chat?.messages.map((message,index)=>{
-      const mine=message.senderId===user?.id,previous=chat.messages[index-1];
+      const mine=message.senderId===user?.id,previous=chat.messages[index-1],selected=activeMessage===message.id;
       const showDay=!previous||new Date(previous.createdAt).toLocaleDateString('uz-UZ')!==new Date(message.createdAt).toLocaleDateString('uz-UZ');
       const readIndex=chat.messages.findIndex(m=>m.id===chat.opponentReadThroughId);
       const reply=message.replyToId?chat.messages.find(m=>m.id===message.replyToId):null;
       return <React.Fragment key={message.id}>
        {showDay&&<div className="match-chat-day">{new Date(message.createdAt).toLocaleDateString('uz-UZ',{timeZone:'Asia/Tashkent',day:'numeric',month:'long'})}</div>}
-       <article data-chat-message-id={message.id} className={`match-chat-bubble ${mine?'mine':'theirs'}`}>
-         {message.replyToId&&<button className="match-chat-replied" onClick={()=>focusMessage(message.replyToId!)}><CornerUpLeft size={12}/><span>{reply?reply.senderName+': '+reply.text:'Oldingi xabar'}</span></button>}
+       <article data-chat-message-id={message.id} className={`match-chat-bubble ${mine?'mine':'theirs'}${selected?' selected':''}`} role="button" tabIndex={0} aria-label={`${message.senderName}: ${message.text}. Amallarni ko‘rsatish`} aria-expanded={selected} onClick={()=>setActiveMessage(selected?null:message.id)} onKeyDown={e=>{if(e.target!==e.currentTarget)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();setActiveMessage(selected?null:message.id);}}}>
+         {message.replyToId&&<button className="match-chat-replied" onClick={e=>{e.stopPropagation();focusMessage(message.replyToId!);}}><CornerUpLeft size={12}/><span>{reply?reply.senderName+': '+reply.text:'Oldingi xabar'}</span></button>}
          <p>{message.text}</p>
-         <div className="match-chat-bubble-bottom"><time>{new Date(message.createdAt).toLocaleTimeString('uz-UZ',{timeZone:'Asia/Tashkent',hour:'2-digit',minute:'2-digit'})}{mine&&(readIndex>=index?<CheckCheck size={13} aria-label="O‘qildi"/>:<Check size={12} aria-label="Yuborildi"/>)}</time>
-          <div className="match-chat-bubble-actions">
-           {chat.canSend&&<button type="button" onClick={()=>{setReplyTo(message.id);input.current?.focus();}} aria-label="Xabarga javob berish" title="Javob berish"><CornerUpLeft size={13}/></button>}
-           <button type="button" disabled={busy} onClick={()=>void changePin(chat.pinnedMessageId===message.id?null:message.id)} aria-label={chat.pinnedMessageId===message.id?'Mahkamdan olish':'Xabarni mahkamlash'} title={chat.pinnedMessageId===message.id?'Mahkamdan olish':'Mahkamlash'}>{chat.pinnedMessageId===message.id?<PinOff size={13}/>:<Pin size={13}/>}</button>
-          </div>
+         <div className="match-chat-bubble-bottom">
+          <time>{new Date(message.createdAt).toLocaleTimeString('uz-UZ',{timeZone:'Asia/Tashkent',hour:'2-digit',minute:'2-digit'})}{mine&&(readIndex>=index?<CheckCheck size={13} aria-label="O‘qildi"/>:<Check size={12} aria-label="Yuborildi"/>)}</time>
          </div>
+         {selected&&<div className="match-chat-bubble-actions" onClick={e=>e.stopPropagation()}>
+           {chat.canSend&&<button type="button" onClick={()=>{setReplyTo(message.id);setActiveMessage(null);input.current?.focus();}} aria-label="Xabarga javob berish"><CornerUpLeft size={15}/> Javob</button>}
+           <button type="button" disabled={busy} onClick={()=>{setActiveMessage(null);void changePin(chat.pinnedMessageId===message.id?null:message.id);}} aria-label={chat.pinnedMessageId===message.id?'Mahkamdan olish':'Xabarni mahkamlash'}>{chat.pinnedMessageId===message.id?<PinOff size={15}/>:<Pin size={15}/>} {chat.pinnedMessageId===message.id?'Olib tashlash':'Pin'}</button>
+          </div>}
        </article>
       </React.Fragment>;
     })}
