@@ -113,7 +113,7 @@ jobs:
           echo "STAGING_IMPORT_COMPLETE"
       - name: Verify staging runtime and imported account
         run: |
-          ctx="{initData:{user:${TGCLOUD_STAGING_OWNER_TELEGRAM_ID}}}"
+          ctx="{initData:{user:{id:${TGCLOUD_STAGING_OWNER_TELEGRAM_ID}}}}"
           run_readonly() {
             local module="$1"
             local input="$2"
