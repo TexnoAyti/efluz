@@ -5,6 +5,7 @@ import {matchChatApi,onMatchChatOpen,readMatchChatLaunch,type MatchChatTarget} f
 import type {MatchChatView} from '../types/matchChat';
 import {useAuth} from '../context/AuthContext';
 import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
+import {MatchChatResultPanel} from './MatchChatResultPanel';
 
 
 // Adapt the original chat presentation to the current live room payload.
@@ -105,6 +106,7 @@ export function MatchChatHost(){
      <div className="match-chat-score"><strong>{chat.matchInfo.homeScore===null?'–':chat.matchInfo.homeScore} : {chat.matchInfo.awayScore===null?'–':chat.matchInfo.awayScore}</strong><small>{chat.matchInfo.matchday}-tur · {chat.matchInfo.status==='CONFIRMED'?'Yakunlangan':'O‘yin'}</small></div>
      <div className="match-chat-team">{chat.matchInfo.awayLogoUrl&&<img src={chat.matchInfo.awayLogoUrl} alt="" loading="lazy" onError={e=>{e.currentTarget.hidden=true;}}/>}<span>{chat.matchInfo.awayName}</span></div>
    </section>}
+   {target.kind==='fixture'&&chat&&<MatchChatResultPanel key={target.matchId} fixtureId={target.matchId} />}
    {target.kind==='fixture'&&chat?.matchInfo&&chat.canSend&&<button type="button" className="match-chat-game-launch" onClick={openGame}><Gamepad2 size={17}/><span>Penalti o‘ynash</span><small>Joriy uchrashuv · mashg‘ulot rejimi</small></button>}
    {chat?.pinnedMessageId&&chat.messages.some(m=>m.id===chat.pinnedMessageId)&&<button className="match-chat-pinned" onClick={()=>focusMessage(chat.pinnedMessageId!)}><Pin size={15}/><span>{chat.messages.find(m=>m.id===chat.pinnedMessageId)?.text}</span><span>Ko‘rish</span></button>}
    {reporting&&<div className="match-chat-report"><label>Shikoyat sababi<textarea maxLength={300} value={reportReason} onChange={e=>setReportReason(e.target.value)} placeholder="Muammoni qisqa va aniq yozing"/></label><div><button onClick={()=>setReporting(false)}>Bekor qilish</button><button className="primary" disabled={busy||reportReason.trim().length<3} onClick={()=>void report()}><Flag size={14}/>Yuborish</button></div></div>}
