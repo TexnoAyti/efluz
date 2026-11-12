@@ -141,11 +141,11 @@ async function runDeploymentSelfCheck() {
     if (withdrawnLeague.status !== 404) throw new Error('Withdrawn league still accessible in current season');
 
     // 3.3 /api/leagues/league-premier-league/clubs
-    const plClubs = await testEndpoint('/api/leagues/league-premier-league/clubs');
+    const plClubs = await testEndpoint('/api/leagues/league-premier-league/clubs?seasonId=season-2027-28');
     if (plClubs.status !== 200 || !plClubs.isJson || !Array.isArray(plClubs.json?.clubs) || plClubs.json.clubs.length !== 20) {
       throw new Error(`FAILED [CHECK 3.3]: Premier League clubs count failed -> count=${plClubs.json?.clubs?.length}`);
     }
-    console.log(`✅ PASS [CHECK 3.3]: GET /api/leagues/.../clubs returned HTTP 200 JSON (20 2026/27 clubs)`);
+    console.log(`✅ PASS [CHECK 3.3]: GET /api/leagues/.../clubs returned HTTP 200 JSON (20 Season 2 clubs)`);
 
     // 3.4 /api/me (unauthenticated must be JSON 401, NEVER HTML)
     const meAnon = await testEndpoint('/api/me');
