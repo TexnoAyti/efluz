@@ -1479,7 +1479,7 @@ export function checkFixturePlayability(
     }
   }
 
-  if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
+  if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId,europeanDrawId: (resolvedComp as any)?.europeanDrawId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate !== null) return { isPlayable: explicitGate, activeMatchday };
 
@@ -7561,4 +7561,3 @@ export async function adminDeleteResultSubmissionFirestore(
     message: `Result submission '${submissionId}' has been deleted.`,
   };
 }
-
