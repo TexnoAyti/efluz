@@ -48,10 +48,14 @@ jobs:
         run: |
           node --test scripts/serverlessStagingGate.test.mjs scripts/serverlessStagingIdentity.test.mjs
           node scripts/checkTgcloudModules.mjs
-      - name: Build isolated Mini App
-        run: bun run build:tgcloud
-      - name: Check static output excludes backend
-        run: node scripts/verifyTgcloudStatic.mjs
+      - name: Build actual EFLUZ React Serverless UI
+        run: bun run build:tgcloud:real-ui
+      - name: Stage actual EFLUZ UI as the isolated Mini App
+        run: node scripts/stageEflRealUi.mjs
+      - name: Verify actual UI excludes backend
+        run: |
+          node scripts/verifyEflServerlessUi.mjs
+          EFL_VERIFY_REAL_UI=1 node scripts/verifyTgcloudStatic.mjs
       - name: Deploy to isolated staging bot only
         run: npx --yes --package=@tgcloud/cli tgcloud push --force
       - name: Review proposed staging schema changes (read-only)
