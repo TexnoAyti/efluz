@@ -6,6 +6,8 @@ export interface MatchChatMessage {
   senderName: string;
   text: string;
   createdAt: string;
+  avatarUrl?: string | null;
+  replyTo?: { id: string; senderName: string; text: string } | null;
 }
 
 export interface MatchChatView {
@@ -26,6 +28,7 @@ export interface MatchChatView {
   canSend: boolean;
   quickMessages: string[];
   updatedAt: string;
+  pinnedMessage?: MatchChatMessage | null;
 }
 
 export interface MatchChatAdminReport {
