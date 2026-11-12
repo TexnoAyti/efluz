@@ -397,26 +397,22 @@
 .efl-upcoming-league-season { margin-left: auto; text-align: right; font-size: 10px; font-weight: 500; }
 
 /* Match-bound opponent chat: solid reading surface with restrained EFL glass controls. */
-.match-chat-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:flex-end;justify-content:center;background:rgba(3,7,18,.58);backdrop-filter:blur(8px);padding-top:env(safe-area-inset-top)}
-.match-chat-sheet{position:relative;width:min(100%,460px);height:min(780px,calc(100dvh - max(12px,env(safe-area-inset-top))));display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto auto auto;overflow:hidden;background:var(--efl-surface,#fff);color:var(--efl-text,#111827);border:1px solid var(--efl-border,#e2e6ec);border-radius:26px 26px 0 0;box-shadow:0 -24px 70px rgba(2,6,23,.28)}
-.match-chat-header{position:relative;display:flex;align-items:center;gap:10px;min-height:68px;padding:10px 12px;background:color-mix(in srgb,var(--efl-surface,#fff) 88%,transparent);border-bottom:1px solid var(--efl-border,#e2e6ec);backdrop-filter:blur(16px) saturate(1.8)}
+.match-chat-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:flex-end;justify-content:center;background:rgba(3,7,18,.58);backdrop-filter:blur(8px);padding-top:max(12px,env(safe-area-inset-top))}
+.match-chat-sheet{position:relative;width:min(100%,460px);height:min(780px,calc(var(--match-chat-viewport-height,100dvh) - max(12px,env(safe-area-inset-top))));display:flex;flex-direction:column;min-height:0;overflow:hidden;background:var(--efl-surface,#fff);color:var(--efl-text,#111827);border:1px solid var(--efl-border,#e2e6ec);border-radius:26px 26px 0 0;box-shadow:0 -24px 70px rgba(2,6,23,.28)}
+.match-chat-header{flex:0 0 auto;position:relative;display:flex;align-items:center;gap:10px;min-height:68px;padding:10px 12px;background:color-mix(in srgb,var(--efl-surface,#fff) 88%,transparent);border-bottom:1px solid var(--efl-border,#e2e6ec);backdrop-filter:blur(16px) saturate(1.8)}
 .match-chat-header h2{font-size:14px;line-height:1.2;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.match-chat-header p{margin-top:3px;font-size:10px;color:var(--efl-text-2,#64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .match-chat-icon{display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;border:1px solid var(--efl-border,#e2e6ec);border-radius:15px;background:color-mix(in srgb,var(--efl-surface,#fff) 78%,transparent);color:var(--efl-text,#111827)}.match-chat-icon:active{transform:scale(.95)}.match-chat-close{display:none}
 .match-chat-avatar{position:relative;display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;border-radius:15px;background:var(--efl-primary-soft,#dbeafe);color:var(--efl-primary,#2563eb)}.match-chat-avatar span{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border:2px solid var(--efl-surface,#fff);border-radius:50%;background:#22c55e}
 .match-chat-menu{position:absolute;z-index:4;right:12px;top:58px;width:210px;padding:6px;border:1px solid var(--efl-border,#e2e6ec);border-radius:16px;background:var(--efl-surface,#fff);box-shadow:0 18px 48px rgba(2,6,23,.22)}.match-chat-menu button{display:flex;align-items:center;gap:9px;width:100%;min-height:42px;padding:9px 10px;border-radius:11px;font-size:12px;font-weight:750;text-align:left}.match-chat-menu button:hover{background:var(--efl-surface-2,#f1f5f9)}.match-chat-menu button:disabled{opacity:.45}
 .match-chat-context{display:flex;align-items:flex-start;gap:7px;padding:8px 14px;background:color-mix(in srgb,var(--efl-primary,#2563eb) 7%,var(--efl-surface,#fff));border-bottom:1px solid var(--efl-border,#e2e6ec);font-size:10px;line-height:1.45;color:var(--efl-text-2,#64748b)}.match-chat-context svg{flex:0 0 auto;margin-top:1px;color:var(--efl-primary,#2563eb)}
-.match-chat-pinned{display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;border:0;border-bottom:1px solid var(--efl-border,#e2e6ec);background:color-mix(in srgb,var(--efl-primary,#2563eb) 7%,var(--efl-surface,#fff));color:var(--efl-primary,#2563eb);text-align:left}.match-chat-pinned span{display:grid;min-width:0;flex:1}.match-chat-pinned small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--efl-text-2,#64748b)}
 .match-chat-report{padding:12px 14px;border-bottom:1px solid var(--efl-border,#e2e6ec);background:color-mix(in srgb,#ef4444 6%,var(--efl-surface,#fff))}.match-chat-report label{display:grid;gap:7px;font-size:11px;font-weight:800}.match-chat-report textarea{min-height:68px;resize:none;padding:10px;border:1px solid var(--efl-border,#e2e6ec);border-radius:12px;background:var(--efl-surface,#fff);color:var(--efl-text,#111827);font-size:12px}.match-chat-report>div{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.match-chat-report button{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:7px 12px;border-radius:11px;font-size:11px;font-weight:800}.match-chat-report button.primary{background:#dc2626;color:#fff}
-.match-chat-messages{min-height:0;overflow:auto;overscroll-behavior:contain;padding:16px 14px 10px;background:linear-gradient(180deg,color-mix(in srgb,var(--efl-bg,#f4f5f7) 78%,var(--efl-surface,#fff)),var(--efl-bg,#f4f5f7));scrollbar-width:thin}
+.match-chat-messages{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scroll-padding-bottom:12px;padding:16px 14px 10px;background:linear-gradient(180deg,color-mix(in srgb,var(--efl-bg,#f4f5f7) 78%,var(--efl-surface,#fff)),var(--efl-bg,#f4f5f7));scrollbar-width:thin}
 .match-chat-day{width:max-content;margin:4px auto 12px;padding:5px 9px;border:1px solid var(--efl-border,#e2e6ec);border-radius:999px;background:color-mix(in srgb,var(--efl-surface,#fff) 86%,transparent);font-size:9px;font-weight:800;color:var(--efl-text-2,#64748b)}
 .match-chat-bubble{width:fit-content;max-width:82%;margin:0 0 8px;padding:9px 11px 6px;border-radius:16px;border:1px solid var(--efl-border,#e2e6ec);background:var(--efl-surface,#fff);box-shadow:0 4px 16px rgba(2,6,23,.05)}.match-chat-bubble.mine{margin-left:auto;border-bottom-right-radius:5px;border-color:color-mix(in srgb,var(--efl-primary,#2563eb) 22%,transparent);background:var(--efl-primary,#2563eb);color:#fff}.match-chat-bubble.theirs{border-bottom-left-radius:5px}.match-chat-bubble p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.45}.match-chat-bubble time{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:3px;font-size:8px;opacity:.68}
-.match-chat-row{display:flex;align-items:flex-end;gap:7px;margin:0 0 8px}.match-chat-row.mine{justify-content:flex-end}.match-chat-message-avatar{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px;border-radius:50%;overflow:hidden;background:var(--efl-primary-soft,#dbeafe);color:var(--efl-primary,#2563eb);font-size:11px;font-weight:900}.match-chat-message-avatar img{width:100%;height:100%;object-fit:cover}.match-chat-row .match-chat-bubble{margin:0}.match-chat-reply-preview{display:grid;gap:2px;margin:-2px 0 6px;padding:4px 7px;border-left:3px solid var(--efl-primary,#2563eb);background:color-mix(in srgb,var(--efl-primary,#2563eb) 8%,transparent);font-size:9px}.match-chat-reply-preview span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.match-chat-message-tools{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:3px;font-size:8px;opacity:.72}.match-chat-message-tools button{display:grid;place-items:center;width:22px;height:20px;border-radius:6px;color:inherit}.match-chat-message-tools button:hover{background:color-mix(in srgb,currentColor 12%,transparent)}.match-chat-message-tools time{display:flex;align-items:center;gap:3px;margin-left:2px}
 .match-chat-state,.match-chat-empty{height:100%;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--efl-text-2,#64748b)}.match-chat-empty>div{display:grid;place-items:center;width:64px;height:64px;margin-bottom:13px;border-radius:22px;background:var(--efl-primary-soft,#dbeafe);color:var(--efl-primary,#2563eb)}.match-chat-empty h3{font-size:15px;font-weight:900;color:var(--efl-text,#111827)}.match-chat-empty p{max-width:240px;margin-top:5px;font-size:11px;line-height:1.5}
 .match-chat-error{display:flex;align-items:center;gap:7px;padding:8px 12px;background:color-mix(in srgb,#ef4444 10%,var(--efl-surface,#fff));border-top:1px solid color-mix(in srgb,#ef4444 24%,transparent);font-size:10px;color:#dc2626}.match-chat-error.success{background:color-mix(in srgb,#22c55e 10%,var(--efl-surface,#fff));border-color:color-mix(in srgb,#22c55e 24%,transparent);color:#15803d}.match-chat-error span{flex:1}.match-chat-error button{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:color-mix(in srgb,currentColor 10%,transparent)}
-.match-chat-quick{display:flex;align-items:center;gap:7px;overflow-x:auto;padding:8px 12px;border-top:1px solid var(--efl-border,#e2e6ec);scrollbar-width:none;min-height:50px}.match-chat-quick::-webkit-scrollbar{display:none}.match-chat-quick button{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;width:auto!important;height:auto!important;max-width:240px;min-height:34px!important;padding:7px 11px!important;border:1px solid color-mix(in srgb,var(--efl-primary,#2563eb) 24%,var(--efl-border,#e2e6ec));border-radius:999px;background:color-mix(in srgb,var(--efl-primary,#2563eb) 7%,var(--efl-surface,#fff));font-size:10px;line-height:1.25;font-weight:750;color:var(--efl-text,#111827);white-space:nowrap}.match-chat-quick button:disabled{opacity:.45}
-.match-chat-compose{display:flex;align-items:flex-end;gap:9px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--efl-border,#e2e6ec);background:color-mix(in srgb,var(--efl-surface,#fff) 88%,transparent);backdrop-filter:blur(16px) saturate(1.8)}.match-chat-compose textarea{width:100%;max-height:104px;min-height:46px;resize:none;padding:12px 14px;border:1px solid var(--efl-border,#e2e6ec);border-radius:17px;background:var(--efl-bg,#f4f5f7);color:var(--efl-text,#111827);font-size:13px;line-height:1.4;outline:none}.match-chat-compose textarea:focus{border-color:color-mix(in srgb,var(--efl-primary,#2563eb) 55%,var(--efl-border,#e2e6ec));box-shadow:0 0 0 3px color-mix(in srgb,var(--efl-primary,#2563eb) 10%,transparent)}
-.match-chat-compose{flex-wrap:wrap}.match-chat-replying{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border-left:3px solid var(--efl-primary,#2563eb);border-radius:8px;background:color-mix(in srgb,var(--efl-primary,#2563eb) 8%,var(--efl-surface,#fff));font-size:10px}.match-chat-replying span{display:grid;min-width:0;flex:1}.match-chat-replying small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--efl-text-2,#64748b)}.match-chat-replying button{display:grid;place-items:center;width:28px;height:28px;border-radius:8px}
-.match-chat-compose textarea:not(:disabled){background:var(--efl-surface,#fff);border-color:color-mix(in srgb,var(--efl-primary,#2563eb) 22%,var(--efl-border,#e2e6ec))}.match-chat-compose textarea:disabled{opacity:.62;cursor:not-allowed}
+.match-chat-quick{display:flex;flex:0 0 auto;align-items:center;gap:7px;overflow-x:auto;padding:8px 12px;border-top:1px solid var(--efl-border,#e2e6ec);scrollbar-width:none;min-height:50px}.match-chat-quick::-webkit-scrollbar{display:none}.match-chat-quick button{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;width:auto!important;height:auto!important;max-width:240px;min-height:34px!important;padding:7px 11px!important;border:1px solid color-mix(in srgb,var(--efl-primary,#2563eb) 24%,var(--efl-border,#e2e6ec));border-radius:999px;background:color-mix(in srgb,var(--efl-primary,#2563eb) 7%,var(--efl-surface,#fff));font-size:10px;line-height:1.25;font-weight:750;color:var(--efl-text,#111827);white-space:nowrap}.match-chat-quick button:disabled{opacity:.45}
+.match-chat-compose{display:flex;flex:0 0 auto;align-items:flex-end;gap:9px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--efl-border,#e2e6ec);background:color-mix(in srgb,var(--efl-surface,#fff) 88%,transparent);backdrop-filter:blur(16px) saturate(1.8)}.match-chat-compose textarea{width:100%;max-height:104px;min-height:46px;resize:none;padding:12px 14px;border:1px solid var(--efl-border,#e2e6ec);border-radius:17px;background:var(--efl-bg,#f4f5f7);color:var(--efl-text,#111827);font-size:13px;line-height:1.4;outline:none}.match-chat-compose textarea:focus{border-color:color-mix(in srgb,var(--efl-primary,#2563eb) 55%,var(--efl-border,#e2e6ec));box-shadow:0 0 0 3px color-mix(in srgb,var(--efl-primary,#2563eb) 10%,transparent)}
 .match-chat-send{display:grid;place-items:center;width:46px;height:46px;flex:0 0 46px;border-radius:16px;background:var(--efl-primary,#2563eb);color:#fff;box-shadow:0 9px 22px color-mix(in srgb,var(--efl-primary,#2563eb) 24%,transparent)}.match-chat-send:disabled{opacity:.38;box-shadow:none}.match-chat-blocked{display:flex;align-items:center;gap:8px;width:100%;min-height:46px;padding:9px 11px;border:1px solid var(--efl-border,#e2e6ec);border-radius:15px;background:var(--efl-bg,#f4f5f7);font-size:11px}.match-chat-blocked span{flex:1}.match-chat-blocked button{min-height:34px;padding:6px 10px;border-radius:10px;background:var(--efl-primary,#2563eb);color:#fff;font-weight:800}
 .match-chat-unread{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;font-size:9px;font-weight:900;box-shadow:0 0 0 2px color-mix(in srgb,var(--efl-surface,#fff) 80%,transparent)}
 @media(min-width:640px){.match-chat-backdrop{align-items:center;padding:24px}.match-chat-sheet{height:min(760px,calc(100dvh - 48px));border-radius:28px}.match-chat-header>.match-chat-icon:first-child{display:none}.match-chat-close{display:grid}}
@@ -441,49 +437,165 @@
 @keyframes match-chat-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes match-chat-sheet-in{from{opacity:0;transform:translateY(18px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes match-chat-bubble-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-@media(max-width:420px){.match-chat-sheet{height:calc(100dvh - max(8px,env(safe-area-inset-top)));border-radius:22px 22px 0 0}.match-chat-header{min-height:64px;padding-inline:9px;gap:8px}.match-chat-icon{width:40px;height:40px;flex-basis:40px;border-radius:14px}.match-chat-avatar{width:40px;height:40px;flex-basis:40px}.match-chat-messages{padding-inline:11px}.match-chat-compose{padding-inline:9px}.match-chat-quick{padding-inline:9px}}
-@media(max-width:639px){.match-chat-backdrop{padding-top:0}.match-chat-sheet{width:100%;height:100dvh;min-height:100dvh;border-radius:0;border-left:0;border-right:0}.match-chat-compose{background:var(--efl-surface,#fff);backdrop-filter:none}.match-chat-quick{background:var(--efl-surface,#fff)}}
-
-/* Keep the composer usable on narrow Telegram WebApp viewports. */
-.match-chat-compose>textarea{flex:1 1 auto;width:auto;min-width:0}.match-chat-compose>.match-chat-send{flex:0 0 46px}
-.match-chat-message-tools button{touch-action:manipulation;pointer-events:auto}
+@media(max-width:420px){.match-chat-sheet{height:calc(var(--match-chat-viewport-height,100dvh) - max(8px,env(safe-area-inset-top)));border-radius:22px 22px 0 0}.match-chat-header{min-height:64px;padding-inline:9px;gap:8px}.match-chat-icon{width:40px;height:40px;flex-basis:40px;border-radius:14px}.match-chat-avatar{width:40px;height:40px;flex-basis:40px}.match-chat-messages{padding-inline:11px}.match-chat-compose{padding-inline:9px}.match-chat-quick{padding-inline:9px}}
 @media(prefers-reduced-motion:reduce){.efl-chat-trigger,.match-chat-backdrop,.match-chat-sheet,.match-chat-bubble,.match-chat-send{animation:none;transition:none}.efl-chat-trigger::after{display:none}}
 
+/* Telegram mobile chat: the message list is the only flexible region.
+   Keep the native Telegram overlay clear and the composer above the keyboard. */
+.match-chat-context,.match-chat-report,.match-chat-error{flex:0 0 auto}
+.match-chat-sheet{max-height:100%;isolation:isolate}
+.match-chat-telegram .match-chat-header{padding-top:max(64px,env(safe-area-inset-top))}
+.match-chat-keyboard-open .match-chat-compose{padding-bottom:10px}
+.match-chat-compose textarea{font-size:16px}
+.match-chat-quick{max-width:100%;touch-action:pan-x}
+.match-chat-quick button{max-width:min(70vw,230px);overflow:hidden;text-overflow:ellipsis}
+.match-chat-messages{-webkit-overflow-scrolling:touch}
+.match-chat-quick{background:var(--efl-surface,#fff);color:var(--efl-text,#111827)}
+.match-chat-compose{background:var(--efl-surface,#fff)}
+/* Full-height mobile chat: message list flexes, composer stays at the bottom. */
+@media(max-width:639px){
+ .match-chat-backdrop{top:var(--match-chat-viewport-top,0px);bottom:auto;height:var(--match-chat-viewport-height,100dvh);min-height:0;padding-top:0;align-items:stretch}
+ .match-chat-sheet{width:100%;height:100%;max-height:none;min-height:0;margin:0;border-radius:0;border-left:0;border-right:0;border-bottom:0}
+ .match-chat-telegram .match-chat-header{padding-top:max(64px,env(safe-area-inset-top))}
+ .match-chat-keyboard-open .match-chat-header{padding-top:max(12px,env(safe-area-inset-top))}
+ .match-chat-compose{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+ .match-chat-keyboard-open .match-chat-compose{padding-bottom:10px}
+}
+@media(min-width:640px){.match-chat-telegram .match-chat-header{padding-top:10px}}
 
-/* Match chat layout refinement: per-message controls are contextual.
-   Telegram WebView receives a genuine full-height overlay without occluding
-   its native header or leaving an empty panel below the composer. */
-.match-chat-backdrop{top:var(--match-chat-screen-top,0px);bottom:auto;height:var(--match-chat-screen-height,100dvh);min-height:0;padding-top:0}
-.match-chat-sheet{display:flex;flex-direction:column;height:100%;max-height:100%;min-height:0}
-.match-chat-header,.match-chat-context,.match-chat-pinned,.match-chat-report,.match-chat-error,.match-chat-quick,.match-chat-compose{flex:0 0 auto}
-.match-chat-messages{flex:1 1 auto;min-height:0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
-.match-chat-row{margin-bottom:6px;gap:6px}
-.match-chat-row.mine{flex-direction:row-reverse}
-.match-chat-message-avatar{width:27px;height:27px;flex-basis:27px}
-.match-chat-message-avatar .match-chat-avatar-fallback{display:none}
-.match-chat-message-avatar.avatar-failed img{display:none}
-.match-chat-message-avatar.avatar-failed .match-chat-avatar-fallback{display:inline}
-.match-chat-bubble{max-width:min(82%,340px);padding:8px 10px 6px;cursor:pointer}
-.match-chat-bubble p{margin:0;font-size:13px;line-height:1.38}
-.match-chat-message-tools{margin-top:3px;justify-content:flex-end}
-.match-chat-message-tools time{margin:0;font-size:9px;line-height:1.1;gap:4px}
-.match-chat-message-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,currentColor 20%,transparent)}
-.match-chat-message-actions button{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:5px 9px;border-radius:9px;background:color-mix(in srgb,currentColor 10%,transparent);font-size:11px;font-weight:700}
-.match-chat-message-actions button:disabled{opacity:.45}
-.match-chat-bubble.selected{outline:2px solid color-mix(in srgb,var(--efl-primary,#2563eb) 35%,transparent);outline-offset:1px}
-.match-chat-bubble:focus-visible{outline:2px solid var(--efl-primary,#2563eb);outline-offset:2px}
-.match-chat-messages{padding-top:11px;padding-bottom:10px}
-.match-chat-day{margin:6px auto 10px}
-.match-chat-compose{gap:8px;padding:9px 10px max(10px,env(safe-area-inset-bottom))}
-.match-chat-compose>textarea{min-height:42px;padding:10px 12px;font-size:16px;line-height:1.35}
-.match-chat-send{width:42px;height:42px;flex-basis:42px;border-radius:14px}
-.match-chat-compose>.match-chat-send{flex-basis:42px}
-.match-chat-telegram .match-chat-header{padding-top:clamp(78px,var(--tg-content-safe-area-inset-top,84px),104px)}
-.match-chat-keyboard-open .match-chat-compose{padding-bottom:9px}
-@media(max-width:639px){.match-chat-sheet{width:100%;height:100%;min-height:0;max-height:100%;border-radius:0}.match-chat-messages{padding-inline:11px}.match-chat-bubble{max-width:84%}}
-@media(min-width:640px){.match-chat-backdrop{align-items:center;padding:24px}.match-chat-sheet{height:min(760px,100%)}.match-chat-telegram .match-chat-header{padding-top:10px}}
+/* Keep chat pinned to the real screen bottom, not a stale Telegram viewport height.
+   A portal to document.body avoids fixed-position containment in animated app shells. */
+@media(max-width:639px){
+ .match-chat-backdrop:not(.match-chat-keyboard-open){top:0;bottom:0;height:auto;min-height:100dvh}
+ .match-chat-keyboard-open.match-chat-backdrop{bottom:auto;top:var(--match-chat-viewport-top,0px);height:var(--match-chat-viewport-height,100dvh)}
+ .match-chat-sheet{flex:1 1 auto;min-height:0;height:100%}
+}
 
-/* Preserve right-hand positioning for outgoing bubbles and avatars. */
-.match-chat-row.mine{flex-direction:row;justify-content:flex-end}
-.match-chat-row.mine .match-chat-bubble{order:1}
-.match-chat-row.mine .match-chat-message-avatar{order:2}
+/* Opponent profile media and explicitly recorded last activity in match chat. */
+.match-chat-avatar{overflow:visible}
+.match-chat-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.match-chat-avatar img[hidden]{display:none}
+.match-chat-avatar span{z-index:2}
+.match-chat-header .match-chat-presence{font-size:10px;line-height:1.25;font-weight:700;color:var(--efl-primary,#2563eb);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.match-chat-header .match-chat-presence + p{font-size:9px}
+
+/* Telegram's Android safe-area inset can include the native top panel twice.
+   Bound the chat header offset so its title sits directly below Telegram controls. */
+@media(max-width:639px){
+ .match-chat-telegram .match-chat-header{
+  padding-top:clamp(76px,var(--tg-content-safe-area-inset-top,84px),104px);
+ }
+ .match-chat-telegram.match-chat-keyboard-open .match-chat-header{
+  padding-top:clamp(76px,var(--tg-content-safe-area-inset-top,84px),104px);
+ }
+}
+
+/* EFL match chat enhancements — compact controls in the existing conversation. */
+.match-chat-match{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--efl-border,#e2e6ec);background:var(--efl-surface,#fff)}
+.match-chat-team{display:flex;min-width:0;align-items:center;gap:7px;font-size:11px;font-weight:800}.match-chat-team:last-child{flex-direction:row-reverse;text-align:right}
+.match-chat-team img{width:28px;height:28px;object-fit:contain;flex:none}.match-chat-team span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.match-chat-score{text-align:center;min-width:70px}.match-chat-score strong{display:block;font-size:17px;font-weight:900;white-space:nowrap}.match-chat-score small{display:block;font-size:9px;color:var(--efl-text-2,#64748b)}
+.match-chat-pinned{width:100%;display:flex;align-items:center;gap:8px;min-height:40px;padding:8px 14px;border-bottom:1px solid var(--efl-border,#e2e6ec);background:color-mix(in srgb,var(--efl-primary,#2563eb) 8%,var(--efl-surface,#fff));font-size:11px;text-align:left}
+.match-chat-pinned svg{flex:none;color:var(--efl-primary,#2563eb)}.match-chat-pinned span:nth-child(2){min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.match-chat-pinned span:last-child{color:var(--efl-primary,#2563eb);font-weight:800}
+.match-chat-bubble-bottom{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
+.match-chat-bubble-bottom time{margin:0}.match-chat-bubble-actions{display:flex;gap:4px;align-items:center;opacity:.8}
+.match-chat-bubble-actions button{width:26px;height:26px;display:grid;place-items:center;border-radius:9px;background:color-mix(in srgb,currentColor 9%,transparent)}.match-chat-bubble-actions button:disabled{opacity:.3}
+.match-chat-replied{display:flex;gap:5px;align-items:center;width:100%;min-width:0;margin-bottom:6px;padding:6px 8px;border-left:2px solid currentColor;border-radius:6px;background:color-mix(in srgb,currentColor 8%,transparent);text-align:left;font-size:10px}
+.match-chat-replied span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.match-chat-reply-draft{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;background:var(--efl-surface,#fff);border-top:1px solid var(--efl-border,#e2e6ec);font-size:11px}
+.match-chat-reply-draft>span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.match-chat-reply-draft>button{padding:5px}
+.match-chat-typing{display:flex;align-items:center;gap:4px;padding:7px 10px;font-size:11px;color:var(--efl-text-2,#64748b);width:max-content}
+.match-chat-typing span{width:5px;height:5px;border-radius:50%;background:var(--efl-primary,#2563eb);animation:match-chat-dot 1.2s ease-in-out infinite}
+.match-chat-typing span:nth-child(2){animation-delay:.17s}.match-chat-typing span:nth-child(3){animation-delay:.34s}
+@keyframes match-chat-dot{0%,70%,100%{opacity:.4;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
+@media(max-width:420px){.match-chat-match{gap:6px;padding:8px}.match-chat-team{gap:4px;font-size:10px}.match-chat-team img{width:23px;height:23px}}
+@media(prefers-reduced-motion:reduce){.match-chat-typing span{animation:none}}
+
+/* New-message affordance stays visible when reviewing older match chat messages. */
+.match-chat-jump-latest{display:flex;align-items:center;gap:8px;flex:0 0 auto;width:100%;padding:9px 12px;font-size:11px;font-weight:750;line-height:1.3;text-align:left;color:var(--efl-primary,#2563eb);background:color-mix(in srgb,var(--efl-primary,#2563eb) 9%,var(--efl-surface,#fff));border-top:1px solid var(--efl-border,#e2e6ec)}
+.match-chat-jump-latest span{margin-left:auto;font-size:10px;font-weight:700;opacity:.8}
+.match-chat-jump-latest:focus-visible{outline:2px solid var(--efl-primary,#2563eb);outline-offset:-2px}
+
+/* Existing Munfiz penalty game opens within the current authenticated match chat. */
+.match-chat-sheet{position:relative}
+.match-chat-game-launch{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--efl-border,#e2e6ec);color:var(--efl-primary,#2563eb);background:color-mix(in srgb,var(--efl-primary,#2563eb) 9%,var(--efl-surface,#fff));font-weight:800;font-size:12px;text-align:left}
+.match-chat-game-launch small{margin-left:auto;font-size:9px;font-weight:650;color:var(--efl-text-2,#64748b)}
+.match-chat-game-layer{position:absolute;z-index:55;inset:0;display:flex;flex-direction:column;min-height:0;background:#080c14}
+.match-chat-game-top{flex:0 0 auto;display:flex;gap:9px;align-items:center;min-height:52px;padding:10px 12px 8px;background:#111925;color:#fff;box-shadow:0 1px 0 #ffffff1a}
+.match-chat-game-top strong{font-size:13px;white-space:nowrap}
+.match-chat-game-top span{font-size:9px;color:#b5c2d4;flex:1;text-align:right}
+.match-chat-game-top button{display:grid;place-items:center;width:35px;height:35px;border-radius:10px;border:1px solid #ffffff35}
+.match-chat-game-layer iframe{display:block;width:100%;height:100%;min-height:0;flex:1 1 auto;border:0;background:#101b24}
+@media(max-width:420px){.match-chat-game-launch small{font-size:8px}.match-chat-game-top span{font-size:8px}}
+
+/* Mini Cup must fill the Telegram WebView, not the 460px chat sheet.
+   These overrides apply only while the penalty game is open. */
+.match-chat-backdrop:has(.match-chat-game-layer){
+  inset:auto 0 auto 0;
+  top:var(--match-chat-viewport-top,0px);
+  height:var(--match-chat-viewport-height,var(--efl-viewport-height,100dvh));
+  min-height:0;
+  padding:0;
+  border-radius:0;
+}
+.match-chat-backdrop:has(.match-chat-game-layer) .match-chat-sheet{
+  width:100%;max-width:none!important;height:100%!important;max-height:none!important;
+  border:0;border-radius:0;box-shadow:none;
+}
+.match-chat-backdrop:has(.match-chat-game-layer) .match-chat-game-layer{
+  inset:0;
+  height:100%;
+}
+.match-chat-game-layer iframe{
+  width:100%!important;min-height:0;height:100%;
+}
+.match-chat-game-top{padding-top:max(8px,env(safe-area-inset-top,0px));}
+
+/* The game is a separate React portal (a body child), not a descendant
+   of the animated/width-limited match-chat sheet.  Its dimensions follow
+   the visible Telegram WebView instead of the 460px chat dialog. */
+body > .match-chat-game-layer {
+  position:fixed!important;
+  z-index:500!important;
+  inset:auto 0 auto 0!important;
+  top:var(--efl-viewport-top,0px)!important;
+  width:100%!important;
+  height:var(--efl-viewport-height,100dvh)!important;
+  min-height:0!important;
+  max-width:none!important;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  background:#080c14;
+}
+body > .match-chat-game-layer > iframe {
+  flex:1 1 auto;
+  min-height:0;
+  height:100%;
+  width:100%;
+}
+body > .match-chat-game-layer .match-chat-game-top {
+  flex:0 0 auto;
+  padding-top:max(8px,var(--safe-top,env(safe-area-inset-top,0px)));
+}
+
+/* In Telegram the native Close toolbar is already present. Keep our fallback
+   exit control but do not spend another tall row on duplicate details. */
+body > .match-chat-game-layer .match-chat-game-top{
+  min-height:40px;
+  padding:5px 12px;
+  padding-top:max(5px,var(--safe-top,0px));
+}
+body > .match-chat-game-layer .match-chat-game-top span{display:none}
+body > .match-chat-game-layer .match-chat-game-top strong{font-size:11px}
+body > .match-chat-game-layer .match-chat-game-top button{width:30px;height:30px}
+
+/* Individual Telegram photos restored without letting avatar labels break bubbles. */
+.match-chat-restored-row{display:flex;align-items:flex-end;gap:7px;margin:0 0 8px;min-width:0}
+.match-chat-restored-row.mine{flex-direction:row-reverse}
+.match-chat-restored-row .match-chat-bubble{margin:0;max-width:min(82%,350px)}
+.match-chat-restored-avatar{display:grid;place-items:center;position:relative;flex:0 0 28px;width:28px;height:28px;border-radius:50%;overflow:hidden;background:var(--efl-primary-soft,#dbeafe);color:var(--efl-primary,#2563eb);font-size:11px;font-weight:800}
+.match-chat-restored-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+.match-chat-restored-avatar img[hidden]{display:none}
+.match-chat-restored-row .match-chat-bubble p{margin:0}
+@media(max-width:420px){.match-chat-restored-row .match-chat-bubble{max-width:calc(100% - 40px)}}
