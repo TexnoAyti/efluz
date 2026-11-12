@@ -45,11 +45,11 @@ for(const c of SEED_COMPETITIONS) await redisSetRaw(ReadModelKeys.competitionFix
 for(const c of SEED_COMPETITIONS.filter(c=>c.type==='LEAGUE')) await redisSetRaw(ReadModelKeys.standings(c.id,seasonId),{data:[{clubId:'club-check',position:1}]},3600);
 const comps=(await getCompetitionsFromReadModel(seasonId)).competitions;
 assert.equal(comps.some(c=>c.id==='comp-efl-cup-2026'),false,'A warm catalog cannot resurrect the retired EFL Cup');
-assert.ok(comps.some(c=>c.id==='comp-fa-cup-2026'),'FA Cup stays available');
+assert.equal(comps.some(c=>c.id==='comp-fa-cup-2026'),false,'Season 1 domestic cups are closed');
 assert.equal(comps.some(c=>c.id===withdrawn || c.id===cup),false,'Warm snapshots cannot re-enable withdrawn competitions');
 assert.equal((await getLeagueClubsFromReadModel('league-ligue-1',seasonId)).clubs.length,0);
 assert.equal((await getAvailableClubsFromReadModel(seasonId)).clubs.some(c=>c.leagueId==='league-ligue-1'),false);
-assert.deepEqual((await loadSeasonOperationsFixtures(seasonId)).fixtures.map(f=>f.id),['england']);
+assert.deepEqual((await loadSeasonOperationsFixtures(seasonId)).fixtures.map(f=>f.id),[]);
 assert.equal((await getQualificationTracker(seasonId)).leagues.length,4);
 const lifecycle=await getSeasonLifecycle(seasonId,true);
 assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.total,0);
