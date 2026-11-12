@@ -22,6 +22,11 @@ await db.collection('user_memberships').doc(`${seasonId}_user-104`).set({status:
 await owner(105,'club-liverpool');members.get(105).status='left';
 await owner(106,'club-tottenham');members.set(106,{badRequest:true});
 await owner(107,'club-everton',{isSuspended:true});
+for (const [index, clubId] of ['club-arsenal','club-man-city','club-chelsea','club-inter','club-milan','club-liverpool','club-tottenham','club-everton','club-real-madrid'].entries()) {
+  await db.collection('competition_participants').doc(`ucl-tag-${index}`).set({
+    competitionId:'comp-champions-league-2026', seasonId, clubId, seedNumber:index+1,
+  });
+}
 await db.collection('club_occupancies').doc('season-2025-26_club-bayern').set({seasonId:'season-2025-26',clubId:'club-bayern',userId:'user-999',status:'active'});
 global.fetch=async(input:any,init?:any)=>{
  calls++;const method=String(input).split('/').at(-1),body=JSON.parse(init.body);assert.equal(body.chat_id,'@efleagueuz');
@@ -73,3 +78,4 @@ try {
  delete process.env.MIGRATION_WRITE_FREEZE;process.env.VERCEL_ENV='preview';assert.equal(await reconcileClubMemberTags(),null);
  console.log('PASS official-group regular club-owner tags: 16-character names, current occupancy, primary premium club, transfer/release, manual-tag preservation, admin/nonmember/suspended skips, missing rights and 429 backoff, member lookup isolation, preview/freeze denial; Telegram fully mocked');
 } finally {global.fetch=originalFetch;}
+
