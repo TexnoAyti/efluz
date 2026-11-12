@@ -50,6 +50,16 @@ export function mapEflReadRequest(endpoint:string,method='GET'):Mapping {
     return {operation:'notifications',input:{limit:50},shape:'notifications'};
   throw new Error('SERVERLESS_ROUTE_NOT_MIGRATED');
 }
+
+export async function writeViaEflServerless<T>(operation:EflOperation,input:Record<string,unknown>={}):Promise<T>{
+  const result=await callEflTransport<unknown>({
+    operation,input,preferred:'telegram-serverless',
+    vercel:()=>Promise.reject(new Error('SERVERLESS_VERCEL_FALLBACK_FORBIDDEN')),
+  });
+  if(!result||typeof result!=='object'||(result as {ok?:boolean}).ok!==true)
+    throw new Error('SERVERLESS_RESPONSE_UNVERIFIED');
+  return result as T;
+}
 export function normalizeEflReadResponse(mapping:Mapping,response:unknown):unknown {
   if (!response||typeof response!=='object'||(response as {ok?:boolean}).ok!==true)
     throw new Error('SERVERLESS_RESPONSE_UNVERIFIED');
