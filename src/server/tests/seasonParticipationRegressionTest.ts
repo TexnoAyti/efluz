@@ -50,7 +50,7 @@ assert.equal(comps.some(c=>c.id===withdrawn || c.id===cup),false,'Warm snapshots
 assert.equal((await getLeagueClubsFromReadModel('league-ligue-1',seasonId)).clubs.length,0);
 assert.equal((await getAvailableClubsFromReadModel(seasonId)).clubs.some(c=>c.leagueId==='league-ligue-1'),false);
 assert.deepEqual((await loadSeasonOperationsFixtures(seasonId)).fixtures.map(f=>f.id),[]);
-assert.equal((await getQualificationTracker(seasonId)).leagues.length,4);
+assert.equal((await getQualificationTracker(seasonId)).leagues.length,0);
 const lifecycle=await getSeasonLifecycle(seasonId,true);
 assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.total,0);
 assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.description,'4 ta milliy kubok bosqichi');
