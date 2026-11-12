@@ -11,7 +11,8 @@ async function call(path:string,options:RequestInit={}){const controller=new Abo
 const path=(target:MatchChatTarget)=>`/${target.kind}/${encodeURIComponent(target.matchId)}`;
 export const matchChatApi={
  read:async(target:MatchChatTarget):Promise<MatchChatView>=>(await call(path(target))).chat,
- send:async(target:MatchChatTarget,text:string):Promise<MatchChatView>=>(await call(`${path(target)}/messages`,{method:'POST',body:JSON.stringify({text})})).chat,
+ send:async(target:MatchChatTarget,text:string,replyToId?:string):Promise<MatchChatView>=>(await call(`${path(target)}/messages`,{method:'POST',body:JSON.stringify({text,...(replyToId?{replyToId}: {})})})).chat,
+ pin:async(target:MatchChatTarget,messageId:string|null):Promise<MatchChatView>=>(await call(`${path(target)}/pin`,{method:'POST',body:JSON.stringify({messageId})})).chat,
  block:async(target:MatchChatTarget,blocked:boolean):Promise<MatchChatView>=>(await call(`${path(target)}/block`,{method:'POST',body:JSON.stringify({blocked})})).chat,
  report:async(target:MatchChatTarget,reason:string):Promise<MatchChatView>=>(await call(`${path(target)}/report`,{method:'POST',body:JSON.stringify({reason})})).chat,
  reports:async():Promise<MatchChatAdminReport[]> => (await call('/reports')).reports,
