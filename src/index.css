@@ -527,3 +527,22 @@
 .match-chat-game-top button{display:grid;place-items:center;width:35px;height:35px;border-radius:10px;border:1px solid #ffffff35}
 .match-chat-game-layer iframe{display:block;width:100%;height:100%;min-height:0;flex:1 1 auto;border:0;background:#101b24}
 @media(max-width:420px){.match-chat-game-launch small{font-size:8px}.match-chat-game-top span{font-size:8px}}
+
+
+/* Compact match chat: preserve reply/pin functionality without permanently
+   inflating every bubble. Tap or keyboard-select a message to see its actions. */
+.match-chat-bubble{max-width:min(82%,330px);padding:8px 10px 6px;margin-bottom:6px;border-radius:16px;cursor:pointer;touch-action:pan-y}
+.match-chat-bubble p{margin:0;font-size:13px;line-height:1.38}
+.match-chat-bubble-bottom{justify-content:flex-end;margin-top:2px;min-height:12px}
+.match-chat-bubble-bottom time{font-size:9px;line-height:1.15;gap:4px}
+.match-chat-bubble-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,currentColor 20%,transparent);opacity:1}
+.match-chat-bubble-actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:auto;height:30px;padding:4px 9px;border-radius:9px;font-size:11px;font-weight:650;white-space:nowrap}
+.match-chat-bubble.selected{outline:2px solid color-mix(in srgb,var(--efl-primary,#2563eb) 30%,transparent);outline-offset:1px}
+.match-chat-bubble:focus-visible{outline:2px solid var(--efl-primary,#2563eb);outline-offset:2px}
+.match-chat-messages{padding-top:12px;padding-bottom:12px}
+.match-chat-day{margin:6px auto 10px}
+.match-chat-compose{gap:8px;padding-top:8px}
+.match-chat-compose textarea{min-height:42px;padding:10px 13px;border-radius:15px}
+.match-chat-send{width:42px;height:42px;flex-basis:42px;border-radius:14px}
+.match-chat-avatar img:not([hidden]){background:var(--efl-surface,#fff)}
+@media(max-width:639px){.match-chat-bubble{max-width:84%}.match-chat-messages{padding-inline:12px}}
