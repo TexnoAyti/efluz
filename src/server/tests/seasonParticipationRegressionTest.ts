@@ -53,12 +53,12 @@ assert.deepEqual((await loadSeasonOperationsFixtures(seasonId)).fixtures.map(f=>
 assert.equal((await getQualificationTracker(seasonId)).leagues.length,0);
 const lifecycle=await getSeasonLifecycle(seasonId,true);
 assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.total,0);
-assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.description,'4 ta milliy kubok bosqichi');
+assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.description,'0 ta milliy kubok bosqichi');
 assert.equal((await getSeasonTrophies(seasonId)).trophies.some(t=>t.competitionId===cup),false);
 assert.equal((await previewFixtureSchedule({isAdmin:true} as any,{seasonId,category:'ALL'})).fixtures.some(f=>f.competitionId===withdrawn),false);
 assert.equal(await getFixtureByIdFirestore('france'),null);
-await assert.rejects(claimClubAtomicFirestore('user-check','club-psg',seasonId),/Ligue 1/);
-await assert.rejects(adminAssignClubFirestore('admin','club-psg','user-check',seasonId),/Ligue 1/);
+await assert.rejects(claimClubAtomicFirestore('user-check','club-psg',seasonId),/1-mavsum ligalari yopilgan/);
+await assert.rejects(adminAssignClubFirestore('admin','club-psg','user-check',seasonId),/1-mavsum ligalari yopilgan/);
 await assert.rejects(generateCompetitionFixturesFirestore(withdrawn),/olib tashlangan/);
 await assert.rejects(assertMatchdayPlayableFirestore(seasonId,withdrawn,1),/olib tashlangan/);
 await assert.rejects(controlCompetitionMatchday(withdrawn,{action:'OPEN',matchday:1}),/olib tashlangan/);
@@ -71,3 +71,4 @@ for (const id of Object.keys(SEASON_2026_27_ALLOCATION)) {
   assert.deepEqual(seasonQualificationRanges(cached,'season-2027-28'),{uclEnd:7,uelEnd:14},'Future-season allocations are preserved');
 }
 assert.deepEqual(seasonQualificationRanges({id:'comp-ligue-1-2027',formatConfig:{qualificationSpots:6,europaQualificationSpots:6}},'season-2027-28'),{uclEnd:6,uelEnd:12});
+
