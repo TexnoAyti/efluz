@@ -21,7 +21,7 @@ assert.equal(isSeasonLeagueEnabled('league-ligue-1','season-2027-28'),true);
 assert.equal(isSeasonCompetitionEnabled(cup),false);
 for (const season of [seasonId, 'season-2027-28', 'season-2025-26']) {
  for (const id of ['comp-efl-cup-2026', 'comp-carabao-cup-2027']) assert.equal(isSeasonCompetitionEnabled(id,season),false);
- assert.equal(isSeasonCompetitionEnabled('comp-fa-cup-2026',season),true);
+ assert.equal(isSeasonCompetitionEnabled('comp-fa-cup-2026',season),season !== seasonId);
 }
 assert.equal(isSeasonCompetitionEnabled(withdrawn,'season-2025-26'),true);
 assert.equal(Object.keys(SEASON_2026_27_ALLOCATION).length,4);
