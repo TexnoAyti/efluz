@@ -1502,7 +1502,7 @@ export function checkFixturePlayability(
   if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED') {
     return { isPlayable: false, activeMatchday };
   }
-  if (!isMatchdayOpen || (resolvedComp?.nextMatchdayOpenAt && Date.parse(resolvedComp.nextMatchdayOpenAt) <= Date.now())) {
+  if (!isMatchdayOpen || (resolvedComp?.nextMatchdayOpenAt && Date.parse(resolvedComp.nextMatchdayOpenAt) > Date.now())) {
     return { isPlayable: false, activeMatchday };
   }
 
@@ -3039,7 +3039,7 @@ export function isMatchdayPlayableKey(
     compType === 'SUPER_CUP' ||
     compType === 'EUROPEAN_KNOCKOUT';
 
-  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED' || !isMatchdayOpen || (compState?.nextMatchdayOpenAt && Date.parse(compState.nextMatchdayOpenAt) <= Date.now())) return false;
+  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED' || !isMatchdayOpen || (compState?.nextMatchdayOpenAt && Date.parse(compState.nextMatchdayOpenAt) > Date.now())) return false;
   if (isKnockout) {
     return true;
   }
@@ -3117,7 +3117,7 @@ export async function assertMatchdayPlayableFirestore(
     throw err;
   }
 
-  if (!isMatchdayOpen || (comp?.nextMatchdayOpenAt && Date.parse(comp.nextMatchdayOpenAt) <= Date.now())) {
+  if (!isMatchdayOpen || (comp?.nextMatchdayOpenAt && Date.parse(comp.nextMatchdayOpenAt) > Date.now())) {
     throw Object.assign(new Error('MATCHDAY_LOCKED: Tur yopiq yoki muddati tugagan.'), { code: 'MATCHDAY_LOCKED', statusCode: 403 });
   }
 
@@ -7561,3 +7561,4 @@ export async function adminDeleteResultSubmissionFirestore(
     message: `Result submission '${submissionId}' has been deleted.`,
   };
 }
+
