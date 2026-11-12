@@ -19,6 +19,7 @@ export interface MatchChatView {
   opponentId: string;
   opponentName: string;
   opponentUsername?: string | null;
+  viewerSide?: 'home' | 'away';
   messages: MatchChatMessage[];
   unreadCount: number;
   blocked: boolean;

@@ -448,3 +448,43 @@
 .match-chat-compose>textarea{flex:1 1 auto;width:auto;min-width:0}.match-chat-compose>.match-chat-send{flex:0 0 46px}
 .match-chat-message-tools button{touch-action:manipulation;pointer-events:auto}
 @media(prefers-reduced-motion:reduce){.efl-chat-trigger,.match-chat-backdrop,.match-chat-sheet,.match-chat-bubble,.match-chat-send{animation:none;transition:none}.efl-chat-trigger::after{display:none}}
+
+
+/* Restore the original Munfiz penalty game within the existing match-chat shell. */
+.match-chat-sheet{position:relative}
+.match-chat-game-launch{display:flex;flex:0 0 auto;align-items:center;gap:10px;min-height:45px;padding:9px 14px;border:0;border-bottom:1px solid var(--efl-border,#e2e6ec);background:color-mix(in srgb,var(--efl-primary,#2563eb) 9%,var(--efl-surface,#fff));color:var(--efl-primary,#2563eb);font-size:12px;font-weight:850;text-align:left}
+.match-chat-game-launch small{margin-left:auto;font-size:9px;font-weight:650;color:var(--efl-text-2,#64748b)}
+.match-chat-game-layer{position:absolute;z-index:55;inset:0;display:flex;flex-direction:column;min-height:0;background:#080c14}
+.match-chat-game-top{display:flex;flex:0 0 auto;gap:9px;align-items:center;min-height:54px;padding:9px 12px;background:#111925;color:#fff}
+.match-chat-game-top strong{flex:none;font-size:13px}
+.match-chat-game-top span{flex:1;font-size:9px;color:#b5c2d4;text-align:right}
+.match-chat-game-top button{display:grid;place-items:center;width:36px;height:36px;flex:none;border:1px solid #ffffff35;border-radius:10px}
+.match-chat-game-layer iframe{display:block;width:100%;height:100%;min-height:0;flex:1 1 auto;border:0;background:#101b24}
+@media(max-width:639px){.match-chat-game-layer{position:fixed;inset:0;z-index:130}}
+
+
+/* Recover the former message-list/composer flow; grid implicit rows were
+   stretching non-message sections and covering the game entry point. */
+.match-chat-sheet{display:flex;flex-direction:column;min-height:0;max-height:100%;overflow:hidden}
+.match-chat-header,.match-chat-context,.match-chat-pinned,.match-chat-report,.match-chat-error,.match-chat-quick,.match-chat-compose{flex:0 0 auto}
+.match-chat-messages{flex:1 1 auto;min-height:0;overflow-y:auto}
+.match-chat-game-layer{position:absolute;inset:0}
+.match-chat-row.mine{flex-direction:row-reverse;justify-content:flex-start}
+.match-chat-row{gap:7px;margin-bottom:7px}
+.match-chat-row .match-chat-bubble{max-width:min(83%,340px);padding:8px 10px 6px}
+.match-chat-bubble p{margin:0;font-size:13px;line-height:1.4}
+.match-chat-day{margin:6px auto 10px}
+@media(max-width:639px){.match-chat-sheet{height:100dvh;min-height:0;max-height:100dvh}.match-chat-game-layer{position:absolute;inset:0}}
+
+
+/* Preserve classic compact chat bubbles with optional reply/pin controls. */
+.match-chat-message-tools{justify-content:flex-end;min-height:12px;margin-top:3px}
+.match-chat-message-tools time{margin:0;font-size:9px;gap:4px}
+.match-chat-message-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:8px;padding-top:7px;border-top:1px solid color-mix(in srgb,currentColor 20%,transparent)}
+.match-chat-message-actions button{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:5px 9px;border-radius:9px;background:color-mix(in srgb,currentColor 10%,transparent);font-size:11px;font-weight:650}
+.match-chat-message-actions button:disabled{opacity:.45}
+.match-chat-bubble.selected{outline:2px solid color-mix(in srgb,var(--efl-primary,#2563eb) 35%,transparent);outline-offset:1px}
+.match-chat-bubble:focus-visible{outline:2px solid var(--efl-primary,#2563eb);outline-offset:2px}
+.match-chat-message-avatar .match-chat-avatar-fallback{display:none}
+.match-chat-message-avatar.avatar-failed img{display:none}
+.match-chat-message-avatar.avatar-failed .match-chat-avatar-fallback{display:inline}
