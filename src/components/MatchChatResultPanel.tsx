@@ -49,15 +49,15 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
  const opponent=fixture?.opponentSubmission||null;
  const pending=status==='PENDING_CONFIRMATION'||status==='PENDING';
  const canSubmit=Boolean(fixture&&!finished&&!disputed&&!saving&&!loading&&!own&&
-   (status==='SCHEDULED'||status==='IN_PROGRESS'||pending));
+   (['SCHEDULED','READY','PLAYING','AWAITING_RESULT','OVERDUE'].includes(status)||pending));
  const proposed=!own&&opponent&&score(opponent.homeScore)!==null&&score(opponent.awayScore)!==null;
- const submit=async(h:number,a:number)=>{
+ const submit=async(h:number,a:number,cup?:Submission)=>{
   if(savingRef.current||!canSubmit)return;
   if(score(h)===null||score(a)===null){setError('Hisob 0 dan 99 gacha butun son bo‘lishi kerak.');return;}
   savingRef.current=true;setSaving(true);setError('');setNotice('');
   try{
    const response=await fetch('/api/fixtures/'+encodeURIComponent(fixtureId)+'/result',{
-    method:'POST',headers:getAuthHeaders(),credentials:'same-origin',body:JSON.stringify({homeScore:h,awayScore:a})
+    method:'POST',headers:getAuthHeaders(),credentials:'same-origin',body:JSON.stringify({homeScore:h,awayScore:a,...(cup?{homeExtraTimeScore:(cup as MatchSubmission).homeExtraTimeScore??null,awayExtraTimeScore:(cup as MatchSubmission).awayExtraTimeScore??null,homePenaltyScore:(cup as MatchSubmission).homePenaltyScore??null,awayPenaltyScore:(cup as MatchSubmission).awayPenaltyScore??null}:{})})
    });
    const data=await readResponse(response);
    if(!data.fixture)throw new Error('Server natijani qaytarmadi.');
@@ -102,7 +102,7 @@ export function MatchChatResultPanel({fixtureId,onConfirmed}:Props){
    {!finished&&!disputed&&own&&<p className="match-chat-result-note">Siz {formatScore(own.homeScore,own.awayScore)} hisobini kiritgansiz. Raqibning tasdiqlashini kuting.</p>}
    {!finished&&!disputed&&proposed&&canSubmit&&<div className="match-chat-result-proposal">
     <p>Raqibingiz <b>{formatScore(opponent.homeScore,opponent.awayScore)}</b> hisobini taklif qildi.</p>
-    <button type="button" disabled={saving} className="match-chat-result-confirm" onClick={()=>void submit(opponent.homeScore,opponent.awayScore)}>{saving?<LoaderCircle size={15} className="animate-spin"/>:<Check size={15}/>} Hisobni tasdiqlash</button>
+    <button type="button" disabled={saving} className="match-chat-result-confirm" onClick={()=>void submit(opponent.homeScore,opponent.awayScore,opponent)}>{saving?<LoaderCircle size={15} className="animate-spin"/>:<Check size={15}/>} Hisobni tasdiqlash</button>
     <small>Hisob noto‘g‘ri bo‘lsa, pastda to‘g‘ri natijani kiriting. Mos kelmasa, admin tekshiradi.</small>
    </div>}
    {canSubmit&&<div className="match-chat-result-entry">
