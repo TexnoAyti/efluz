@@ -2,6 +2,11 @@ name: Telegram Serverless staging deploy (manual only)
 on:
   workflow_dispatch:
     inputs:
+      source_branch:
+        description: "Staging source branch"
+        required: true
+        type: string
+        default: feat/tgcloud-staging-8533963416-20261111
       confirmation:
         description: "Only a separate staging bot is allowed"
         required: true
@@ -31,6 +36,8 @@ jobs:
       CONFIRM_TGCLOUD_STAGING_DEPLOY: ${{ inputs.confirmation }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_branch }}
       - name: Install pinned Bun
         run: npm install -g bun@1.3.3
       - name: Verify separate staging bot identity (fail closed)
