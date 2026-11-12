@@ -34,6 +34,8 @@ jobs:
       TGCLOUD_STAGING_APP_ID: '8533963416'
       TGCLOUD_PRODUCTION_APP_ID: '8785073471'
       CONFIRM_TGCLOUD_STAGING_DEPLOY: ${{ inputs.confirmation }}
+      EFL_SOURCE_DATABASE_URL: ${{ secrets.EFL_SOURCE_DATABASE_URL }}
+      TGCLOUD_STAGING_OWNER_TELEGRAM_ID: ${{ secrets.TGCLOUD_STAGING_OWNER_TELEGRAM_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
