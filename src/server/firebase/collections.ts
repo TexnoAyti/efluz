@@ -134,6 +134,7 @@ export interface FirestoreCompetitionParticipantDoc {
 }
 
 export interface FirestoreFixtureDoc {
+  europeanDrawId?: string | null;
   adminScheduledAt?: string;
   id: string;
   competitionId: string;
