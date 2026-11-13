@@ -457,6 +457,14 @@ export const FixturesView: React.FC = () => {
             const isHomeUser = fixture.homeOwnerId === user?.id || ownedClubs.some((club) => club.id === fixture.homeClubId);
             const isAwayUser = fixture.awayOwnerId === user?.id || ownedClubs.some((club) => club.id === fixture.awayClubId);
             const isUserParticipant = isHomeUser || isAwayUser;
+            const roundLocked = isMatchdayLocked(fixture.matchday);
+            const preservedScoreEntry = fixtureSeasonId === 'season-2026-27' && !roundLocked && (
+              (activeComp?.type === 'EUROPEAN_LEAGUE_PHASE' && fixture.matchday >= 1 && fixture.matchday <= 8) ||
+              (activeComp?.type === 'SUPER_CUP' && activeComp.status === 'active' &&
+                fixture.matchday === (activeComp.currentMatchday || 1))
+            );
+            // A stale isPlayable snapshot cannot override the competition's preserved score-entry policy.
+            const scoreEntryLocked = roundLocked || (fixture.isPlayable === false && !preservedScoreEntry);
 
             return (
               <div
@@ -618,7 +626,7 @@ export const FixturesView: React.FC = () => {
                   <div className="text-[10px] text-slate-500 truncate">
                     {fixture.status === 'CONFIRMED'
                       ? 'Verified & Saved'
-                      : fixture.isPlayable === false
+                      : scoreEntryLocked
                       ? `Matchday ${fixture.matchday} Qulflangan`
                       : fixture.userSubmission
                       ? `Your input: ${fixture.userSubmission.homeScore}-${fixture.userSubmission.awayScore}`
@@ -653,13 +661,7 @@ export const FixturesView: React.FC = () => {
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Details</span>
                       </button>
-                    ) : ((fixture.isPlayable === false && !(
-                      fixtureSeasonId === 'season-2026-27' &&
-                      !isMatchdayLocked(fixture.matchday) &&
-                      ((activeComp?.type === 'EUROPEAN_LEAGUE_PHASE' && fixture.matchday >= 1 && fixture.matchday <= 8) ||
-                       (activeComp?.type === 'SUPER_CUP' && activeComp.status === 'active' &&
-                        fixture.matchday === (activeComp.currentMatchday || 1)))
-                    )) || isMatchdayLocked(fixture.matchday)) ? (
+                    ) : scoreEntryLocked ? (
                       <button
                         disabled={true}
                         className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed"
