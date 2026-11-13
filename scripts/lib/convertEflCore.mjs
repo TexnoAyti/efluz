@@ -228,10 +228,14 @@ export function convertEflCore(collections,options={}){
    qualification_reason:d.qualificationReason??null,created_at:time(d.createdAt)});
  }
  for(const [id,d] of submissions){
-  const fid=required(d.fixtureId,'SUBMISSION_WITHOUT_FIXTURE');
-  const f=fixtures.get(fid);if(!f)fail('SUBMISSION_FIXTURE_MISSING');
-  if(!clubs.has(d.clubId)||!users.has(d.submittedByUserId))
+  const fid=d.fixtureId==null?null:String(d.fixtureId);
+  const f=fid?fixtures.get(fid):null;
+  if(!fid||!f||!clubs.has(d.clubId)||!users.has(d.submittedByUserId)){
+    if(quarantine)continue;
+    if(!fid)fail('SUBMISSION_WITHOUT_FIXTURE');
+    if(!f)fail('SUBMISSION_FIXTURE_MISSING');
     fail('SUBMISSION_OWNER_MISSING');
+  }
   const row={id,fixture_id:fid,submitted_by_user_id:canonicalUserIdById.get(d.submittedByUserId)??d.submittedByUserId,
    club_id:relationId(f.seasonId,d.clubId),home_score:score(d.homeScore),
    away_score:score(d.awayScore),proof_url:d.proofUrl??null,
