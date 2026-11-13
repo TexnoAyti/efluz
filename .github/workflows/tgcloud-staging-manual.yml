@@ -27,7 +27,7 @@ jobs:
   deploy-staging:
     if: ${{ inputs.confirmation == 'DEPLOY_STAGING_ONLY' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     environment: tgcloud-staging
     env:
       TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_STAGING_TOKEN }}
