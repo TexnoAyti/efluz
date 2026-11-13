@@ -293,9 +293,20 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
   const loadLeaguesAndComps = useCallback(async () => {
     setError(null);
     try {
+      // Season 2 is still a prepared registration catalog. A temporary 503
+      // from its read model must never make the League picker unopenable.
+      // Only league metadata is bundled: availability and owners still come
+      // exclusively from the live, season-scoped server endpoint.
+      const preparedSeason = activeSeasonId === EFL_SECOND_SEASON.id;
       const [leaguesRes, compsRes] = await Promise.all([
-        api.getLeagues(activeSeasonId),
-        api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] })),
+        api.getLeagues(activeSeasonId).catch((error) => {
+          if (!preparedSeason) throw error;
+          return { leagues: EFL_SECOND_SEASON.leagues.map(({ id, name, country, flag }) =>
+            ({ id, name, country, flag } as League)) };
+        }),
+        preparedSeason
+          ? Promise.resolve({ competitions: [] as Competition[] })
+          : api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] as Competition[] })),
       ]);
 
       const domesticLeagues = leaguesRes.leagues || [];
