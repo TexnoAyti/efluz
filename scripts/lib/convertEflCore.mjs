@@ -58,7 +58,7 @@ export function convertEflCore(collections,options={}){
   const fixture=fixtures.get(fixtureId);
   if(!fixture)fail('OVERRIDE_WITHOUT_FIXTURE');
   for(const key of ['status','homeScore','awayScore','homeClubId','awayClubId']){
-   if(Object.hasOwn(patch,key)&&patch[key]!==fixture[key])
+   if(Object.hasOwn(patch,key)&&((patch[key]===null||patch[key]===undefined||fixture[key]===null||fixture[key]===undefined)?patch[key]!==fixture[key]:String(patch[key])!==String(fixture[key])))
     fail('FIXTURE_OVERRIDE_MISMATCH');
   }
  }
