@@ -12,6 +12,12 @@ export function backlogResultAllowed(f: any, c: any, lock?: any): boolean {
       ['PAUSED','FORCE_LOCKED'].includes(c.adminOverrideStatus) ||
       ['PAUSED','FORCE_LOCKED'].includes(lock?.overrideStatus) || lock?.isLocked || lock?.isOpen === false ||
       !f.homeClubId || !f.awayClubId || [f.homeClubId,f.awayClubId].includes('TBD')) return false;
+  // Season 1 Super Cups have a single active final / current bracket round.
+  // Expiring round timers must not silently disable unplayed match reporting.
+  // Honor explicit admin holds and never unlock upcoming or finished tournaments.
+  if (f.seasonId === 'season-2026-27' && c.type === 'SUPER_CUP' &&
+      String(c.status).toLowerCase() === 'active' &&
+      Number(f.matchday) === Number(c.currentMatchday || 1)) return true;
   const configured=c.resultEntryThroughMatchday;
   if(!Number.isInteger(configured))return false;
   const through=Math.max(configured,Number.isInteger(c.currentMatchday)?c.currentMatchday:0);
