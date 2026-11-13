@@ -113,6 +113,7 @@ export interface Competition {
   fixturesCount?: number;
   generationStatus?: 'not_generated' | 'generated';
   currentMatchday?: number;
+  resultEntryThroughMatchday?: number;
   totalMatchdays?: number;
   isMatchdayOpen?: boolean;
   matchdayOpenedAt?: string;
