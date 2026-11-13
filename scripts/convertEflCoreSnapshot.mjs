@@ -68,7 +68,7 @@ if(quarantineHistoricalOrphans||requireCompleteSource){
  await verifyArchiveBinding(src,dir);
 }
 const result=convertEflCore(collections,{quarantineHistoricalOrphans});
-const ledger=convertEflTicketLedger(collections);
+const ledger=convertEflTicketLedger(collections,{quarantineHistoricalOrphans});
 Object.assign(result.rows,ledger.rows);
 result.report.tickets=ledger.report;
 const trophyProjection=convertEflTrophies(collections);
