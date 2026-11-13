@@ -2102,7 +2102,24 @@ export async function getCompetitionFixturesFromReadModel(
     // leagues and other tournament views.
     const requiresLivePermission = seasonId === 'season-2026-27' &&
       /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId);
-    if (requiresLivePermission) fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
+    if (requiresLivePermission) {
+      fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
+      // Scope former Season 1 club managers to their historical UEFA/Super Cup
+      // match only. This does not reassign the old domestic-league club or
+      // modify the Season 2 registration database.
+      const db = getFirestoreDb();
+      const formerOwners = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES)
+        .where('seasonId','==',seasonId).where('status','==','released').get();
+      const released = new Map(formerOwners.docs.map(d => {
+        const v = d.data();
+        return [String(v.clubId||''),String(v.userId||'')] as const;
+      }).filter(([club,user]) => club && user));
+      fixtures = fixtures.map(f => ({
+        ...f,
+        homeOwnerId: f.homeOwnerId || (f.homeClubId ? released.get(f.homeClubId) : undefined),
+        awayOwnerId: f.awayOwnerId || (f.awayClubId ? released.get(f.awayClubId) : undefined),
+      }));
+    }
   } catch (err) {
     console.warn('[COMPETITION_FIXTURES] Ownership/permission refresh fallback:', err);
     // Never accidentally open a round after a permission refresh failure.
