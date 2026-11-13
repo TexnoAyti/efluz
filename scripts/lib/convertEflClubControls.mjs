@@ -58,6 +58,7 @@ export function convertEflClubControls(collections,{quarantineHistoricalOrphans=
    is_banned:d.isBanned,reason:d.reason,actor_id:d.actorId,
    revision:d.revision,updated_at:time(d.updatedAt)
   });
+  }catch(error){if(quarantineHistoricalOrphans)continue;throw error;}
  }
  return {rows:{clubAdmissions,clubSelectionBans},
   report:{admissions:clubAdmissions.length,bans:clubSelectionBans.length,
