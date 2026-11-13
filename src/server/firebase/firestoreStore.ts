@@ -1693,7 +1693,9 @@ async function getFixturesFirestoreUnfiltered(filter: {
         r.homeClubId,
         r.awayClubId,
         comp,
-        preloadedLock
+        preloadedLock,
+        false,
+        r.europeanDrawId
       );
 
       const homeOcc = clubOccupancyMap.get(r.homeClubId);
@@ -1894,7 +1896,9 @@ async function executeFixturesFallback(
       r.home_club_id,
       r.away_club_id,
       comp,
-      preloadedLock
+      preloadedLock,
+      false,
+      r.european_draw_id || r.europeanDrawId
     );
 
     const homeOcc = clubOccupancyMap.get(r.home_club_id);
@@ -2183,7 +2187,9 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
           r.homeClubId,
           r.awayClubId,
           comp,
-          preloadedLock
+          preloadedLock,
+          false,
+          r.europeanDrawId
         );
 
         // Fetch user/opponent submissions if currentUserId is provided
@@ -2353,7 +2359,9 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
     r.home_club_id,
     r.away_club_id,
     comp,
-    preloadedLock
+    preloadedLock,
+    false,
+    r.european_draw_id || r.europeanDrawId
   );
 
   const fallbackFix: Fixture = {
