@@ -33,6 +33,8 @@ import {
 
 export const FixturesView: React.FC = () => {
   const { user, currentClub, ownedClubs, activeSeasonId, showToast } = useAuth();
+  // League registration uses Season 2, but all current fixture results remain in Season 1.
+  const fixtureSeasonId = activeSeasonId === 'season-2027-28' ? 'season-2026-27' : activeSeasonId;
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
@@ -63,7 +65,7 @@ export const FixturesView: React.FC = () => {
   useEffect(() => {
     if (!selectedCompetitionId) return;
     let isMounted = true;
-    api.getCompetitionLocks(selectedCompetitionId, activeSeasonId)
+    api.getCompetitionLocks(selectedCompetitionId, fixtureSeasonId)
       .then((res) => {
         if (isMounted && res.locks) {
           setLockStates((prev) => ({
@@ -78,14 +80,14 @@ export const FixturesView: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [selectedCompetitionId, activeSeasonId]);
+  }, [selectedCompetitionId, fixtureSeasonId]);
 
   // Load competitions
   useEffect(() => {
     async function loadComps() {
       setIsLoading(true);
       try {
-        const res = await api.getCompetitions(activeSeasonId);
+        const res = await api.getCompetitions(fixtureSeasonId);
         setCompetitions(res.competitions || []);
         if (res.competitions && res.competitions.length > 0) {
           const defaultComp = res.competitions.find((c) => c.type === 'LEAGUE') || res.competitions[0];
@@ -100,7 +102,7 @@ export const FixturesView: React.FC = () => {
       }
     }
     loadComps();
-  }, [activeSeasonId]);
+  }, [fixtureSeasonId]);
 
   const activeComp = competitions.find((c) => c.id === selectedCompetitionId);
   const totalMatchdays =
@@ -122,11 +124,31 @@ export const FixturesView: React.FC = () => {
     const compLocks = lockStates[selectedCompetitionId];
     if (compLocks && compLocks[md]) {
       const lock = compLocks[md];
-      if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) return false;
+      // Admin holds always win, even if an old "isOpen" flag is still set.
       if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked || lock.isOpen === false) return true;
+      if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) return false;
     }
     if (activeComp.adminOverrideStatus === 'FORCE_LOCKED' || activeComp.adminOverrideStatus === 'PAUSED') return true;
-    if (activeComp.adminOverrideStatus === 'FORCE_OPEN') return isKnockout ? false : md !== (activeComp.currentMatchday || 1);
+    if (activeComp.adminOverrideStatus === 'FORCE_OPEN') {
+      if (isKnockout) return false;
+      // Explicit opening of the UEFA competition also preserves reached rounds 1–8.
+      if (activeComp.type === 'EUROPEAN_LEAGUE_PHASE' &&
+          fixtureSeasonId === 'season-2026-27' && md >= 1 && md <= 8 &&
+          md <= Math.max(activeComp.resultEntryThroughMatchday || 0, activeComp.currentMatchday || 0)) return false;
+      return md !== (activeComp.currentMatchday || 1);
+    }
+    if (activeComp.type === 'EUROPEAN_LEAGUE_PHASE' &&
+        fixtureSeasonId === 'season-2026-27' && md >= 1 && md <= 8 &&
+        md <= Math.max(activeComp.resultEntryThroughMatchday || 0, activeComp.currentMatchday || 0)) {
+      // The first eight UEFA league-phase matchdays remain result-enterable.
+      // Explicit administrative locks above still take priority.
+      return false;
+    }
+    if (activeComp.type === 'SUPER_CUP' && activeComp.status === 'active' &&
+        fixtureSeasonId === 'season-2026-27' && md === (activeComp.currentMatchday || 1)) {
+      // Expired or stale generic timer cannot hide an active Super Cup submission.
+      return false;
+    }
     if (activeComp.isMatchdayOpen === false) return true;
     if (isKnockout) return false;
     return md !== (activeComp.currentMatchday || 1);
@@ -141,7 +163,7 @@ export const FixturesView: React.FC = () => {
     setError(null);
     try {
       const matchdayParam = activeComp?.type === 'LEAGUE' ? selectedMatchday : undefined;
-      const res = await api.getCompetitionFixtures(selectedCompetitionId, matchdayParam, undefined, skipCache, activeSeasonId);
+      const res = await api.getCompetitionFixtures(selectedCompetitionId, matchdayParam, undefined, skipCache, fixtureSeasonId);
       setFixtures(res.fixtures || []);
     } catch (err: any) {
       console.error('Failed to load fixtures:', err);
@@ -153,7 +175,7 @@ export const FixturesView: React.FC = () => {
 
   useEffect(() => {
     loadFixtures();
-  }, [selectedCompetitionId, selectedMatchday, activeSeasonId, user?.id]);
+  }, [selectedCompetitionId, selectedMatchday, fixtureSeasonId, user?.id]);
 
   const handleGenerateFixtures = async () => {
     if (!selectedCompetitionId) return;
@@ -435,6 +457,14 @@ export const FixturesView: React.FC = () => {
             const isHomeUser = fixture.homeOwnerId === user?.id || ownedClubs.some((club) => club.id === fixture.homeClubId);
             const isAwayUser = fixture.awayOwnerId === user?.id || ownedClubs.some((club) => club.id === fixture.awayClubId);
             const isUserParticipant = isHomeUser || isAwayUser;
+            const roundLocked = isMatchdayLocked(fixture.matchday);
+            const preservedScoreEntry = fixtureSeasonId === 'season-2026-27' && !roundLocked && (
+              (activeComp?.type === 'EUROPEAN_LEAGUE_PHASE' && fixture.matchday >= 1 && fixture.matchday <= 8) ||
+              (activeComp?.type === 'SUPER_CUP' && activeComp.status === 'active' &&
+                fixture.matchday === (activeComp.currentMatchday || 1))
+            );
+            // A stale isPlayable snapshot cannot override the competition's preserved score-entry policy.
+            const scoreEntryLocked = roundLocked || (fixture.isPlayable === false && !preservedScoreEntry);
 
             return (
               <div
@@ -596,7 +626,7 @@ export const FixturesView: React.FC = () => {
                   <div className="text-[10px] text-slate-500 truncate">
                     {fixture.status === 'CONFIRMED'
                       ? 'Verified & Saved'
-                      : fixture.isPlayable === false
+                      : scoreEntryLocked
                       ? `Matchday ${fixture.matchday} Qulflangan`
                       : fixture.userSubmission
                       ? `Your input: ${fixture.userSubmission.homeScore}-${fixture.userSubmission.awayScore}`
@@ -631,7 +661,7 @@ export const FixturesView: React.FC = () => {
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Details</span>
                       </button>
-                    ) : (fixture.isPlayable === false || isMatchdayLocked(fixture.matchday)) ? (
+                    ) : scoreEntryLocked ? (
                       <button
                         disabled={true}
                         className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed"
