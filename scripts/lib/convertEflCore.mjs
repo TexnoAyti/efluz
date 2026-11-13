@@ -171,12 +171,22 @@ export function convertEflCore(collections,options={}){
     updated_at:time(d.updatedAt,time(d.claimedAt))});
  }
  for(const [id,d] of fixtures){
-  const seasonId=required(d.seasonId,'FIXTURE_WITHOUT_SEASON');
-  const compId=required(d.competitionId,'FIXTURE_WITHOUT_COMPETITION');
-  if(competitionSeason.get(compId)!==seasonId)fail('FIXTURE_COMPETITION_SEASON_MISMATCH');
+  const seasonId=d.seasonId==null?null:String(d.seasonId);
+  const compId=d.competitionId==null?null:String(d.competitionId);
+  if(!seasonId||!compId||!seasons.has(seasonId)||!competitions.has(compId)){
+   if(quarantine)continue;
+   fail('FIXTURE_REFERENCE_MISSING');
+  }
+  if(competitionSeason.get(compId)!==seasonId){
+   if(quarantine)continue;
+   fail('FIXTURE_COMPETITION_SEASON_MISMATCH');
+  }
   const comp=competitions.get(compId);
   const home=d.homeClubId??null,away=d.awayClubId??null;
-  for(const club of [home,away])if(club!==null&&!clubs.has(club))fail('FIXTURE_CLUB_MISSING');
+  for(const club of [home,away])if(club!==null&&!clubs.has(club)){
+   if(quarantine)continue;
+   fail('FIXTURE_CLUB_MISSING');
+  }
   const status=str(d.status,'SCHEDULED').toUpperCase();
   const isConfirmed=status==='CONFIRMED';
   if(isConfirmed&&(score(d.homeScore)===null||score(d.awayScore)===null))
