@@ -49,8 +49,8 @@ async function render({ id = 'player-1', admin = false, route = '/', completed =
     seasons: [], activeSeasonId: seasonId, devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
   context.window.location.pathname = route;
   storage.set('efluz-theme-mode', theme);
-  if (completed !== 'stored') storage.delete(`efluz-welcome-v2:${id}`);
-  if (completed === true) storage.set(`efluz-welcome-v2:${id}`, 'done');
+  if (completed !== 'stored') storage.delete(`efluz-welcome-v3:${id}`);
+  if (completed === true) storage.set(`efluz-welcome-v3:${id}`, 'done');
   // Lazy sections suspend during the first render; verify their completed output.
   const stream = await renderToReadableStream(React.createElement(App));
   await stream.allReady;
@@ -58,8 +58,9 @@ async function render({ id = 'player-1', admin = false, route = '/', completed =
 }
 for (const admin of [false, true]) {
   storage.set('efluz-welcome-v1:player-1', 'done');
+  storage.set('efluz-welcome-v2:player-1', 'done');
   const welcome = await render({ admin, completed: false });
-  assert.match(welcome, />Boshlash</, 'every role must see the version 2 welcome despite a version 1 completion');
+  assert.match(welcome, />Boshlash</, 'every role must see the version 3 welcome despite earlier completion');
   assert.doesNotMatch(welcome, /data-test-view="MatchdayHomeView"/);
   const home = await render({ admin });
   assert.match(home, /data-test-view="MatchdayHomeView"/);
@@ -93,7 +94,7 @@ assert.match(await render({ route: '/admin', admin: true }), /data-test-view="Ad
 assert.doesNotMatch(await render({ id: 'player-2', completed: false }), /data-test-view="MatchdayHomeView"/);
 assert.doesNotMatch(await render({ anonymous: true }), /efl-welcome|data-test-view="MatchdayHomeView"/);
 assert.doesNotMatch(await render({ anonymous: true }), /id="btn-first-visit-guide"/);
-console.log('PASS EFL 2.0: every role gets versioned welcome, public design/themes/navigation/routes; administrator routes remain restricted; anonymous auth remains intact.');
+console.log('PASS EFL 2.0: every role gets versioned season two welcome, public design/themes/navigation/routes; administrator routes remain restricted; anonymous auth remains intact.');
 
 for (const admin of [false, true]) {
   const current = await render({admin,completed:false,seasonId:'season-2026-27'});
