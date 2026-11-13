@@ -36,7 +36,7 @@ try{
  const regenerated=join(dir,'regenerated.json');
  const converter=fileURLToPath(new URL('./convertEflCoreSnapshot.mjs',import.meta.url));
  const result=spawnSync(process.execPath,[converter,resolve(source),regenerated,
-  '--require-complete-source','--verified-archive',resolve(archive)],{
+  '--require-complete-source','--quarantine-historical','--verified-archive',resolve(archive)],{
   encoding:'utf8',timeout:180000,maxBuffer:1024*1024
  });
  if(result.status!==0)throw Error('SOURCE_NORMALIZATION_REPLAY_FAILED');

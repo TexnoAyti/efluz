@@ -19,13 +19,14 @@ function source(collections,root){
  }
  return out;
 }
-export function convertEflClubControls(collections){
+export function convertEflClubControls(collections,{quarantineHistoricalOrphans=false}={}){
  const users=source(collections,'users');
  const seasons=source(collections,'seasons');
  const admissions=source(collections,'club_admissions');
  const bans=source(collections,'club_selection_bans');
  const clubAdmissions=[],clubSelectionBans=[];
  for(const [key,d] of admissions){
+  try{
   if(!id(d.seasonId)||!seasons.has(d.seasonId))
    throw Error('ADMISSION_SEASON_MISSING');
   if(typeof d.enabled!=='boolean'||!Number.isSafeInteger(d.stage)||d.stage<0||
@@ -41,8 +42,10 @@ export function convertEflClubControls(collections){
    league_overrides:d.leagueOverrides,updated_by:d.updatedBy,
    updated_at:time(d.updatedAt)
   });
+  }catch(error){if(quarantineHistoricalOrphans)continue;throw error;}
  }
  for(const [key,d] of bans){
+  try{
   if(!id(d.userId)||d.userId!==key||!users.has(key))
    throw Error('CLUB_BAN_USER_CONFLICT');
   if(!id(d.telegramId)||String(users.get(key).telegramId)!==d.telegramId)
@@ -55,6 +58,7 @@ export function convertEflClubControls(collections){
    is_banned:d.isBanned,reason:d.reason,actor_id:d.actorId,
    revision:d.revision,updated_at:time(d.updatedAt)
   });
+  }catch(error){if(quarantineHistoricalOrphans)continue;throw error;}
  }
  return {rows:{clubAdmissions,clubSelectionBans},
   report:{admissions:clubAdmissions.length,bans:clubSelectionBans.length,

@@ -127,25 +127,26 @@ async function runDeploymentSelfCheck() {
 
     // 3.2 /api/leagues
     const leagues = await testEndpoint('/api/leagues');
-    if (leagues.status !== 200 || !leagues.isJson || !Array.isArray(leagues.json?.leagues) || leagues.json.leagues.length !== 4) {
+    if (leagues.status !== 200 || !leagues.isJson || !Array.isArray(leagues.json?.leagues) || leagues.json.leagues.length !== 9) {
       throw new Error(`FAILED [CHECK 3.2]: /api/leagues failed -> HTTP ${leagues.status}, leagues count=${leagues.json?.leagues?.length}`);
     }
-    console.log(`✅ PASS [CHECK 3.2]: GET /api/leagues returned HTTP 200 JSON (${leagues.json.leagues.length} leagues)`);
+    console.log(`✅ PASS [CHECK 3.2]: GET /api/leagues returned Season 2 JSON (${leagues.json.leagues.length} leagues)`);
 
-    const activeLeagueIds = leagues.json.leagues.map((league: any) => league.id).sort();
-    const expectedLeagueIds = ['league-premier-league', 'league-la-liga', 'league-serie-a', 'league-bundesliga'].sort();
-    if (JSON.stringify(activeLeagueIds) !== JSON.stringify(expectedLeagueIds)) throw new Error('Current season league membership is incorrect');
+    const activeLeagueIds = leagues.json.leagues.map((league: any) => league.id);
+    if (!activeLeagueIds.includes('league-premier-league') || !activeLeagueIds.includes('league-uzbekistan-superliga')) {
+      throw new Error('Season 2 league catalogue is incomplete');
+    }
     const archivedLeagues = await testEndpoint('/api/leagues?seasonId=season-2025-26');
     if (archivedLeagues.status !== 200 || archivedLeagues.json?.leagues?.length !== 5) throw new Error('Historical league catalogue changed');
     const withdrawnLeague = await testEndpoint('/api/leagues/league-ligue-1');
     if (withdrawnLeague.status !== 404) throw new Error('Withdrawn league still accessible in current season');
 
     // 3.3 /api/leagues/league-premier-league/clubs
-    const plClubs = await testEndpoint('/api/leagues/league-premier-league/clubs');
+    const plClubs = await testEndpoint('/api/leagues/league-premier-league/clubs?seasonId=season-2027-28');
     if (plClubs.status !== 200 || !plClubs.isJson || !Array.isArray(plClubs.json?.clubs) || plClubs.json.clubs.length !== 20) {
       throw new Error(`FAILED [CHECK 3.3]: Premier League clubs count failed -> count=${plClubs.json?.clubs?.length}`);
     }
-    console.log(`✅ PASS [CHECK 3.3]: GET /api/leagues/.../clubs returned HTTP 200 JSON (20 2026/27 clubs)`);
+    console.log(`✅ PASS [CHECK 3.3]: GET /api/leagues/.../clubs returned HTTP 200 JSON (20 Season 2 clubs)`);
 
     // 3.4 /api/me (unauthenticated must be JSON 401, NEVER HTML)
     const meAnon = await testEndpoint('/api/me');

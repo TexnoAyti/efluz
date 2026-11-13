@@ -1,5 +1,5 @@
 import {seasonClubs,seasonLeagues,preparedLeagueReadConfig} from '../services/seasonCatalog';
-import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
+import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, isSeasonLeagueAccountVisible } from '../../lib/seasonParticipationPolicy';
 import { clubStadium } from '../../constants/clubStadiums';
 import {filterPublishedEuropeanFixtures} from '../services/europeanFixtureGate';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
@@ -37,6 +37,46 @@ import { queryAll, queryGet } from '../db';
 import { trackFirestoreRead } from '../firebase/firestoreStore';
 import { SEED_COMPETITIONS, SEED_CLUBS, SEED_LEAGUES } from '../db/seed';
 import { Club, Fixture, Competition, StandingsRow } from '../../types/index';
+
+const RESIDUAL_SEASON_COMPETITIONS = [
+  'comp-community-shield-2026', 'comp-supercopa-espana-2026',
+  'comp-supercoppa-italiana-2026', 'comp-dfl-supercup-2026',
+  'comp-uefa-super-cup-2026', 'comp-champions-league-2026',
+  'comp-europa-league-2026',
+] as const;
+
+/**
+ * Season 1 account visibility is intentionally narrower than the historical
+ * archive: only clubs still participating in a Super Cup or European cup are
+ * shown as an active club. Stored ownership records remain untouched.
+ */
+async function seasonOneCompetitiveClubIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  try {
+    const snap = await getFirestoreDb().collection(COLLECTIONS.COMPETITION_PARTICIPANTS)
+      .where('competitionId', 'in', [...RESIDUAL_SEASON_COMPETITIONS]).get();
+    for (const doc of snap.docs) {
+      const clubId = doc.data()?.clubId;
+      if (typeof clubId === 'string' && clubId) ids.add(clubId);
+    }
+  } catch { /* SQLite/Postgres snapshot fallback below. */ }
+  if (ids.size === 0) {
+    try {
+      const rows = queryAll<any>(
+        `SELECT club_id FROM competition_participants WHERE season_id = ? AND competition_id IN (${RESIDUAL_SEASON_COMPETITIONS.map(() => '?').join(',')})`,
+        ['season-2026-27', ...RESIDUAL_SEASON_COMPETITIONS]
+      );
+      for (const row of rows) if (typeof row.club_id === 'string' && row.club_id) ids.add(row.club_id);
+    } catch { /* A missing participant snapshot means no eligible club is exposed. */ }
+  }
+  return ids;
+}
+
+async function filterAccountVisibleClubs<T extends Club>(clubs: T[], seasonId: string): Promise<T[]> {
+  if (seasonId !== 'season-2026-27') return clubs;
+  const eligible = await seasonOneCompetitiveClubIds();
+  return clubs.filter((club) => eligible.has(club.id));
+}
 
 export const SCHEMA_VERSION = 'v1';
 export const KEY_PREFIX = `efluz:${SCHEMA_VERSION}`;
@@ -1564,7 +1604,7 @@ export async function getAdminClubsFromReadModel(
     validateData: (data) => Array.isArray(data) && data.length > 0,
   });
 
-  let clubs = result.data.filter(c => isSeasonLeagueEnabled(c.leagueId, seasonId));
+  let clubs = result.data.filter(c => isSeasonLeagueAccountVisible(c.leagueId, seasonId));
   if (leagueId && leagueId !== 'ALL') {
     clubs = clubs.filter((c) => c.leagueId === leagueId);
   }
@@ -1724,13 +1764,15 @@ export async function getUserActiveClubFromReadModel(
     firestoreFetcher: async () => (await getClubsSnapshotForRead(seasonId)).data,
     validateData: data => Array.isArray(data) && data.length > 0,
   });
-  const owner = result.data.find(c => (c.ownerUserId || c.claimedByUserId) === userId);
+  const visible = await filterAccountVisibleClubs(result.data, seasonId);
+  const owner = visible.find(c => (c.ownerUserId || c.claimedByUserId) === userId);
   return owner ? enrichClubForUser(owner, userId) : null;
 }
 
 export async function getUserActiveClubsFromReadModel(userId: string, seasonId = 'season-2026-27'): Promise<Club[]> {
   const ownership = await getAdminClubsFromReadModel(seasonId);
-  return ownership.clubs.filter((club) => club.ownerUserId === userId).map((club) => enrichClubForUser(club, userId));
+  const visible = await filterAccountVisibleClubs(ownership.clubs, seasonId);
+  return visible.filter((club) => club.ownerUserId === userId).map((club) => enrichClubForUser(club, userId));
 }
 
 /** Membership is optional profile data; its outage must not invalidate verified identity. */
@@ -2698,3 +2740,4 @@ export async function getReadModelHealthStatus(seasonId = 'season-2026-27'): Pro
     coreDatasets,
   };
 }
+

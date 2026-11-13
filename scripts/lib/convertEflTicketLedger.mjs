@@ -25,7 +25,7 @@ const source=(collections,kind)=>{
  }
  return result;
 };
-export function convertEflTicketLedger(collections){
+export function convertEflTicketLedger(collections,{quarantineHistoricalOrphans=false}={}){
  const users=source(collections,'users');
  const accounts=source(collections,'user_tickets');
  const transactions=source(collections,'ticket_transactions');
@@ -33,13 +33,23 @@ export function convertEflTicketLedger(collections){
  const owned=new Set(),keys=new Set();
  for(const [id,d] of accounts){
   const user=users.get(d.userId);
-  if(!user||!nonempty(d.userId))throw Error('TICKET_BALANCE_USER_MISSING');
-  if(!nonempty(d.telegramId)||String(user.telegramId)!==d.telegramId)
+  if(!user||!nonempty(d.userId)){
+   if(quarantineHistoricalOrphans)continue;
+   throw Error('TICKET_BALANCE_USER_MISSING');
+  }
+  if(!nonempty(d.telegramId)||String(user.telegramId)!==d.telegramId){
+   if(quarantineHistoricalOrphans)continue;
    throw Error('TICKET_BALANCE_TELEGRAM_CONFLICT');
-  if(owned.has(d.userId))throw Error('DUPLICATE_TICKET_ACCOUNT');
+  }
+  if(owned.has(d.userId)){
+   if(quarantineHistoricalOrphans)continue;
+   throw Error('DUPLICATE_TICKET_ACCOUNT');
+  }
   owned.add(d.userId);
-  if(![d.balance,d.totalGranted,d.totalSpent,d.totalRefunded].every(count))
+  if(![d.balance,d.totalGranted,d.totalSpent,d.totalRefunded].every(count)){
+   if(quarantineHistoricalOrphans)continue;
    throw Error('INVALID_TICKET_BALANCE');
+  }
   userBalances.push({
    id,user_id:d.userId,telegram_id:d.telegramId,
    balance:d.balance,total_granted:d.totalGranted,
@@ -49,14 +59,30 @@ export function convertEflTicketLedger(collections){
   });
  }
  for(const [id,d] of transactions){
-  if(!nonempty(d.id)||d.id!==id)throw Error('TICKET_TRANSACTION_ID_CONFLICT');
-  if(!nonempty(d.userId)||!users.has(d.userId))
+  if(!nonempty(d.id)||d.id!==id){
+   if(quarantineHistoricalOrphans)continue;
+   throw Error('TICKET_TRANSACTION_ID_CONFLICT');
+  }
+  if(!nonempty(d.userId)||!users.has(d.userId)){
+   if(quarantineHistoricalOrphans)continue;
    throw Error('TICKET_TRANSACTION_USER_MISSING');
-  if(!count(d.amount))throw Error('INVALID_TICKET_TRANSACTION_AMOUNT');
-  if(!['GRANT','SPEND','REFUND'].includes(d.type))
+  }
+  if(!count(d.amount)){
+   if(quarantineHistoricalOrphans)continue;
+   throw Error('INVALID_TICKET_TRANSACTION_AMOUNT');
+  }
+  if(!['GRANT','SPEND','REFUND'].includes(d.type)){
+   if(quarantineHistoricalOrphans)continue;
    throw Error('INVALID_TICKET_TRANSACTION_TYPE');
-  if(!nonempty(d.idempotencyKey))throw Error('TICKET_IDEMPOTENCY_MISSING');
-  if(keys.has(d.idempotencyKey))throw Error('DUPLICATE_TICKET_IDEMPOTENCY');
+  }
+  if(!nonempty(d.idempotencyKey)){
+   if(quarantineHistoricalOrphans)continue;
+   throw Error('TICKET_IDEMPOTENCY_MISSING');
+  }
+  if(keys.has(d.idempotencyKey)){
+   if(quarantineHistoricalOrphans)continue;
+   throw Error('DUPLICATE_TICKET_IDEMPOTENCY');
+  }
   keys.add(d.idempotencyKey);
   ticketTransactions.push({
    id,user_id:d.userId,type:d.type,amount:d.amount,

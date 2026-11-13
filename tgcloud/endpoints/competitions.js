@@ -16,6 +16,7 @@ export default async function(input={},ctx) {
     format_config AS formatConfig,current_matchday AS currentMatchday,
     is_matchday_open AS isMatchdayOpen
     FROM efl_competitions WHERE season_id=:season
+      AND (season_id <> 'season-2026-27' OR type IN ('SUPER_CUP','EUROPEAN_LEAGUE_PHASE','EUROPEAN_KNOCKOUT'))
     ORDER BY type,name,id LIMIT :limit`,
     {':season':seasonId,':limit':limit});
   return {ok:true,seasonId,competitions,source:'telegram-serverless'};

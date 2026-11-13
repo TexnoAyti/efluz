@@ -31,6 +31,7 @@ export function rowsEquivalent(actual, incoming, columns) {
 export async function applyImportBatch(db, input) {
   const batch = validateImportBatch(input);
   const {table,batchId,rows,columns,pk,sqlTable} = batch;
+  const replaceExisting = input?.stagingReplaceExisting === true;
   const signature = stableRow({table,rows}, ['table','rows']);
   const key = 'import:'+table+':'+batchId;
   const prior = await db.get(
@@ -51,17 +52,18 @@ export async function applyImportBatch(db, input) {
     const existing = await db.get(
       `SELECT ${names} FROM ${sqlTable} WHERE "${pk}"=:pk`,lookup
     );
-    if (existing && !rowsEquivalent(existing,row,columns))
+    if (existing && !replaceExisting && !rowsEquivalent(existing,row,columns))
       throw new Error('ROW_CONFLICT');
     if (existing) previouslyPresent++;
   }
   for (const row of rows) {
     const lookup = {':pk':row[pk]};
     const values = Object.fromEntries(columns.map(c => [':'+c, comparableValue(row[c],c)]));
-    await db.run(
-      `INSERT INTO ${sqlTable} (${names}) VALUES (${params}) ON CONFLICT DO NOTHING`,
-      values
-    );
+    const writeSql = replaceExisting
+      ? `INSERT INTO ${sqlTable} (${names}) VALUES (${params})
+         ON CONFLICT ("${pk}") DO UPDATE SET ${columns.filter(c=>c!==pk).map(c=>`"${c}"=excluded."${c}"`).join(',')}`
+      : `INSERT INTO ${sqlTable} (${names}) VALUES (${params}) ON CONFLICT DO NOTHING`;
+    await db.run(writeSql, values);
     const persisted = await db.get(
       `SELECT ${names} FROM ${sqlTable} WHERE "${pk}"=:pk`,lookup
     );

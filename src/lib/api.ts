@@ -1,5 +1,5 @@
 import { callEflTransport, type EflTransport } from './serverlessTransport';
-import { requestViaEflServerless } from './serverlessRequestGateway';
+import { requestViaEflServerless, writeViaEflServerless } from './serverlessRequestGateway';
 import { isSeasonCompetitionEnabled } from './seasonParticipationPolicy';
 import { readBrowserStorage, writeBrowserStorage } from './browserStorage';
 import type {AdminTaskPage,AdminTaskPriority,AdminTaskGroup} from '../types/adminTasks';
@@ -448,6 +448,10 @@ export const api = {
 
   async markNotificationsRead(notificationId?: string): Promise<{ success: boolean }> {
     invalidateClientCache('/api/me/notifications');
+    if (import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') {
+      await writeViaEflServerless('markNotificationRead', notificationId ? { notificationId } : {});
+      return { success: true };
+    }
     return request('/api/me/notifications/read', {
       method: 'POST',
       body: JSON.stringify(notificationId ? { notificationId } : {}),

@@ -20,9 +20,12 @@ function resolveLeagueId(id: string): string {
 
 leaguesRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const leagues = await getAllLeaguesFirestore(String(req.query.seasonId || 'season-2026-27'));
+    // After rollover, the public league catalogue opens on Season 2.
+    // Season 1 remains addressable explicitly for historical European/Super Cup views.
+    const seasonId = String(req.query.seasonId || 'season-2027-28');
+    const leagues = await getAllLeaguesFirestore(seasonId);
     res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
-    res.json({ leagues: leagues.filter(l=>isSeasonLeagueEnabled(l.id,String(req.query.seasonId || 'season-2026-27'))) });
+    res.json({ leagues: leagues.filter(l=>isSeasonLeagueEnabled(l.id,seasonId)) });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/leagues');
   }

@@ -1,7 +1,7 @@
 {
   "asOf": "2026-11-08",
   "source": "efl_runtime.documents:production read-only inventory",
-  "note": "Read-only counts from a single SQL statement on 2026-11-08; NOT a consistent export, live data keeps changing. New result_refresh_jobs is quarantined for review. Review collections and runtime sessions must never be blindly imported.",
+  "note": "Read-only counts from a single SQL statement on 2026-11-08; NOT a consistent export, live data keeps changing. New result_refresh_jobs is quarantined for review. Review collections and runtime sessions must never be blindly imported. Newly observed archive/draft roots are explicitly quarantined for review; they are not projected into active normalized tables.",
   "observedTotal": 26763,
   "collections": [
     {
@@ -130,6 +130,10 @@
       "observedDocuments": 1
     },
     {
+      "collection": "european_legacy_draw_archives",
+      "handling": "review"
+    },
+    {
       "collection": "fixtures",
       "handling": "preserve",
       "observedDocuments": 1266
@@ -200,6 +204,10 @@
       "observedDocuments": 2
     },
     {
+      "collection": "qualification_applications",
+      "handling": "review"
+    },
+    {
       "collection": "recovery_backups",
       "handling": "review",
       "observedDocuments": 53
@@ -225,6 +233,14 @@
       "observedDocuments": 302
     },
     {
+      "collection": "season_preparation_drafts",
+      "handling": "review"
+    },
+    {
+      "collection": "season_preparation_packages",
+      "handling": "review"
+    },
+    {
       "collection": "season2_retention_decisions",
       "handling": "preserve",
       "observedDocuments": 5
@@ -238,6 +254,14 @@
       "collection": "standings",
       "handling": "preserve",
       "observedDocuments": 14
+    },
+    {
+      "collection": "supercup_full_reset_archives",
+      "handling": "review"
+    },
+    {
+      "collection": "supercup_legacy_participant_archives",
+      "handling": "review"
     },
     {
       "collection": "team_creation_tickets",
@@ -363,6 +387,10 @@
       "collection": "uzeflife_worker",
       "handling": "review",
       "observedDocuments": 1
+    },
+    {
+      "collection": "ownership_repair_backups",
+      "handling": "review"
     }
   ],
   "observedGeneration": null,

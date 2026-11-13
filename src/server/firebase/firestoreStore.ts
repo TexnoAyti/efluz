@@ -2,7 +2,7 @@ import {seasonClubs, seasonLeagues} from '../services/seasonCatalog';
 import { S2_PUBLIC_AT } from '../../lib/seasonTwoAdmissionWindow';
 import {isClubSelectionBanned} from '../services/clubSelectionBan';
 import { withSeasonQualificationPolicy } from '../../lib/seasonQualificationPolicy';
-import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
+import { isSeasonCompetitionEnabled, isSeasonLeagueEnabled, isSeasonLeagueAccountVisible, assertSeasonCompetitionEnabled, assertSeasonLeagueEnabled } from '../../lib/seasonParticipationPolicy';
 import { assertDisciplineFixtureAllowed, prepareFixtureDiscipline } from '../services/disciplineService';
 import { assertNoDisciplinaryHold } from '../../types/discipline';
 import { clubStadium } from '../../constants/clubStadiums';
@@ -1479,7 +1479,7 @@ export function checkFixturePlayability(
     }
   }
 
-  if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
+  if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId,europeanDrawId: (resolvedComp as any)?.europeanDrawId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate !== null) return { isPlayable: explicitGate, activeMatchday };
 
@@ -1502,7 +1502,7 @@ export function checkFixturePlayability(
   if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED') {
     return { isPlayable: false, activeMatchday };
   }
-  if (!isMatchdayOpen || (resolvedComp?.nextMatchdayOpenAt && Date.parse(resolvedComp.nextMatchdayOpenAt) <= Date.now())) {
+  if (!isMatchdayOpen || (resolvedComp?.nextMatchdayOpenAt && Date.parse(resolvedComp.nextMatchdayOpenAt) > Date.now())) {
     return { isPlayable: false, activeMatchday };
   }
 
@@ -3039,7 +3039,7 @@ export function isMatchdayPlayableKey(
     compType === 'SUPER_CUP' ||
     compType === 'EUROPEAN_KNOCKOUT';
 
-  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED' || !isMatchdayOpen || (compState?.nextMatchdayOpenAt && Date.parse(compState.nextMatchdayOpenAt) <= Date.now())) return false;
+  if (adminStatus === 'FORCE_LOCKED' || adminStatus === 'PAUSED' || !isMatchdayOpen || (compState?.nextMatchdayOpenAt && Date.parse(compState.nextMatchdayOpenAt) > Date.now())) return false;
   if (isKnockout) {
     return true;
   }
@@ -3117,7 +3117,7 @@ export async function assertMatchdayPlayableFirestore(
     throw err;
   }
 
-  if (!isMatchdayOpen || (comp?.nextMatchdayOpenAt && Date.parse(comp.nextMatchdayOpenAt) <= Date.now())) {
+  if (!isMatchdayOpen || (comp?.nextMatchdayOpenAt && Date.parse(comp.nextMatchdayOpenAt) > Date.now())) {
     throw Object.assign(new Error('MATCHDAY_LOCKED: Tur yopiq yoki muddati tugagan.'), { code: 'MATCHDAY_LOCKED', statusCode: 403 });
   }
 

@@ -21,7 +21,7 @@ assert.equal(isSeasonLeagueEnabled('league-ligue-1','season-2027-28'),true);
 assert.equal(isSeasonCompetitionEnabled(cup),false);
 for (const season of [seasonId, 'season-2027-28', 'season-2025-26']) {
  for (const id of ['comp-efl-cup-2026', 'comp-carabao-cup-2027']) assert.equal(isSeasonCompetitionEnabled(id,season),false);
- assert.equal(isSeasonCompetitionEnabled('comp-fa-cup-2026',season),true);
+ assert.equal(isSeasonCompetitionEnabled('comp-fa-cup-2026',season),season !== seasonId);
 }
 assert.equal(isSeasonCompetitionEnabled(withdrawn,'season-2025-26'),true);
 assert.equal(Object.keys(SEASON_2026_27_ALLOCATION).length,4);
@@ -33,8 +33,8 @@ assert.equal(effective.formatConfig.keep,'unchanged');
 assert.equal(withSeasonQualificationPolicy(stale,'season-2027-28'),stale);
 const fixture=(id:string,competitionId:string,status='SCHEDULED'):any=>({id,seasonId,competitionId,matchday:1,status,homeClubId:'club-psg',awayClubId:'club-lille',homeOwnerId:'owner1',awayOwnerId:'owner2',homeScore:1,awayScore:0,roundName:'Final'});
 const rows=[fixture('france',withdrawn),fixture('france-cup',cup,'CONFIRMED'),fixture('england','comp-premier-league-2026','CONFIRMED')];
-assert.deepEqual(filterSeasonFixtures(rows).map(f=>f.id),['england']);
-assert.deepEqual(filterRetiredFixtures(rows).map(f=>f.id),['england']);
+assert.deepEqual(filterSeasonFixtures(rows).map(f=>f.id),[]);
+assert.deepEqual(filterRetiredFixtures(rows).map(f=>f.id),[]);
 assert.equal(filterSeasonFixtures(rows.map(f=>({...f,seasonId:'season-2025-26'}))).length,3);
 for(const c of SEED_COMPETITIONS) await db.collection('competitions').doc(c.id).set(c);
 for(const f of rows) await db.collection('fixtures').doc(f.id).set(f);
@@ -45,20 +45,20 @@ for(const c of SEED_COMPETITIONS) await redisSetRaw(ReadModelKeys.competitionFix
 for(const c of SEED_COMPETITIONS.filter(c=>c.type==='LEAGUE')) await redisSetRaw(ReadModelKeys.standings(c.id,seasonId),{data:[{clubId:'club-check',position:1}]},3600);
 const comps=(await getCompetitionsFromReadModel(seasonId)).competitions;
 assert.equal(comps.some(c=>c.id==='comp-efl-cup-2026'),false,'A warm catalog cannot resurrect the retired EFL Cup');
-assert.ok(comps.some(c=>c.id==='comp-fa-cup-2026'),'FA Cup stays available');
+assert.equal(comps.some(c=>c.id==='comp-fa-cup-2026'),false,'Season 1 domestic cups are closed');
 assert.equal(comps.some(c=>c.id===withdrawn || c.id===cup),false,'Warm snapshots cannot re-enable withdrawn competitions');
 assert.equal((await getLeagueClubsFromReadModel('league-ligue-1',seasonId)).clubs.length,0);
 assert.equal((await getAvailableClubsFromReadModel(seasonId)).clubs.some(c=>c.leagueId==='league-ligue-1'),false);
-assert.deepEqual((await loadSeasonOperationsFixtures(seasonId)).fixtures.map(f=>f.id),['england']);
-assert.equal((await getQualificationTracker(seasonId)).leagues.length,4);
+assert.deepEqual((await loadSeasonOperationsFixtures(seasonId)).fixtures.map(f=>f.id),[]);
+assert.equal((await getQualificationTracker(seasonId)).leagues.length,0);
 const lifecycle=await getSeasonLifecycle(seasonId,true);
 assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.total,0);
-assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.description,'4 ta milliy kubok bosqichi');
+assert.equal(lifecycle.phases.find(p=>p.id==='DOMESTIC_CUPS')?.description,'0 ta milliy kubok bosqichi');
 assert.equal((await getSeasonTrophies(seasonId)).trophies.some(t=>t.competitionId===cup),false);
 assert.equal((await previewFixtureSchedule({isAdmin:true} as any,{seasonId,category:'ALL'})).fixtures.some(f=>f.competitionId===withdrawn),false);
 assert.equal(await getFixtureByIdFirestore('france'),null);
-await assert.rejects(claimClubAtomicFirestore('user-check','club-psg',seasonId),/Ligue 1/);
-await assert.rejects(adminAssignClubFirestore('admin','club-psg','user-check',seasonId),/Ligue 1/);
+await assert.rejects(claimClubAtomicFirestore('user-check','club-psg',seasonId),/1-mavsum ligalari yopilgan/);
+await assert.rejects(adminAssignClubFirestore('admin','club-psg','user-check',seasonId),/1-mavsum ligalari yopilgan/);
 await assert.rejects(generateCompetitionFixturesFirestore(withdrawn),/olib tashlangan/);
 await assert.rejects(assertMatchdayPlayableFirestore(seasonId,withdrawn,1),/olib tashlangan/);
 await assert.rejects(controlCompetitionMatchday(withdrawn,{action:'OPEN',matchday:1}),/olib tashlangan/);
@@ -71,3 +71,4 @@ for (const id of Object.keys(SEASON_2026_27_ALLOCATION)) {
   assert.deepEqual(seasonQualificationRanges(cached,'season-2027-28'),{uclEnd:7,uelEnd:14},'Future-season allocations are preserved');
 }
 assert.deepEqual(seasonQualificationRanges({id:'comp-ligue-1-2027',formatConfig:{qualificationSpots:6,europaQualificationSpots:6}},'season-2027-28'),{uclEnd:6,uelEnd:12});
+

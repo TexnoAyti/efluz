@@ -15,7 +15,8 @@ export default async function (_input, ctx) {
     db.all(`SELECT id, season_id AS seasonId, name, country, continent, logo_url AS logoUrl,
       capacity, status, current_round AS currentRound FROM efl_leagues ORDER BY season_id DESC, sort_order ASC`),
   ]);
+  const visibleLeagues = availableLeagues.filter(row => row.seasonId !== 'season-2026-27');
   return { ok: true,
     user: user ? { id: user.id, telegramId, username: user.username, firstName: user.first_name, isAdmin: Boolean(user.is_admin) } : null,
-    activeSeason, ownerships, leagues: availableLeagues, source: 'telegram-serverless' };
+    activeSeason, ownerships, leagues: visibleLeagues, source: 'telegram-serverless' };
 }

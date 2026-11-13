@@ -68,7 +68,7 @@ if(quarantineHistoricalOrphans||requireCompleteSource){
  await verifyArchiveBinding(src,dir);
 }
 const result=convertEflCore(collections,{quarantineHistoricalOrphans});
-const ledger=convertEflTicketLedger(collections);
+const ledger=convertEflTicketLedger(collections,{quarantineHistoricalOrphans});
 Object.assign(result.rows,ledger.rows);
 result.report.tickets=ledger.report;
 const trophyProjection=convertEflTrophies(collections);
@@ -77,7 +77,7 @@ result.report.trophies=trophyProjection.report;
 const historicalRights=convertEflSeasonEntitlements(collections);
 Object.assign(result.rows,historicalRights.rows);
 result.report.historicalRights=historicalRights.report;
-const controlHistory=convertEflClubControls(collections);
+const controlHistory=convertEflClubControls(collections,{quarantineHistoricalOrphans});
 Object.assign(result.rows,controlHistory.rows);
 result.report.clubControls=controlHistory.report;
 const membershipHistory=convertEflMembershipHistory(collections);
