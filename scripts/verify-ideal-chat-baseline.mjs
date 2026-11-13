@@ -1,6 +1,6 @@
 /** Prevent accidental replacement of the user-approved EFLUZ match chat. 
  * Update expected blob IDs only after intentional chat review and regression tests.
- * Git blob IDs are SHA-1 of "blob <bytes>\\0" plus the exact file content.
+ * Git blob IDs are SHA-1 of "blob <bytes>\0" plus the exact file content.
  */
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -15,7 +15,7 @@ let failed=false;
 for(const [path,expected] of Object.entries(approved)){
   try{
     const bytes=readFileSync(path);
-    const actual=createHash('sha1').update(`blob ${bytes.length}\\0`).update(bytes).digest('hex');
+    const actual=createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
     if(actual!==expected){console.error(`IDEAL_CHAT_CHANGED: ${path}; expected ${expected}, got ${actual}. Review intentionally and update baseline only after testing.`);failed=true;}
     else console.log(`IDEAL_CHAT_OK: ${path}`);
   }catch(error){console.error(`IDEAL_CHAT_MISSING: ${path}: ${error.message}`);failed=true;}
