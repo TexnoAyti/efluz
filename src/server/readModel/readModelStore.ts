@@ -2091,22 +2091,28 @@ export async function getCompetitionFixturesFromReadModel(
   });
   if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
+  // The result entry policy must never be inferred from old isPlayable flags
+  // stored in a shared fixture snapshot. Refresh only active legacy cups.
+  const requiresLivePermission = seasonId === 'season-2026-27' &&
+    /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId);
+  const { enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules } = await import('../firebase/firestoreStore');
   try {
-    const { enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules } = await import('../firebase/firestoreStore');
     fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
-    // A cached fixture snapshot may hold isPlayable=false from the old round.
-    // Compute permission from the authoritative competition and explicit round locks,
-    // not from a previously deployed read-model snapshot.
-    // Only the still-running first-season UEFA and Super Cup result flows
-    // require a forced freshness check. Avoid extra database reads for domestic
-    // leagues and other tournament views.
-    const requiresLivePermission = seasonId === 'season-2026-27' &&
-      /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId);
-    if (requiresLivePermission) {
+  } catch (err) {
+    console.warn('[COMPETITION_FIXTURES] Owner read unavailable:', err);
+  }
+  if (requiresLivePermission) {
+    // A failure here is a temporary unavailable state, NOT an admin-locked
+    // round. Never silently turn every score button into Qulflangan.
+    try {
       fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
-      // Scope former Season 1 club managers to their historical UEFA/Super Cup
-      // match only. This does not reassign the old domestic-league club or
-      // modify the Season 2 registration database.
+    } catch (err) {
+      console.error('[COMPETITION_FIXTURES] Authoritative cup eligibility unavailable:', err);
+      throw new ReadModelNotWarmedError('Competition matchday eligibility temporarily unavailable');
+    }
+    try {
+      // Historical cup ownership is match-scoped. Do not reactivate a former
+      // club in domestic standings or change Season 2 registration records.
       const db = getFirestoreDb();
       const formerOwners = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES)
         .where('seasonId','==',seasonId).where('status','==','released').get();
@@ -2119,11 +2125,9 @@ export async function getCompetitionFixturesFromReadModel(
         homeOwnerId: f.homeOwnerId || (f.homeClubId ? released.get(f.homeClubId) : undefined),
         awayOwnerId: f.awayOwnerId || (f.awayClubId ? released.get(f.awayClubId) : undefined),
       }));
+    } catch (err) {
+      console.warn('[COMPETITION_FIXTURES] Historical cup participants unavailable:', err);
     }
-  } catch (err) {
-    console.warn('[COMPETITION_FIXTURES] Ownership/permission refresh fallback:', err);
-    // Never accidentally open a round after a permission refresh failure.
-    fixtures = fixtures.map(f => ({...f, isPlayable: false}));
   }
   return {
     fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)),
