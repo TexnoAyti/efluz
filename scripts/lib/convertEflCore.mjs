@@ -142,11 +142,11 @@ export function convertEflCore(collections,options={}){
  const uniqueClubOwner=new Set(),uniquePlayerLeague=new Set();
  const currentOwners=new Map();
  for(const [id,d] of occupancies){
-  const seasonId=required(d.seasonId,'OCCUPANCY_WITHOUT_SEASON');
-  const clubId=required(d.clubId,'OCCUPANCY_WITHOUT_CLUB');
+  const seasonId=d.seasonId==null?null:String(d.seasonId);
+  const clubId=d.clubId==null?null:String(d.clubId);
   const userId=d.userId==null?null:String(d.userId);
   const status=str(d.status,'RELEASED').toUpperCase();
-  if(!seasons.has(seasonId)||!clubs.has(clubId)||!userId||!users.has(userId)){
+  if(!seasonId||!clubId||!seasons.has(seasonId)||!clubs.has(clubId)||!userId||!users.has(userId)){
     if(quarantine&&status==='RELEASED'){
       quarantined.releasedOccupancies++;continue;
     }
