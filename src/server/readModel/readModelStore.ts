@@ -2092,10 +2092,16 @@ export async function getCompetitionFixturesFromReadModel(
   if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
   try {
-    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
+    const { enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules } = await import('../firebase/firestoreStore');
     fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
+    // A cached fixture snapshot may hold isPlayable=false from the old round.
+    // Compute permission from the authoritative competition and explicit round locks,
+    // not from a previously deployed read-model snapshot.
+    fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
   } catch (err) {
-    console.warn('[COMPETITION_FIXTURES] Ownership enrichment fallback:', err);
+    console.warn('[COMPETITION_FIXTURES] Ownership/permission refresh fallback:', err);
+    // Never accidentally open a round after a permission refresh failure.
+    fixtures = fixtures.map(f => ({...f, isPlayable: false}));
   }
   return {
     fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)),
