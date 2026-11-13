@@ -39,6 +39,8 @@ interface AuthContextType {
   user: User | null;
   currentClub: Club | null;
   ownedClubs: Club[];
+  /** Verified, season-one European/Super Cup ownership, independent of the Season 2 selection. */
+  retainedSeasonOneClubs: Club[];
   premiumClubIds: string[];
   selectCurrentClub: (clubId: string) => void;
   userStats: {
@@ -90,6 +92,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [currentClub, setCurrentClub] = useState<Club | null>(null);
   const [ownedClubs, setOwnedClubs] = useState<Club[]>([]);
+  const [retainedSeasonOneState, setRetainedSeasonOneState] = useState<{ userId: string; clubs: Club[] } | null>(null);
+  // Never display a previous signed-in user's clubs while authentication changes.
+  const retainedSeasonOneClubs = retainedSeasonOneState?.userId === user?.id
+    ? retainedSeasonOneState.clubs : [];
   const [premiumClubIds, setPremiumClubIds] = useState<string[]>([]);
   const [userStats, setUserStats] = useState<{
     matchesPlayed: number;
@@ -198,6 +204,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentClub(null);
     void fetchUserData(activeSeasonId);
   }, [activeSeasonId, authStatus, user?.id, fetchUserData]);
+
+  // Keep cup ownership from Season 1 independently of Season 2 league admission.
+  // A navigation change must not make existing European / Super Cup clubs vanish.
+  // The server checks actual active memberships; never derive ownership from
+  // archived fixtures or the previous season's client-side cache.
+  useEffect(() => {
+    if (!user || authStatus !== 'AUTHENTICATED' || isDesignPreview) return;
+    let cancelled = false;
+    void api.getMyClubState('season-2026-27').then(result => {
+      if (cancelled || result.currentClubStatus !== 'resolved') return;
+      const clubs = result.ownedClubs || (result.currentClub ? [result.currentClub] : []);
+      setRetainedSeasonOneState({ userId: user.id, clubs });
+    }).catch(() => {
+      // Do not erase the last verified Season 1 clubs on a transient database error.
+    });
+    return () => { cancelled = true; };
+  }, [user?.id, authStatus, activeSeasonId]);
 
   // Initialize App & Telegram SDK with deterministic state transitions
   useEffect(() => {
@@ -458,6 +481,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         currentClub,
         ownedClubs,
+        retainedSeasonOneClubs,
         premiumClubIds: user?.isAdmin ? premiumClubIds : [],
         selectCurrentClub: (clubId) => {
           const club = ownedClubs.find((item) => item.id === clubId);

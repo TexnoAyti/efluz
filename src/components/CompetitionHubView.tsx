@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../context/AuthContext';
+import { RetainedSeasonOneClubs } from './RetainedSeasonOneClubs';
 import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
@@ -136,6 +137,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       {/* 3. Category Content */}
       <div className="min-w-0">
         {subTab === 'awards'&&<Suspense fallback={<p role="status">Mukofotlar yuklanmoqda…</p>}><SeasonAwardsPanel/></Suspense>}
+        {subTab === 'leagues' && <RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />}
         {subTab === 'leagues' && <ClubsView key={activeSeasonId} onNavigateTab={onNavigateTab} />}
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}

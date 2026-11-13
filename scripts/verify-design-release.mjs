@@ -121,3 +121,28 @@ for (const [language, intro] of [['uz','Yangi mavsum. Yangi imkoniyatlar.'],['ru
   assert.ok(source.includes(intro),language+' original two-step copy');
 }
 console.log('PASS season 2 two-step welcome: Europe/Asia first step, next/back/finish transitions, three original PNGs, UZ/RU/EN');
+
+
+// Season 1 cup ownership must survive visits to the Season 2 league section.
+// Do not combine the club lists: that would break the Season 2 one-club rule.
+const ownershipFs = await import('node:fs');
+const authOwnerSource = ownershipFs.readFileSync('src/context/AuthContext.tsx','utf8');
+const clubHubSource = ownershipFs.readFileSync('src/components/ClubHubView.tsx','utf8');
+const competitionHubSource = ownershipFs.readFileSync('src/components/CompetitionHubView.tsx','utf8');
+const retainedSource = ownershipFs.readFileSync('src/components/RetainedSeasonOneClubs.tsx','utf8');
+assert.match(authOwnerSource, /api\.getMyClubState\('season-2026-27'\)/,
+  'Retained Season 1 club list is independently verified by the server');
+assert.match(authOwnerSource, /retainedSeasonOneState\?\.userId === user\?\.id/,
+  'Never display ownership from another authenticated user');
+assert.match(authOwnerSource, /retainedSeasonOneClubs,\s*premiumClubIds/,
+  'Separate season-one clubs must be exposed without counting toward Season 2 claims');
+assert.ok(clubHubSource.includes('<RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />'),
+  'Club profile displays retained European and Super Cup clubs');
+assert.ok(competitionHubSource.includes("<RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />"),
+  'League selection displays the retained Season 1 cup clubs');
+assert.match(retainedSource, /activeSeasonId !== 'season-2027-28'/,
+  'The retained ownership panel appears only while browsing Season 2');
+assert.ok(retainedSource.includes("onNavigateTab('champions-league')") &&
+  retainedSource.includes("onNavigateTab('cups')"),
+  'Retained owners can navigate to both ongoing competition categories');
+console.log('PASS Season 1 cup ownership preserved independently of Season 2 registration and league navigation');
