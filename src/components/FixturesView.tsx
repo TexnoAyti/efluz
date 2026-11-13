@@ -124,11 +124,19 @@ export const FixturesView: React.FC = () => {
     const compLocks = lockStates[selectedCompetitionId];
     if (compLocks && compLocks[md]) {
       const lock = compLocks[md];
-      if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) return false;
+      // Admin holds always win, even if an old "isOpen" flag is still set.
       if (lock.overrideStatus === 'FORCE_LOCKED' || lock.overrideStatus === 'PAUSED' || lock.isLocked || lock.isOpen === false) return true;
+      if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) return false;
     }
     if (activeComp.adminOverrideStatus === 'FORCE_LOCKED' || activeComp.adminOverrideStatus === 'PAUSED') return true;
-    if (activeComp.adminOverrideStatus === 'FORCE_OPEN') return isKnockout ? false : md !== (activeComp.currentMatchday || 1);
+    if (activeComp.adminOverrideStatus === 'FORCE_OPEN') {
+      if (isKnockout) return false;
+      // Explicit opening of the UEFA competition also preserves reached rounds 1–8.
+      if (activeComp.type === 'EUROPEAN_LEAGUE_PHASE' &&
+          fixtureSeasonId === 'season-2026-27' && md >= 1 && md <= 8 &&
+          md <= Math.max(activeComp.resultEntryThroughMatchday || 0, activeComp.currentMatchday || 0)) return false;
+      return md !== (activeComp.currentMatchday || 1);
+    }
     if (activeComp.type === 'EUROPEAN_LEAGUE_PHASE' &&
         fixtureSeasonId === 'season-2026-27' && md >= 1 && md <= 8 &&
         md <= Math.max(activeComp.resultEntryThroughMatchday || 0, activeComp.currentMatchday || 0)) {
