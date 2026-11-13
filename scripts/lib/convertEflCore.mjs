@@ -145,10 +145,9 @@ export function convertEflCore(collections,options={}){
   const seasonId=required(d.seasonId,'OCCUPANCY_WITHOUT_SEASON');
   const clubId=required(d.clubId,'OCCUPANCY_WITHOUT_CLUB');
   const userId=d.userId==null?null:String(d.userId);
-  if(!seasons.has(seasonId)||!clubs.has(clubId))
-    fail('OCCUPANCY_REFERENCE_MISSING');
-  if(!userId||!users.has(userId)){
-    if(quarantine&&str(d.status).toUpperCase()==='RELEASED'){
+  const status=str(d.status,'RELEASED').toUpperCase();
+  if(!seasons.has(seasonId)||!clubs.has(clubId)||!userId||!users.has(userId)){
+    if(quarantine&&status==='RELEASED'){
       quarantined.releasedOccupancies++;continue;
     }
     fail('OCCUPANCY_REFERENCE_MISSING');
