@@ -157,7 +157,8 @@ export function convertEflCore(collections,options={}){
   const telegram_id=userById.get(userId);
   const status=str(d.status,'RELEASED').toUpperCase();
   if(status==='ACTIVE'){
-   const canonicalUserId=canonicalUserIdById.get(userId);\n   const cKey=seasonId+':'+clubId,pKey=seasonId+':'+leagueId+':'+canonicalUserId;
+   const canonicalUserId=canonicalUserIdById.get(userId);
+   const cKey=seasonId+':'+clubId,pKey=seasonId+':'+leagueId+':'+canonicalUserId;
    if(uniqueClubOwner.has(cKey))fail('DUPLICATE_ACTIVE_CLUB');
    if(uniquePlayerLeague.has(pKey))fail('SECOND_CLUB_IN_LEAGUE');
    uniqueClubOwner.add(cKey);uniquePlayerLeague.add(pKey);
