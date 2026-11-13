@@ -111,6 +111,7 @@ jobs:
           const [file,runId]=process.argv.slice(2);
           const packet=JSON.parse(await readFile(file,'utf8'));
           packet.batchId=packet.batchId+':run'+runId;
+          packet.stagingReplaceExisting=true;
           process.stdout.write(JSON.stringify(packet));
           NODE
                 )"
