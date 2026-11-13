@@ -136,6 +136,11 @@ export const FixturesView: React.FC = () => {
       // Explicit administrative locks above still take priority.
       return false;
     }
+    if (activeComp.type === 'SUPER_CUP' && activeComp.status === 'active' &&
+        fixtureSeasonId === 'season-2026-27' && md === (activeComp.currentMatchday || 1)) {
+      // Expired or stale generic timer cannot hide an active Super Cup submission.
+      return false;
+    }
     if (activeComp.isMatchdayOpen === false) return true;
     if (isKnockout) return false;
     return md !== (activeComp.currentMatchday || 1);
@@ -640,7 +645,13 @@ export const FixturesView: React.FC = () => {
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Details</span>
                       </button>
-                    ) : ((fixture.isPlayable === false && !(activeComp?.type === 'EUROPEAN_LEAGUE_PHASE' && fixtureSeasonId === 'season-2026-27' && fixture.matchday >= 1 && fixture.matchday <= 8 && !isMatchdayLocked(fixture.matchday))) || isMatchdayLocked(fixture.matchday)) ? (
+                    ) : ((fixture.isPlayable === false && !(
+                      fixtureSeasonId === 'season-2026-27' &&
+                      !isMatchdayLocked(fixture.matchday) &&
+                      ((activeComp?.type === 'EUROPEAN_LEAGUE_PHASE' && fixture.matchday >= 1 && fixture.matchday <= 8) ||
+                       (activeComp?.type === 'SUPER_CUP' && activeComp.status === 'active' &&
+                        fixture.matchday === (activeComp.currentMatchday || 1)))
+                    )) || isMatchdayLocked(fixture.matchday)) ? (
                       <button
                         disabled={true}
                         className="px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all min-h-[34px] touch-manipulation shrink-0 bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed"
