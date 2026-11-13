@@ -387,6 +387,10 @@
       "collection": "uzeflife_worker",
       "handling": "review",
       "observedDocuments": 1
+    },
+    {
+      "collection": "ownership_repair_backups",
+      "handling": "review"
     }
   ],
   "observedGeneration": null,
