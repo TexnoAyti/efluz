@@ -264,7 +264,7 @@ export function convertEflCore(collections,options={}){
  }
  for(const [id,d] of auditLogs){
   // System jobs have no actor; preserve without attributing to an admin.
-  output.auditLogs.push({id,actor_user_id:str(d.actorUserId,'SYSTEM'),
+  output.auditLogs.push({id,actor_user_id:d.actorUserId==null?'SYSTEM':canonicalUserIdById.get(d.actorUserId)??str(d.actorUserId),
    actor_username:str(d.actorUsername),action:required(d.action,'AUDIT_WITHOUT_ACTION'),
    entity_type:str(d.entityType,'SYSTEM'),entity_id:str(d.entityId,id),
    old_value:jsonValue(d.oldValueJson),new_value:jsonValue(d.newValueJson),
