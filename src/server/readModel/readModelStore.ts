@@ -2097,7 +2097,12 @@ export async function getCompetitionFixturesFromReadModel(
     // A cached fixture snapshot may hold isPlayable=false from the old round.
     // Compute permission from the authoritative competition and explicit round locks,
     // not from a previously deployed read-model snapshot.
-    fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
+    // Only the still-running first-season UEFA and Super Cup result flows
+    // require a forced freshness check. Avoid extra database reads for domestic
+    // leagues and other tournament views.
+    const requiresLivePermission = seasonId === 'season-2026-27' &&
+      /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId);
+    if (requiresLivePermission) fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
   } catch (err) {
     console.warn('[COMPETITION_FIXTURES] Ownership/permission refresh fallback:', err);
     // Never accidentally open a round after a permission refresh failure.
