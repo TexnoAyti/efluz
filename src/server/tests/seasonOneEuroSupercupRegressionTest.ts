@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {backlogResultAllowed} from '../services/backlogResultEntry';
+import {checkFixturePlayability} from '../firebase/firestoreStore';
 import {isDomesticCupResult,resolveCupResult} from '../../lib/cupResult';
 
 const euroCompetition = {
@@ -23,6 +24,23 @@ for (const competitionId of ['comp-champions-league-2026','comp-europa-league-20
   assert.equal(backlogResultAllowed(fixture(competitionId,2,{europeanDrawId:'approved-draw'}),euroCompetition,{overrideStatus:'PAUSED'}),false);
   assert.equal(backlogResultAllowed(fixture(competitionId,2,{europeanDrawId:'approved-draw',status:'CONFIRMED'}),euroCompetition),false);
 }
+// Regression: the legacy checkFixturePlayability used to discard the
+// European draw ID when forwarding a fixture to backlogResultAllowed. This
+// made all reached rounds except round 8 appear Qulflangan in production.
+for (const id of ['comp-champions-league-2026','comp-europa-league-2026']) {
+  for (let round=1;round<=8;round++) {
+    const state=checkFixturePlayability(id,'season-2026-27',round,'SCHEDULED','club-a','club-b',
+      euroCompetition as any,null,true,'approved-draw');
+    assert.equal(state.isPlayable,true,`${id}: historical round ${round} is open with the matching published draw`);
+  }
+  assert.equal(checkFixturePlayability(id,'season-2026-27',1,'SCHEDULED','club-a','club-b',
+    euroCompetition as any,null,true,'replaced-draw').isPlayable,false,
+    'Old draw must not reopen a superseded fixture');
+  assert.equal(checkFixturePlayability(id,'season-2026-27',1,'CONFIRMED','club-a','club-b',
+    euroCompetition as any,null,true,'approved-draw').isPlayable,false,
+    'Confirmed match may not be modified');
+}
+
 const superCup = {
   seasonId:'season-2026-27',status:'active',type:'SUPER_CUP',
   currentMatchday:1,isMatchdayOpen:false,adminOverrideStatus:'AUTO',

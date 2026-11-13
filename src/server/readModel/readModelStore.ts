@@ -2091,11 +2091,43 @@ export async function getCompetitionFixturesFromReadModel(
   });
   if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
+  // The result entry policy must never be inferred from old isPlayable flags
+  // stored in a shared fixture snapshot. Refresh only active legacy cups.
+  const requiresLivePermission = seasonId === 'season-2026-27' &&
+    /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId);
+  const { enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules } = await import('../firebase/firestoreStore');
   try {
-    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
     fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
   } catch (err) {
-    console.warn('[COMPETITION_FIXTURES] Ownership enrichment fallback:', err);
+    console.warn('[COMPETITION_FIXTURES] Owner read unavailable:', err);
+  }
+  if (requiresLivePermission) {
+    // A failure here is a temporary unavailable state, NOT an admin-locked
+    // round. Never silently turn every score button into Qulflangan.
+    try {
+      fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
+    } catch (err) {
+      console.error('[COMPETITION_FIXTURES] Authoritative cup eligibility unavailable:', err);
+      throw new ReadModelNotWarmedError('Competition matchday eligibility temporarily unavailable');
+    }
+    try {
+      // Historical cup ownership is match-scoped. Do not reactivate a former
+      // club in domestic standings or change Season 2 registration records.
+      const db = getFirestoreDb();
+      const formerOwners = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES)
+        .where('seasonId','==',seasonId).where('status','==','released').get();
+      const released = new Map(formerOwners.docs.map(d => {
+        const v = d.data();
+        return [String(v.clubId||''),String(v.userId||'')] as const;
+      }).filter(([club,user]) => club && user));
+      fixtures = fixtures.map(f => ({
+        ...f,
+        homeOwnerId: f.homeOwnerId || (f.homeClubId ? released.get(f.homeClubId) : undefined),
+        awayOwnerId: f.awayOwnerId || (f.awayClubId ? released.get(f.awayClubId) : undefined),
+      }));
+    } catch (err) {
+      console.warn('[COMPETITION_FIXTURES] Historical cup participants unavailable:', err);
+    }
   }
   return {
     fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)),

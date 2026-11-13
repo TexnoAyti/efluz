@@ -1429,7 +1429,8 @@ export function checkFixturePlayability(
   awayClubId?: string | null,
   compData?: Partial<FirestoreCompetitionDoc> | null,
   preloadedLock?: FirestoreMatchdayLockDoc | null,
-  authoritativeRules = false
+  authoritativeRules = false,
+  europeanDrawId?: string | null
 ): { isPlayable: boolean; activeMatchday: number } {
   let resolvedComp = compData;
   if (!resolvedComp && competitionId) {
@@ -1479,7 +1480,7 @@ export function checkFixturePlayability(
     }
   }
 
-  if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
+  if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId,europeanDrawId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate !== null) return { isPlayable: explicitGate, activeMatchday };
 
@@ -1692,7 +1693,9 @@ async function getFixturesFirestoreUnfiltered(filter: {
         r.homeClubId,
         r.awayClubId,
         comp,
-        preloadedLock
+        preloadedLock,
+        false,
+        r.europeanDrawId
       );
 
       const homeOcc = clubOccupancyMap.get(r.homeClubId);
@@ -1893,7 +1896,9 @@ async function executeFixturesFallback(
       r.home_club_id,
       r.away_club_id,
       comp,
-      preloadedLock
+      preloadedLock,
+      false,
+      r.european_draw_id || r.europeanDrawId
     );
 
     const homeOcc = clubOccupancyMap.get(r.home_club_id);
@@ -2182,7 +2187,9 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
           r.homeClubId,
           r.awayClubId,
           comp,
-          preloadedLock
+          preloadedLock,
+          false,
+          r.europeanDrawId
         );
 
         // Fetch user/opponent submissions if currentUserId is provided
@@ -2352,7 +2359,9 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
     r.home_club_id,
     r.away_club_id,
     comp,
-    preloadedLock
+    preloadedLock,
+    false,
+    r.european_draw_id || r.europeanDrawId
   );
 
   const fallbackFix: Fixture = {
@@ -2821,13 +2830,13 @@ export async function refreshFixtureMatchdayRules(fixtures: Fixture[], seasonId:
       rules.set(id,new Map(rows.docs.map(d=>{const lock=d.data() as FirestoreMatchdayLockDoc;return [Number(lock.matchday),lock];})));
     }));
     for(const [id,c]of competitions)compOverrideMap.set(id,c);
-    return fixtures.map(f=>({...f,...checkFixturePlayability(f.competitionId,f.seasonId||seasonId,f.matchday,f.status,f.homeClubId,f.awayClubId,competitions.get(f.competitionId),rules.get(f.competitionId)?.get(Number(f.matchday))||null,true)}));
+    return fixtures.map(f=>({...f,...checkFixturePlayability(f.competitionId,f.seasonId||seasonId,f.matchday,f.status,f.homeClubId,f.awayClubId,competitions.get(f.competitionId),rules.get(f.competitionId)?.get(Number(f.matchday))||null,true,f.europeanDrawId)}));
   }
   const rules = new Map<string, Record<number, FirestoreMatchdayLockDoc>>();
   await Promise.all([...new Set(fixtures.map(f => f.competitionId))].map(async id => {
     rules.set(id, await getCompetitionMatchdayLocksFirestore(seasonId, id));
   }));
-  return fixtures.map(f => ({ ...f, ...checkFixturePlayability(f.competitionId, f.seasonId || seasonId, f.matchday, f.status, f.homeClubId, f.awayClubId, compOverrideMap.get(f.competitionId), rules.get(f.competitionId)?.[f.matchday]) }));
+  return fixtures.map(f => ({ ...f, ...checkFixturePlayability(f.competitionId, f.seasonId || seasonId, f.matchday, f.status, f.homeClubId, f.awayClubId, compOverrideMap.get(f.competitionId), rules.get(f.competitionId)?.[f.matchday], false, f.europeanDrawId) }));
 }
 
 export async function syncCompetitionMatchdayState(comp: FirestoreCompetitionDoc, changedLocks: FirestoreMatchdayLockDoc[]) {
@@ -4245,12 +4254,27 @@ export async function submitFixtureResultFirestore(
         err.statusCode = 400;
         throw err;
       }
-      if (!userMemDoc.exists || userMemDoc.data()?.status !== 'active') {
+      const membership = userMemDoc.data();
+      const ownedIds = [membership?.clubId, membership?.secondaryClubId];
+      const userClubId = ownedIds.find((id) => id === currentFixture.homeClubId || id === currentFixture.awayClubId);
+      let historicalCupOwner = false;
+      // Season 2 registration ended Season 1 league ownership, not the right
+      // to report results in a still-active Season 1 European/Super Cup.
+      // Preserve that right only for the recorded player/club pair, never
+      // for a newly transferred club or unrelated domestic league fixture.
+      if (membership?.status === 'released' && userClubId &&
+          backlogEntry && currentFixture.seasonId === 'season-2026-27' &&
+          /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(currentFixture.competitionId)) {
+        const occurrence = await transaction.get(
+          db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${currentFixture.seasonId}_${userClubId}`)
+        );
+        const record = occurrence.data();
+        historicalCupOwner = record?.status === 'released' && record?.userId === userId &&
+          membership.userId === userId && membership.seasonId === currentFixture.seasonId;
+      }
+      if (!userMemDoc.exists || (membership?.status !== 'active' && !historicalCupOwner)) {
         throw Object.assign(new Error('You do not own either the home or away club in this fixture.'), { code: 'RESULT_NOT_PARTICIPANT', statusCode: 403 });
       }
-
-      const ownedIds = [userMemDoc.data()!.clubId, userMemDoc.data()!.secondaryClubId];
-      const userClubId = ownedIds.find((id) => id === currentFixture.homeClubId || id === currentFixture.awayClubId);
       if (ownedIds.includes(currentFixture.homeClubId) && ownedIds.includes(currentFixture.awayClubId)) {
         const err: any = new Error('Both clubs belong to you; admin must resolve this fixture.');
         err.code = 'SELF_OWNED_MATCH'; err.statusCode = 409;
