@@ -161,6 +161,7 @@ export interface FixtureUserInfo {
 }
 
 export interface Fixture {
+  europeanDrawId?: string | null;
   venue?: string | null;
   adminScheduledAt?: string;
   id: string;
