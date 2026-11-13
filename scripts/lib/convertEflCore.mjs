@@ -144,10 +144,10 @@ export function convertEflCore(collections,options={}){
  for(const [id,d] of occupancies){
   const seasonId=required(d.seasonId,'OCCUPANCY_WITHOUT_SEASON');
   const clubId=required(d.clubId,'OCCUPANCY_WITHOUT_CLUB');
-  const userId=required(d.userId,'OCCUPANCY_WITHOUT_USER');
+  const userId=d.userId==null?null:String(d.userId);
   if(!seasons.has(seasonId)||!clubs.has(clubId))
     fail('OCCUPANCY_REFERENCE_MISSING');
-  if(!users.has(userId)){
+  if(!userId||!users.has(userId)){
     if(quarantine&&str(d.status).toUpperCase()==='RELEASED'){
       quarantined.releasedOccupancies++;continue;
     }
