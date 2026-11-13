@@ -155,7 +155,6 @@ export function convertEflCore(collections,options={}){
   const leagueId=required(clubs.get(clubId).leagueId,'CLUB_WITHOUT_LEAGUE');
   const telegram_id=userById.get(userId);
   const canonicalUserId=canonicalUserIdById.get(userId)??userId;
-  const status=str(d.status,'RELEASED').toUpperCase();
   if(status==='ACTIVE'){
    const canonicalUserId=canonicalUserIdById.get(userId);
    const cKey=seasonId+':'+clubId,pKey=seasonId+':'+leagueId+':'+canonicalUserId;
