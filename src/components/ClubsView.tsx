@@ -293,9 +293,20 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
   const loadLeaguesAndComps = useCallback(async () => {
     setError(null);
     try {
+      // Season 2 is still a prepared registration catalog. A temporary 503
+      // from its read model must never make the League picker unopenable.
+      // Only league metadata is bundled: availability and owners still come
+      // exclusively from the live, season-scoped server endpoint.
+      const preparedSeason = activeSeasonId === EFL_SECOND_SEASON.id;
       const [leaguesRes, compsRes] = await Promise.all([
-        api.getLeagues(activeSeasonId),
-        api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] })),
+        api.getLeagues(activeSeasonId).catch((error) => {
+          if (!preparedSeason) throw error;
+          return { leagues: EFL_SECOND_SEASON.leagues.map(({ id, name, country, flag }) =>
+            ({ id, name, country, flag, tier: 1, logoUrl: secondSeasonLeagueLogos[id] || '', createdAt: '' } as League)) };
+        }),
+        preparedSeason
+          ? Promise.resolve({ competitions: [] as Competition[] })
+          : api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] as Competition[] })),
       ]);
 
       const domesticLeagues = leaguesRes.leagues || [];
@@ -307,12 +318,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
       }
 
       if (domesticLeagues.length > 0) {
-        setSelectedLeagueId((prev) => {
-          const exists = domesticLeagues.some((l) => l.id === prev);
-          const target = exists ? prev : domesticLeagues[0].id;
-          if (activeSeasonId !== EFL_SECOND_SEASON.id) void loadClubsForLeague(target);
-          return target;
-        });
+        // State updater functions must stay pure. Starting another state
+        // update/request from inside an updater can crash React rendering
+        // on Telegram WebView (the entire Leagues page appears blank).
+        const target = domesticLeagues.some((league) => league.id === selectedLeagueId)
+          ? selectedLeagueId
+          : domesticLeagues[0].id;
+        if (target !== selectedLeagueId) setSelectedLeagueId(target);
+        if (activeSeasonId !== EFL_SECOND_SEASON.id) void loadClubsForLeague(target);
       }
     } catch (err: any) {
       console.error('Failed to load leagues:', err);
@@ -328,7 +341,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
         isQuota,
       });
     }
-  }, [activeSeasonId, currentClub?.leagueId, loadClubsForLeague]);
+  }, [activeSeasonId, selectedLeagueId, loadClubsForLeague]);
 
   useEffect(() => {
     if (activeSeasonId === EFL_SECOND_SEASON.id) {
