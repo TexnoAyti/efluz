@@ -104,10 +104,22 @@ jobs:
             files=( "${bundle}/${table}-"*.json )
             for file in "${files[@]}"; do
               echo "Importing ${table}/$(basename "${file}")"
-              npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "$(<"${file}")" --ctx "${ctx}" >/tmp/tgcloud-import.log 2>&1 || {
-                tail -40 /tmp/tgcloud-import.log
-                exit 1
-              }
+              imported=0
+              for attempt in 1 2 3 4; do
+                if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "$(<"${file}")" --ctx "${ctx}" >/tmp/tgcloud-import.log 2>&1; then
+                  imported=1
+                  break
+                fi
+                if grep -qi "too many requests\|retry after" /tmp/tgcloud-import.log && [[ "${attempt}" -lt 4 ]]; then
+                  wait_seconds=$((attempt * 10))
+                  echo "STAGING_IMPORT_RATE_LIMIT_RETRY: waiting ${wait_seconds}s"
+                  sleep "${wait_seconds}"
+                else
+                  tail -40 /tmp/tgcloud-import.log
+                  exit 1
+                fi
+              done
+              [[ "${imported}" -eq 1 ]] || exit 1
             done
           done
           echo "STAGING_IMPORT_COMPLETE"
