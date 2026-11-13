@@ -4,6 +4,7 @@ import {AlertTriangle,ArrowLeft,Check,CheckCheck,CornerUpLeft,Flag,LoaderCircle,
 import {consumePendingMatchChat,matchChatApi,onMatchChatOpen,readMatchChatLaunch,type MatchChatTarget} from '../lib/matchChat';
 import type {MatchChatView} from '../types/matchChat';
 import {useAuth} from '../context/AuthContext';
+import {getAuthHeaders} from '../lib/customTournamentApi';
 import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
 
 
@@ -23,6 +24,7 @@ function restoreChatView(raw:MatchChatView):MatchChatView{
 
 export function MatchChatHost(){
  const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null),[hasNewMessages,setHasNewMessages]=useState(false),[gameOpen,setGameOpen]=useState(false);
+ const [avatarBlobs,setAvatarBlobs]=useState<{me?:string;opponent?:string}>({});
  const gameFullscreenRequested=useRef(false);
   const input=useRef<HTMLTextAreaElement>(null),loading=useRef(false),messages=useRef<HTMLDivElement>(null),backdrop=useRef<HTMLDivElement>(null),stickToBottom=useRef(true),typingSentAt=useRef(0),typingIdleTimer=useRef<number|null>(null),lastMessageId=useRef<string|null>(null);
  const inTelegram=typeof window!=='undefined'&&Boolean((window as any).Telegram?.WebApp?.initData);
@@ -66,6 +68,30 @@ export function MatchChatHost(){
   window.addEventListener('focus',refresh);
   return()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('focus',refresh);};
  },[target,load]);
+ // Telegram userpic hotlinks can fail inside Android Mini Apps. Fetch the
+ // participant-only image with the existing signed session and use a local blob URL.
+ useEffect(()=>{
+   if(!target||!chat?.roomId)return;
+   let cancelled=false;
+   const controller=new AbortController();
+   const urls:string[]=[];
+   setAvatarBlobs({});
+   const loadAvatar=async(side:'me'|'opponent')=>{
+     try{
+       const response=await fetch(`/api/match-chat/${target.kind}/${encodeURIComponent(target.matchId)}/avatar/${side}`,{
+         headers:getAuthHeaders(),signal:controller.signal
+       });
+       if(!response.ok || !(response.headers.get('content-type')||'').startsWith('image/'))return;
+       const blob=await response.blob();
+       if(cancelled||blob.size===0)return;
+       const objectUrl=URL.createObjectURL(blob);
+       urls.push(objectUrl);
+       setAvatarBlobs(prev=>({...prev,[side]:objectUrl}));
+     }catch{/* Initials remain visible if Telegram has no public picture. */}
+   };
+   void loadAvatar('me');void loadAvatar('opponent');
+   return()=>{cancelled=true;controller.abort();urls.forEach(url=>URL.revokeObjectURL(url));};
+ },[target?.kind,target?.matchId,chat?.roomId]);
  // Keep the composer visible when the native keyboard opens, including Android WebView.
  useEffect(()=>{if(!target)return;const viewport=window.visualViewport;
   const sync=()=>{const element=backdrop.current;if(!element)return;
@@ -89,7 +115,7 @@ export function MatchChatHost(){
   <section className="match-chat-sheet" role="dialog" aria-modal="true" aria-label="Raqib bilan chat">
    <header className="match-chat-header">
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
-    <div className="match-chat-avatar"><MessageCircle size={20}/>{chat?.opponentPhotoUrl&&<img key={chat.opponentPhotoUrl} src={chat.opponentPhotoUrl} alt="" referrerPolicy="no-referrer" onError={event=>{event.currentTarget.hidden=true;}}/>}</div>
+    <div className="match-chat-avatar"><MessageCircle size={20}/>{avatarBlobs.opponent&&<img key={avatarBlobs.opponent} src={avatarBlobs.opponent} alt="" onError={event=>{event.currentTarget.hidden=true;}}/>}</div>
     <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p></div>
     {chat&&isValidTelegramUsername(chat.opponentUsername)&&<button className="match-chat-icon" onClick={()=>openTelegramChat(chat.opponentUsername)} aria-label="Telegram profilini ochish" title="Telegram profilini ochish"><Send size={17}/></button>}
     <button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>
@@ -119,7 +145,7 @@ export function MatchChatHost(){
       return <React.Fragment key={message.id}>
        {showDay&&<div className="match-chat-day">{new Date(message.createdAt).toLocaleDateString('uz-UZ',{timeZone:'Asia/Tashkent',day:'numeric',month:'long'})}</div>}
        <div className={`match-chat-restored-row ${mine?'mine':'theirs'}`}>
-         <div className="match-chat-restored-avatar">{message.avatarUrl?<img src={message.avatarUrl} alt="" referrerPolicy="no-referrer" onError={e=>{e.currentTarget.hidden=true;}}/>:null}<span>{message.senderName.slice(0,1).toUpperCase()}</span></div>
+         <div className="match-chat-restored-avatar">{(mine?avatarBlobs.me:avatarBlobs.opponent)?<img src={(mine?avatarBlobs.me:avatarBlobs.opponent)!} alt="" onError={e=>{e.currentTarget.hidden=true;}}/>:null}<span>{message.senderName.slice(0,1).toUpperCase()}</span></div>
          <article data-chat-message-id={message.id} className={`match-chat-bubble ${mine?'mine':'theirs'}`}>
          {message.replyToId&&<button className="match-chat-replied" onClick={()=>focusMessage(message.replyToId!)}><CornerUpLeft size={12}/><span>{reply?reply.senderName+': '+reply.text:'Oldingi xabar'}</span></button>}
          <p>{message.text}</p>
