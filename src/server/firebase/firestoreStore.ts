@@ -4245,12 +4245,27 @@ export async function submitFixtureResultFirestore(
         err.statusCode = 400;
         throw err;
       }
-      if (!userMemDoc.exists || userMemDoc.data()?.status !== 'active') {
+      const membership = userMemDoc.data();
+      const ownedIds = [membership?.clubId, membership?.secondaryClubId];
+      const userClubId = ownedIds.find((id) => id === currentFixture.homeClubId || id === currentFixture.awayClubId);
+      let historicalCupOwner = false;
+      // Season 2 registration ended Season 1 league ownership, not the right
+      // to report results in a still-active Season 1 European/Super Cup.
+      // Preserve that right only for the recorded player/club pair, never
+      // for a newly transferred club or unrelated domestic league fixture.
+      if (membership?.status === 'released' && userClubId &&
+          backlogEntry && currentFixture.seasonId === 'season-2026-27' &&
+          /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(currentFixture.competitionId)) {
+        const occurrence = await transaction.get(
+          db.collection(COLLECTIONS.CLUB_OCCUPANCIES).doc(`${currentFixture.seasonId}_${userClubId}`)
+        );
+        const record = occurrence.data();
+        historicalCupOwner = record?.status === 'released' && record?.userId === userId &&
+          membership.userId === userId && membership.seasonId === currentFixture.seasonId;
+      }
+      if (!userMemDoc.exists || (membership?.status !== 'active' && !historicalCupOwner)) {
         throw Object.assign(new Error('You do not own either the home or away club in this fixture.'), { code: 'RESULT_NOT_PARTICIPANT', statusCode: 403 });
       }
-
-      const ownedIds = [userMemDoc.data()!.clubId, userMemDoc.data()!.secondaryClubId];
-      const userClubId = ownedIds.find((id) => id === currentFixture.homeClubId || id === currentFixture.awayClubId);
       if (ownedIds.includes(currentFixture.homeClubId) && ownedIds.includes(currentFixture.awayClubId)) {
         const err: any = new Error('Both clubs belong to you; admin must resolve this fixture.');
         err.code = 'SELF_OWNED_MATCH'; err.statusCode = 409;
