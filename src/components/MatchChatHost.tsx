@@ -1,7 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {AlertTriangle,ArrowLeft,Check,CheckCheck,CornerUpLeft,Flag,LoaderCircle,Lock,MessageCircle,MoreVertical,Gamepad2,Pin,PinOff,RefreshCw,Send,ShieldAlert,Unlock,X} from 'lucide-react';
-import {matchChatApi,onMatchChatOpen,readMatchChatLaunch,type MatchChatTarget} from '../lib/matchChat';
+import {consumePendingMatchChat,matchChatApi,onMatchChatOpen,readMatchChatLaunch,type MatchChatTarget} from '../lib/matchChat';
 import type {MatchChatView} from '../types/matchChat';
 import {useAuth} from '../context/AuthContext';
 import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
@@ -57,7 +57,7 @@ export function MatchChatHost(){
    if(silent&&!stickToBottom.current&&latest!==lastMessageId.current&&lastMessageId.current!==null)setHasNewMessages(true);
    lastMessageId.current=latest;
    setChat(next);setError('');const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
- useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setGameOpen(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),launch=readMatchChatLaunch();if(launch)open(launch);return stop;},[]);
+ useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setGameOpen(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),pending=consumePendingMatchChat(),launch=readMatchChatLaunch();if(launch||pending)open(launch||pending!);return stop;},[]);
  useEffect(()=>()=>{if(typingIdleTimer.current!==null)window.clearTimeout(typingIdleTimer.current);},[]);
  useEffect(()=>{if(!target)return;void load();
   const refresh=()=>{if(document.visibilityState==='visible')void load(true);};
