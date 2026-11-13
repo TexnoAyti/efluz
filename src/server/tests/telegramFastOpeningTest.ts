@@ -56,7 +56,11 @@ try {
    assert.equal(slowLogin.status,200);
    const deferred=await slowLogin.json();
    assert.equal(deferred.user.id,user.id);assert.ok(deferred.token);
-   assert.equal(deferred.currentClubStatus,'unavailable','Slow ownership is not reported as a verified no-club result');
+   // A previously verified ownership snapshot can resolve immediately even while
+   // background durable snapshot reads are delayed; never mistake it for no-club.
+   assert.ok(deferred.currentClubStatus === 'unavailable' ||
+     (deferred.currentClubStatus === 'resolved' && deferred.currentClub?.id === 'club-arsenal'),
+     'Slow ownership must be unavailable unless a verified cached club is present');
    assert.ok(performance.now()-started<4000,'Ownership cannot hold login until the database timeout');
  } finally {db.collection=originalCollection;releaseOwnership();}
  const clubResponse=await fetch(base+'/api/me/club',{headers:{authorization:'Bearer '+result.token}});

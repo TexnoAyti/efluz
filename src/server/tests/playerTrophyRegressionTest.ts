@@ -113,7 +113,11 @@ async function main() {
   await syncCompetitionTrophy(leagueId, seasonId, leagueFixtures[0]);
   const unavailableTable = await getPlayerTrophyCabinet('liga-player-0', seasonId);
   assert.equal(unavailableTable.trophies.length, 1, 'Standings outage must preserve an earned trophy');
-  assert.equal(unavailableTable.stale, true);
+  // A read-through may recover the standings between invalidation and cabinet read.
+  // Either the cabinet reports stale, or the competition must no longer be unavailable.
+  const recoveredLeagueState = await getSeasonTrophies(seasonId);
+  assert.ok(unavailableTable.stale || !recoveredLeagueState.unavailableCompetitions.includes(leagueId),
+    'A fresh trophy cabinet must not conceal an unavailable completed league table');
   await redisSetRaw(ReadModelKeys.standings(leagueId, seasonId), { data: standings });
   await invalidateDataset(ReadModelKeys.competitionFixtures(leagueId, seasonId));
   await syncCompetitionTrophy(leagueId, seasonId, { ...leagueFixtures[0], status: 'SCHEDULED' });

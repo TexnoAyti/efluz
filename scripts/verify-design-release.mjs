@@ -49,8 +49,8 @@ async function render({ id = 'player-1', admin = false, route = '/', completed =
     seasons: [], activeSeasonId: seasonId, devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
   context.window.location.pathname = route;
   storage.set('efluz-theme-mode', theme);
-  if (completed !== 'stored') storage.delete(`efluz-welcome-v2:${id}`);
-  if (completed === true) storage.set(`efluz-welcome-v2:${id}`, 'done');
+  if (completed !== 'stored') storage.delete(`efluz-welcome-v3:${id}`);
+  if (completed === true) storage.set(`efluz-welcome-v3:${id}`, 'done');
   // Lazy sections suspend during the first render; verify their completed output.
   const stream = await renderToReadableStream(React.createElement(App));
   await stream.allReady;
@@ -58,8 +58,9 @@ async function render({ id = 'player-1', admin = false, route = '/', completed =
 }
 for (const admin of [false, true]) {
   storage.set('efluz-welcome-v1:player-1', 'done');
+  storage.set('efluz-welcome-v2:player-1', 'done');
   const welcome = await render({ admin, completed: false });
-  assert.match(welcome, />Boshlash</, 'every role must see the version 2 welcome despite a version 1 completion');
+  assert.match(welcome, />Davom etish</, 'every role must see the first of two welcome pages despite prior completion');
   assert.doesNotMatch(welcome, /data-test-view="MatchdayHomeView"/);
   const home = await render({ admin });
   assert.match(home, /data-test-view="MatchdayHomeView"/);
@@ -95,57 +96,28 @@ assert.doesNotMatch(await render({ anonymous: true }), /efl-welcome|data-test-vi
 assert.doesNotMatch(await render({ anonymous: true }), /id="btn-first-visit-guide"/);
 console.log('PASS EFL 2.0: every role gets versioned welcome, public design/themes/navigation/routes; administrator routes remain restricted; anonymous auth remains intact.');
 
+// The approved 10 Nov onboarding is a TWO-page flow. SSR renders page one;
+// the second page remains behind its real React state transition.
 for (const admin of [false, true]) {
   const current = await render({admin,completed:false,seasonId:'season-2026-27'});
-  const icons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
-  assert.equal((icons.match(/<li/g) || []).length,4,'Current season has four active league icons');
-  assert.doesNotMatch(icons,/ligue-1/);
-  assert.match(current,/EFL · 2-mavsum/);
-  assert.match(current,/Tayyorgarlik|Qabul va reja/);
-  assert.match(current,/1-mavsum davom etmoqda/);
-  assert.match(current,/klub tanlash hali ochilmagan|klub qabuli holati/);
-  const preparation = current.match(/<section class="season-preparation"([\s\S]*?)<\/section>/)?.[1] || '';
-  assert.equal((preparation.match(/season-preparation-name/g) || []).length,9,'The preparation catalog includes five European and four Asian leagues');
-  for (const name of ['Ligue 1','O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(preparation.includes(name),name);
-  assert.match(preparation,/Osiyo Chempionlar ligasi/,'Asian Champions League is visible in the same preparation plan');
-  assert.match(preparation,/32 klub/);
-  assert.match(preparation,/Har bir ligadan 8 tadan klub/);
-  assert.match(preparation,/Yevropa UCL kabi/);
-  assert.match(preparation,/har klubga 8 ta o‘yin/);
-  assert.match(preparation,/9–24: o‘tish pley-offi/);
-  const aclSources = preparation.match(/<ul class="season-preparation-sources">([\s\S]*?)<\/ul>/)?.[1] || '';
-  assert.equal((aclSources.match(/<li/g) || []).length,4);
-  for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(aclSources.includes(name));
-  assert.doesNotMatch(aclSources,/Premier League|La Liga|Serie A|Bundesliga|Ligue 1/);
-  assert.match(preparation,/<details><summary>/,'Long league list is expandable on onboarding');
-  assert.doesNotMatch(preparation,/<button|href="\/|data-munfiz-control="claim/,'The preparation list cannot claim a club or switch seasons');
-  assert.equal((preparation.match(/class="season-preparation-roster"/g)||[]).length,9);
-  assert.match(preparation,/168|16 klub/);
-  assert.match(preparation,/30 tur · 240 o‘yin/);
-  assert.match(preparation,/38 tur · 380 o‘yin/);
-  assert.match(preparation,/2026-11-05/);
-  assert.match(preparation,/Elche CF/);
-  assert.doesNotMatch(preparation,/Girona FC|VfL Wolfsburg|Hellas Verona|Montpellier HSC/);
-  assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,20);
-  assert.ok(preparation.includes('Superkuboklar'),'Super cup plans are visible');
-  assert.ok(preparation.includes('EFL formati'),'Cups show the custom EFL policy');
-  assert.ok(preparation.includes('Barcha 16 klub 1/8 finaldan'),'16-team leagues skip play-ins');
-  assert.ok(preparation.includes('13–20')&&preparation.includes('15–18'),'Seeded play-in positions remain visible');
-  assert.doesNotMatch(preparation,/743|quyi liga klublari/,'Real-world lower divisions are not required by EFL cups');
-
-
-  const next = await render({admin,completed:false,seasonId:'season-2027-28'});
-  const nextIcons = next.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
-  assert.equal((nextIcons.match(/<li/g) || []).length,5,'Next season restores all five league icons');
-  assert.match(nextIcons,/ligue-1/);
-  assert.doesNotMatch(next,/class="season-preparation"/);
+  const leagueIcons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
+  assert.equal((leagueIcons.match(/<li/g) || []).length,5,'Europe includes five leagues');
+  for (const name of ['Premier League','La Liga','Serie A','Bundesliga','Ligue 1']) assert.match(current,new RegExp(name));
+  for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Turkiya Superligasi']) assert.match(current,new RegExp(name));
+  assert.match(current,/>Davom etish</,'The first page advances instead of entering EFLUZ');
+  assert.doesNotMatch(current,/>Boshlash</,'The completion button must only exist on page two');
+  assert.match(current,/aria-label="1 \/ 2"/,'Display two-stage navigation');
 }
-console.log('PASS real welcome render: four active leagues, separate closed season-two preparation with nine leagues, both roles');
-
-for (const [language, title] of [['uz','Osiyo Chempionlar ligasi'],['ru','Лига чемпионов Азии'],['en','Asian Champions League']]) {
-  const html = await render({ completed:false, seasonId:'season-2026-27', language });
-  assert.ok(html.includes(title), `ACL description is translated into ${language}`);
-  assert.match(html,/32/);
-  assert.match(html,/9–24/);
+const fs = await import('node:fs');
+const source = fs.readFileSync('src/components/WelcomeScreen.tsx','utf8');
+assert.match(source,/useState<1 \| 2>\(1\)/,'Two real React steps');
+assert.match(source,/step === 1 \? \(\) => setStep\(2\) : onStart/,'Finish only on second step');
+assert.match(source,/setStep\(1\)/,'Back goes to first step');
+for (const image of ['golden-ball-photo.png','golden-boot-photo.png','weekly-motm-photo.png']) {
+  assert.ok(fs.existsSync('public/welcome-awards/'+image),'Original preview artwork exists: '+image);
+  assert.ok(source.includes('/welcome-awards/'+image),'Second page uses original artwork: '+image);
 }
-console.log('PASS ACL preparation: approved 32-team format and eight places per Asian league, localized into three languages');
+for (const [language, intro] of [['uz','Yangi mavsum. Yangi imkoniyatlar.'],['ru','Новый сезон. Новые возможности.'],['en','New season. New possibilities.']]) {
+  assert.ok(source.includes(intro),language+' original two-step copy');
+}
+console.log('PASS season 2 two-step welcome: Europe/Asia first step, next/back/finish transitions, three original PNGs, UZ/RU/EN');

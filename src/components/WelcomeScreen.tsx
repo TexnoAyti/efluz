@@ -1,7 +1,5 @@
-import { SeasonPreparationCard } from './SeasonPreparationCard';
-import { CURRENT_SEASON_ID, isSeasonLeagueEnabled } from '../lib/seasonParticipationPolicy';
-import React, { useEffect } from 'react';
-import { ArrowRight, Globe2, Moon, Sun } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft, ArrowRight, ChevronDown, Globe2, Moon, Sun } from 'lucide-react';
 import { useI18n } from '../i18n';
 import type { AppTheme } from './Header';
 import './welcome-screen.css';
@@ -9,33 +7,57 @@ import './welcome-screen.css';
 const copy = {
   uz: {
     eyebrow: 'EFOOTBALL HAMJAMIYATI', title: ['Sizning klubingiz.', 'Sizning', 'mavsumingiz.'],
-    description: 'Klub tanlang. O‘ynang. Natijangizni tasdiqlang.', leagues: 'MAVSUM LIGALARI',
-    steps: ['Klubingizni tanlang', 'Raqib bilan o‘ynang', 'Natijani tasdiqlang'],
-    start: 'Boshlash', footer: 'EFL UZ · eFootball hamjamiyati', language: 'Tilni tanlang',
+    description: 'Klub tanlang. O‘ynang. Natijangizni tasdiqlang.',
+    europe: 'YEVROPA LIGALARI', asia: 'OSIYO LIGALARI',
+    secondEyebrow: 'EFLUZ · 2-MAVSUM', secondTitle: 'Yangi mavsum. Yangi imkoniyatlar.',
+    secondDescription: 'Yangi ligalar, yangi raqobat va mavsum yakunidagi individual sovrinlar.',
+    goldenBall: 'Oltin To‘p', goldenBallNote: 'Eng yaxshi futbolchi · klub egalari ovozi',
+    goldenBoot: 'Oltin Butsa', goldenBootNote: 'Mavsumning eng ko‘p gol urgan futbolchisi',
+    weekly: 'Hafta o‘yinchisi', weeklyNote: 'Har haftaning eng yaxshi futbolchisi',
+    next: 'Davom etish', back: 'Orqaga', start: 'Boshlash',
+    footer: 'EFL UZ · eFootball hamjamiyati', language: 'Tilni tanlang',
     light: 'Light rejimga o‘tish', dark: 'Dark rejimga o‘tish',
   },
   ru: {
     eyebrow: 'СООБЩЕСТВО EFOOTBALL', title: ['Ваш клуб.', 'Ваш', 'сезон.'],
-    description: 'Выберите клуб. Играйте. Подтверждайте результат.', leagues: 'ЛИГИ СЕЗОНА',
-    steps: ['Выберите свой клуб', 'Сыграйте с соперником', 'Подтвердите результат'],
-    start: 'Начать', footer: 'EFL UZ · Сообщество eFootball', language: 'Выберите язык',
+    description: 'Выберите клуб. Играйте. Подтверждайте результат.',
+    europe: 'ЕВРОПЕЙСКИЕ ЛИГИ', asia: 'АЗИАТСКИЕ ЛИГИ',
+    secondEyebrow: 'EFLUZ · СЕЗОН 2', secondTitle: 'Новый сезон. Новые возможности.',
+    secondDescription: 'Новые лиги, новые соперники и индивидуальные награды сезона.',
+    goldenBall: 'Золотой мяч', goldenBallNote: 'Лучший игрок · голосование владельцев клубов',
+    goldenBoot: 'Золотая бутса', goldenBootNote: 'Лучший бомбардир сезона',
+    weekly: 'Игрок недели', weeklyNote: 'Лучший игрок каждой недели',
+    next: 'Продолжить', back: 'Назад', start: 'Начать',
+    footer: 'EFL UZ · Сообщество eFootball', language: 'Выберите язык',
     light: 'Светлая тема', dark: 'Тёмная тема',
   },
   en: {
     eyebrow: 'EFOOTBALL COMMUNITY', title: ['Your club.', 'Your', 'season.'],
-    description: 'Choose a club. Play. Confirm your result.', leagues: 'SEASON LEAGUES',
-    steps: ['Choose your club', 'Play your opponent', 'Confirm the result'],
-    start: 'Get started', footer: 'EFL UZ · eFootball community', language: 'Choose language',
+    description: 'Choose a club. Play. Confirm your result.',
+    europe: 'EUROPEAN LEAGUES', asia: 'ASIAN LEAGUES',
+    secondEyebrow: 'EFLUZ · SEASON 2', secondTitle: 'New season. New possibilities.',
+    secondDescription: 'New leagues, new competition, and individual season awards.',
+    goldenBall: 'Golden Ball', goldenBallNote: 'Best player · voted by club owners',
+    goldenBoot: 'Golden Boot', goldenBootNote: 'Season top scorer',
+    weekly: 'Player of the Week', weeklyNote: 'Best player each week',
+    next: 'Continue', back: 'Back', start: 'Get started',
+    footer: 'EFL UZ · eFootball community', language: 'Choose language',
     light: 'Switch to light mode', dark: 'Switch to dark mode',
   },
 };
 
-const leagues = [
-  { name: 'Premier League', icon: 'premier-league', monochrome: true },
-  { name: 'La Liga', icon: 'la-liga', monochrome: false },
-  { name: 'Serie A', icon: 'serie-a', monochrome: false },
-  { name: 'Bundesliga', icon: 'bundesliga', monochrome: false },
-  { name: 'Ligue 1', icon: 'ligue-1', monochrome: true },
+const europe = [
+  { name: 'Premier League', icon: 'premier-league' },
+  { name: 'La Liga', icon: 'la-liga' },
+  { name: 'Serie A', icon: 'serie-a' },
+  { name: 'Bundesliga', icon: 'bundesliga' },
+  { name: 'Ligue 1', icon: 'ligue-1' },
+];
+const asia = [
+  { name: 'O‘zbekiston Superligasi', icon: 'uzbekistan-superliga' },
+  { name: 'Saudi Pro League', icon: 'saudi-pro-league' },
+  { name: 'J1 League', icon: 'j1-league' },
+  { name: 'Turkiya Superligasi', icon: 'turkey-super-lig' },
 ];
 
 interface WelcomeScreenProps {
@@ -45,8 +67,9 @@ interface WelcomeScreenProps {
   onStart: () => void;
 }
 
-export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChange, onStart, seasonId = CURRENT_SEASON_ID }) => {
+export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChange, onStart }) => {
   const { language, setLanguage } = useI18n();
+  const [step, setStep] = useState<1 | 2>(1);
   const c = copy[language];
 
   useEffect(() => {
@@ -66,42 +89,76 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
             </button>
             <div className="welcome-language">
               <Globe2 size={16} aria-hidden="true" />
-              <select aria-label={c.language} value={language} onChange={(e) => setLanguage(e.target.value as typeof language)}>
+              <select aria-label={c.language} value={language} onChange={e => setLanguage(e.target.value as typeof language)}>
                 <option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option>
               </select>
+              <ChevronDown size={14} className="welcome-language-chevron" aria-hidden="true" />
             </div>
           </div>
         </header>
 
         <main className="welcome-content">
-          <p className="welcome-eyebrow">{c.eyebrow}</p>
-          <h1 id="welcome-title">{c.title.map((line, index) => <span key={index} className={index === 2 ? 'welcome-accent' : undefined}>{line}</span>)}</h1>
-          <p className="welcome-description">{c.description}</p>
-
-          <svg className="welcome-pitch" viewBox="0 0 320 70" fill="none" aria-hidden="true">
-            <path d="M1 1h318v68H1zM160 1v68M1 14h30v42H1M319 14h-30v42h30M1 25h5v20H1M319 25h-5v20h5" />
-            <circle cx="160" cy="35" r="21" />
-          </svg>
-
-          <section className="welcome-leagues" aria-labelledby="welcome-leagues-title">
-            <h2 id="welcome-leagues-title">{c.leagues}</h2>
-            <ul className="welcome-league-icons">
-              {leagues.filter(league => isSeasonLeagueEnabled('league-' + league.icon, seasonId)).map((league) => (
-                <li key={league.icon}>
-                  <img src={`/welcome/${league.icon}.svg`} alt={league.name} className={league.monochrome ? 'welcome-monochrome' : undefined} width="40" height="44" />
-                </li>
-              ))}
-            </ul>
-            {seasonId === CURRENT_SEASON_ID && <SeasonPreparationCard compact />}
-          </section>
-
-          <ol className="welcome-steps">
-            {c.steps.map((step, index) => <li key={index}><span aria-hidden="true">0{index + 1}</span><span>{step}</span></li>)}
-          </ol>
+          {step === 1 ? (
+            <>
+              <p className="welcome-eyebrow">{c.eyebrow}</p>
+              <h1 id="welcome-title">{c.title.map((line, index) => <span key={index} className={index === 2 ? 'welcome-accent' : undefined}>{line}</span>)}</h1>
+              <p className="welcome-description">{c.description}</p>
+              <svg className="welcome-pitch" viewBox="0 0 320 70" fill="none" aria-hidden="true">
+                <path d="M1 1h318v68H1zM160 1v68M1 14h30v42H1M319 14h-30v42h30M1 25h5v20H1M319 25h-5v20h5" />
+                <circle cx="160" cy="35" r="21" />
+              </svg>
+              <section className="welcome-leagues" aria-labelledby="welcome-europe-title">
+                <h2 id="welcome-europe-title">{c.europe}</h2>
+                <ul className="welcome-league-icons">
+                  {europe.map(league => <li key={league.icon}>
+                    <img src={`/welcome/${league.icon}.svg`} alt={league.name} width="40" height="44" />
+                  </li>)}
+                </ul>
+              </section>
+              <section className="welcome-leagues welcome-asia" aria-labelledby="welcome-asia-title">
+                <h2 id="welcome-asia-title">{c.asia}</h2>
+                <ul className="welcome-league-icons welcome-asian-icons">
+                  {asia.map(league => <li key={league.icon}>
+                    <img src={`/welcome/${league.icon}.svg`} alt={league.name} width="40" height="44" />
+                  </li>)}
+                </ul>
+              </section>
+            </>
+          ) : (
+            <>
+              <p className="welcome-eyebrow">{c.secondEyebrow}</p>
+              <h1 id="welcome-title" className="welcome-season-heading">
+                <span>{c.secondTitle.split('. ')[0]}.</span>
+                <span className="welcome-season-flame">{c.secondTitle.split('. ').slice(1).join('. ')}</span>
+              </h1>
+              <p className="welcome-description">{c.secondDescription}</p>
+              <div className="welcome-awards" aria-label={c.goldenBall + ', ' + c.goldenBoot}>
+                <article className="welcome-award-card">
+                  <img className="welcome-award-art" src="/welcome-awards/golden-ball-photo.png" alt="" width="116" height="124" />
+                  <strong>{c.goldenBall}</strong>
+                  <p>{c.goldenBallNote}</p>
+                </article>
+                <article className="welcome-award-card">
+                  <img className="welcome-award-art" src="/welcome-awards/golden-boot-photo.png" alt="" width="116" height="124" />
+                  <strong>{c.goldenBoot}</strong>
+                  <p>{c.goldenBootNote}</p>
+                </article>
+              </div>
+              <div className="welcome-weekly"><img className="welcome-weekly-art" src="/welcome-awards/weekly-motm-photo.png" alt="" width="70" height="78" /><div><strong>{c.weekly}</strong><p>{c.weeklyNote}</p></div></div>
+            </>
+          )}
         </main>
 
         <footer className="welcome-footer">
-          <button type="button" className="welcome-start" onClick={onStart}><span>{c.start}</span><ArrowRight size={21} aria-hidden="true" /></button>
+          <div className="welcome-progress" role="status" aria-label={`${step} / 2`}>
+            <span className={step === 1 ? 'active' : ''} /><span className={step === 2 ? 'active' : ''} />
+          </div>
+          <div className="welcome-actions">
+            {step === 2 && <button type="button" className="welcome-back" onClick={() => setStep(1)}><ArrowLeft size={18} aria-hidden="true" /><span>{c.back}</span></button>}
+            <button type="button" className="welcome-start" onClick={step === 1 ? () => setStep(2) : onStart}>
+              <span>{step === 1 ? c.next : c.start}</span><ArrowRight size={21} aria-hidden="true" />
+            </button>
+          </div>
           <p>{c.footer}</p>
         </footer>
       </div>
