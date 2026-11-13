@@ -100,19 +100,19 @@ console.log('PASS EFL 2.0: every role gets versioned welcome, public design/them
 // the second page remains behind its real React state transition.
 for (const admin of [false, true]) {
   const current = await render({admin,completed:false,seasonId:'season-2026-27'});
-  const leagueIcons = current.match(/<ul class="welcome-league-icons">([\\s\\S]*?)<\\/ul>/)?.[1] || '';
+  const leagueIcons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
   assert.equal((leagueIcons.match(/<li/g) || []).length,5,'Europe includes five leagues');
   for (const name of ['Premier League','La Liga','Serie A','Bundesliga','Ligue 1']) assert.match(current,new RegExp(name));
   for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Turkiya Superligasi']) assert.match(current,new RegExp(name));
   assert.match(current,/>Davom etish</,'The first page advances instead of entering EFLUZ');
   assert.doesNotMatch(current,/>Boshlash</,'The completion button must only exist on page two');
-  assert.match(current,/aria-label="1 \\/ 2"/,'Display two-stage navigation');
+  assert.match(current,/aria-label="1 \/ 2"/,'Display two-stage navigation');
 }
 const fs = await import('node:fs');
 const source = fs.readFileSync('src/components/WelcomeScreen.tsx','utf8');
-assert.match(source,/useState<1 \\| 2>\\(1\\)/,'Two real React steps');
-assert.match(source,/step === 1 \\? \\(\\) => setStep\\(2\\) : onStart/,'Finish only on second step');
-assert.match(source,/setStep\\(1\\)/,'Back goes to first step');
+assert.match(source,/useState<1 \| 2>\(1\)/,'Two real React steps');
+assert.match(source,/step === 1 \? \(\) => setStep\(2\) : onStart/,'Finish only on second step');
+assert.match(source,/setStep\(1\)/,'Back goes to first step');
 for (const image of ['golden-ball-photo.png','golden-boot-photo.png','weekly-motm-photo.png']) {
   assert.ok(fs.existsSync('public/welcome-awards/'+image),'Original preview artwork exists: '+image);
   assert.ok(source.includes('/welcome-awards/'+image),'Second page uses original artwork: '+image);
