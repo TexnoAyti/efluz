@@ -31,7 +31,7 @@ node "$script_dir/auditEflSourceInventory.mjs" "$source_file" > "$staging/invent
 printf 'Step 2/5: generating protected raw archive and review quarantine\n'
 node "$script_dir/prepareEflRawDocumentBatches.mjs" "$source_file" "$staging/private-archive" > "$staging/archive-report.json"
 printf 'Step 3/5: projecting normalized shadow tables\n'
-node "$script_dir/convertEflCoreSnapshot.mjs" "$source_file" "$staging/normalized-source.json" --require-complete-source --verified-archive "$staging/private-archive" > "$staging/conversion-report.json"
+node "$script_dir/convertEflCoreSnapshot.mjs" "$source_file" "$staging/normalized-source.json" --quarantine-historical --require-complete-source --verified-archive "$staging/private-archive" > "$staging/conversion-report.json"
 printf 'Step 4/5: verifying deterministic source binding\n'
 node "$script_dir/verifyEflNormalizedSourceBinding.mjs" "$source_file" "$staging/private-archive" "$staging/normalized-source.json" > "$staging/binding-report.json"
 printf 'Step 5/5: preparing staging-only normalized import packets\n'
