@@ -2805,7 +2805,7 @@ export function getMatchdayLockKey(seasonId: string, competitionId: string, matc
 
 const matchdayLocksCache = new Map<string, FirestoreMatchdayLockDoc>();
 
-export export async function refreshFixtureMatchdayRules(fixtures: Fixture[], seasonId: string): Promise<Fixture[]> {
+export async function refreshFixtureMatchdayRules(fixtures: Fixture[], seasonId: string): Promise<Fixture[]> {
   if (process.env.DATABASE_PROVIDER === 'supabase') {
     const db=getFirestoreDb(),competitions=new Map<string,FirestoreCompetitionDoc>();
     const ids=[...new Set(fixtures.map(f=>f.competitionId))];
