@@ -147,7 +147,7 @@ export function convertEflCore(collections,options={}){
   const userId=d.userId==null?null:String(d.userId);
   const status=str(d.status,'RELEASED').toUpperCase();
   if(!seasonId||!clubId||!seasons.has(seasonId)||!clubs.has(clubId)||!userId||!users.has(userId)){
-    if(quarantine&&status!=='ACTIVE'){
+    if(quarantine){
       quarantined.releasedOccupancies++;continue;
     }
     fail('OCCUPANCY_REFERENCE_MISSING');
