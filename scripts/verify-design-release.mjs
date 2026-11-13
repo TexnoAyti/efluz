@@ -158,4 +158,11 @@ assert.match(leagueSource, /if \(activeSeasonId !== EFL_SECOND_SEASON\.id\) void
   'Season-one league cards still fetch after selection');
 assert.doesNotMatch(authSource, /useEffect\(\(\) => \{\s*if \(authStatus !== 'AUTHENTICATED'[^}]*setOwnedClubs\(\[\]\)/,
   'League navigation must preserve last verified ownership during fetch');
+
+assert.match(leagueSource, /api\.getLeagues\(activeSeasonId\)\.catch\(/,
+  'The prepared Season 2 league catalog has a 503 fallback');
+assert.match(leagueSource, /EFL_SECOND_SEASON\.leagues\.map\(/,
+  'Prepared league metadata is bundled to render the picker when its API is down');
+assert.match(leagueSource, /api\.getLeagueClubs\(leagueId, activeSeasonId, forceRefresh\)/,
+  'Club owners and availability are never inferred from bundled metadata');
 console.log('PASS leagues navigation state purity and verified club ownership preservation');
