@@ -67,12 +67,28 @@ export function convertEflCore(collections,options={}){
    clubOccupancies:[],fixtures:[],participants:[],resultSubmissions:[],
    disputes:[],matchAccess:[],notifications:[],auditLogs:[]};
  const userById=new Map();
- const uniqueTelegram=new Set();
+ const canonicalUserIdById=new Map();
+ const groups=new Map();
  for(const [id,d] of users){
   const telegram_id=required(str(d.telegramId),'USER_WITHOUT_TELEGRAM');
-  if(uniqueTelegram.has(telegram_id))fail('DUPLICATE_TELEGRAM_OWNER');
-  uniqueTelegram.add(telegram_id);userById.set(id,telegram_id);
-  output.users.push({id,telegram_id,username:d.username??null,first_name:str(d.firstName),
+  const row={id,d,telegram_id,createdAt:time(d.createdAt)};
+  const group=groups.get(telegram_id)??[];
+  group.push(row);groups.set(telegram_id,group);
+ }
+ // Legacy source can contain repeated user documents for one Telegram identity.
+ // Keep one deterministic canonical row for the normalized unique index, while
+ // remapping every legacy reference and retaining every original row in the
+ // private raw archive. Prefer an admin profile, then the newest profile.
+ for(const [telegram_id,group] of groups){
+  group.sort((a,b)=>Number(bool(b.d.isAdmin))-Number(bool(a.d.isAdmin))||
+    b.createdAt-a.createdAt||a.id.localeCompare(b.id));
+  const canonical=group[0];
+  for(const row of group){
+   canonicalUserIdById.set(row.id,canonical.id);
+   userById.set(row.id,telegram_id);
+  }
+  const d=canonical.d;
+  output.users.push({id:canonical.id,telegram_id,username:d.username??null,first_name:str(d.firstName),
    last_name:str(d.lastName),is_admin:bool(d.isAdmin),is_banned:bool(d.isSuspended),
    created_at:time(d.createdAt),updated_at:time(d.updatedAt,time(d.createdAt))});
  }
@@ -141,7 +157,7 @@ export function convertEflCore(collections,options={}){
   const telegram_id=userById.get(userId);
   const status=str(d.status,'RELEASED').toUpperCase();
   if(status==='ACTIVE'){
-   const cKey=seasonId+':'+clubId,pKey=seasonId+':'+leagueId+':'+userId;
+   const canonicalUserId=canonicalUserIdById.get(userId);\n   const cKey=seasonId+':'+clubId,pKey=seasonId+':'+leagueId+':'+canonicalUserId;
    if(uniqueClubOwner.has(cKey))fail('DUPLICATE_ACTIVE_CLUB');
    if(uniquePlayerLeague.has(pKey))fail('SECOND_CLUB_IN_LEAGUE');
    uniqueClubOwner.add(cKey);uniquePlayerLeague.add(pKey);
@@ -149,7 +165,7 @@ export function convertEflCore(collections,options={}){
   }
   output.clubOccupancies.push({id,season_id:seasonId,
     league_id:relationId(seasonId,leagueId),
-    club_id:relationId(seasonId,clubId),user_id:userId,telegram_id,
+    club_id:relationId(seasonId,clubId),user_id:canonicalUserId,telegram_id,
     status,joined_at:time(d.claimedAt),
     released_at:time(d.releasedAt)||null,
     updated_at:time(d.updatedAt,time(d.claimedAt))});
@@ -195,7 +211,7 @@ export function convertEflCore(collections,options={}){
   if(competitionSeason.get(compId)!==seasonId)
     fail('PARTICIPANT_REFERENCE_MISSING');
   output.participants.push({id,competition_id:compId,season_id:seasonId,
-   club_id:relationId(seasonId,d.clubId),owner_user_id:d.ownerUserId??null,
+   club_id:relationId(seasonId,d.clubId),owner_user_id:d.ownerUserId==null?null:canonicalUserIdById.get(d.ownerUserId)??d.ownerUserId,
    seed_number:Number.isSafeInteger(d.seedNumber)?d.seedNumber:null,
    source_competition_id:d.sourceCompetitionId??null,
    source_position:Number.isSafeInteger(d.sourcePosition)?d.sourcePosition:null,
@@ -206,7 +222,7 @@ export function convertEflCore(collections,options={}){
   const f=fixtures.get(fid);if(!f)fail('SUBMISSION_FIXTURE_MISSING');
   if(!clubs.has(d.clubId)||!users.has(d.submittedByUserId))
     fail('SUBMISSION_OWNER_MISSING');
-  const row={id,fixture_id:fid,submitted_by_user_id:d.submittedByUserId,
+  const row={id,fixture_id:fid,submitted_by_user_id:canonicalUserIdById.get(d.submittedByUserId)??d.submittedByUserId,
    club_id:relationId(f.seasonId,d.clubId),home_score:score(d.homeScore),
    away_score:score(d.awayScore),proof_url:d.proofUrl??null,
    created_at:time(d.createdAt)};
@@ -232,7 +248,7 @@ export function convertEflCore(collections,options={}){
    home_submission_id:d.homeSubmissionId??null,
    away_submission_id:d.awaySubmissionId??null,
    status:required(d.status,'DISPUTE_WITHOUT_STATUS'),
-   resolved_by_user_id:d.resolvedByUserId??null,
+   resolved_by_user_id:d.resolvedByUserId==null?null:canonicalUserIdById.get(d.resolvedByUserId)??d.resolvedByUserId,
    resolution_notes:d.resolutionNotes??null,
    created_at:time(d.createdAt),resolved_at:time(d.resolvedAt)||null});
  }
@@ -241,7 +257,7 @@ export function convertEflCore(collections,options={}){
     if(quarantine){quarantined.notifications++;continue;}
     fail('NOTIFICATION_USER_MISSING');
   }
-  output.notifications.push({id,user_id:d.userId,
+  output.notifications.push({id,user_id:canonicalUserIdById.get(d.userId)??d.userId,
    type:required(d.type,'NOTIFICATION_WITHOUT_TYPE'),
    title:str(d.title),message:str(d.message),data:d.data??null,
    is_read:bool(d.isRead),created_at:time(d.createdAt)});
