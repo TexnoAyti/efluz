@@ -60,7 +60,7 @@ for (const admin of [false, true]) {
   storage.set('efluz-welcome-v1:player-1', 'done');
   storage.set('efluz-welcome-v2:player-1', 'done');
   const welcome = await render({ admin, completed: false });
-  assert.match(welcome, />Boshlash</, 'every role must see version 3 welcome despite previously completed versions');
+  assert.match(welcome, />Davom etish</, 'every role must see the first of two welcome pages despite prior completion');
   assert.doesNotMatch(welcome, /data-test-view="MatchdayHomeView"/);
   const home = await render({ admin });
   assert.match(home, /data-test-view="MatchdayHomeView"/);
