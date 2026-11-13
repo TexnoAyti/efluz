@@ -1531,7 +1531,19 @@ export async function getCompetitionsFromReadModel(
     validateData: (data) => Array.isArray(data) && data.length > 0,
   });
 
-  const competitions = result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId));
+  const competitions = result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>{
+    const visible = withSeasonQualificationPolicy(c,seasonId);
+    if (c.type !== 'EUROPEAN_LEAGUE_PHASE' && c.type !== 'EUROPEAN_KNOCKOUT') return visible;
+    const european = c as Competition & {
+      europeanQualificationMode?: string; europeanQualificationToken?: string;
+      europeanDrawId?: string; europeanDrawQualificationToken?: string;
+    };
+    return {...visible,europeanDrawPublished: Boolean(
+      european.europeanQualificationMode === 'final' &&
+      european.europeanQualificationToken && european.europeanDrawId &&
+      european.europeanDrawQualificationToken === european.europeanQualificationToken
+    )};
+  });
   return {
     competitions: options.leagueSummary ? competitions.filter(c=>c.type === 'LEAGUE') : await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(competitions, seasonId),
     source: result.source,
