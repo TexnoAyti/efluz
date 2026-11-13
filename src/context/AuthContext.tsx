@@ -196,12 +196,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshNotifications]);
 
-  // Season selection must refresh season-scoped ownership. Do not reuse the
-  // previous season's clubs while a new club admission is being displayed.
+  // Changing the league tab must not erase the player's last verified
+  // identity before the next season-scoped ownership read succeeds. An error
+  // is "unavailable", not proof of no club. A successful response below
+  // still replaces the list with the server-verified clubs for that season.
   useEffect(() => {
     if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview) return;
-    setOwnedClubs([]);
-    setCurrentClub(null);
     void fetchUserData(activeSeasonId);
   }, [activeSeasonId, authStatus, user?.id, fetchUserData]);
 
