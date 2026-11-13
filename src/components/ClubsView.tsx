@@ -302,7 +302,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
         api.getLeagues(activeSeasonId).catch((error) => {
           if (!preparedSeason) throw error;
           return { leagues: EFL_SECOND_SEASON.leagues.map(({ id, name, country, flag }) =>
-            ({ id, name, country, flag } as League)) };
+            ({ id, name, country, flag, tier: 1, logoUrl: secondSeasonLeagueLogos[id] || '', createdAt: '' } as League)) };
         }),
         preparedSeason
           ? Promise.resolve({ competitions: [] as Competition[] })
