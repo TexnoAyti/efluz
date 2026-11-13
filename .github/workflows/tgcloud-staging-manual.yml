@@ -106,7 +106,15 @@ jobs:
               echo "Importing ${table}/$(basename "${file}")"
               imported=0
               for attempt in 1 2 3 4; do
-                if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "$(<"${file}")" --ctx "${ctx}" >/tmp/tgcloud-import.log 2>&1; then
+                payload="$(node --input-type=module - "${file}" "${GITHUB_RUN_ID}" <<'NODE'
+          import {readFile} from 'node:fs/promises';
+          const [file,runId]=process.argv.slice(2);
+          const packet=JSON.parse(await readFile(file,'utf8'));
+          packet.batchId=packet.batchId+':run'+runId;
+          process.stdout.write(JSON.stringify(packet));
+          NODE
+                )"
+                if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "${payload}" --ctx "${ctx}" >/tmp/tgcloud-import.log 2>&1; then
                   imported=1
                   break
                 fi
