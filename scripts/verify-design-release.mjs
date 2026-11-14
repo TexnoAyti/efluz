@@ -174,10 +174,10 @@ const authSeasonGuard = (await import('node:fs')).readFileSync('src/context/Auth
 assert.match(appSafeShell, /<AppCrashBoundary><I18nProvider><AuthProvider>/,
   'A provider crash must not leave the whole Telegram WebView blank');
 assert.match(crashBoundary, /getDerivedStateFromError/);
-assert.match(crashBoundary, /window\\.location\\.reload\\(\\)/,
+assert.ok(crashBoundary.includes('window.location.reload()'),
   'Crash recovery allows the user to reload without losing persisted ownership');
-assert.match(authSeasonGuard, /requestVersion !== ownershipRequestVersion\\.current/,
+assert.ok(authSeasonGuard.includes('requestVersion !== ownershipRequestVersion.current'),
   'Late season-one reads never replace newer season-two ownership');
-assert.match(authSeasonGuard, /if \\(meRes\\.currentClubStatus !== 'unavailable'\\)/,
+assert.ok(authSeasonGuard.includes("if (meRes.currentClubStatus !== 'unavailable')"),
   'Temporary backend failures must not masquerade as a verified absence of clubs');
 console.log('PASS Telegram WebView last-resort crash shell and out-of-order season ownership guard');
