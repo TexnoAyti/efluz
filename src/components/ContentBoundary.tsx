@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { AppLoading, type LoadingMode } from './AppLoading';
 
 /** Keep the app navigation available while a section downloads or fails. */
-export class ContentBoundary extends React.Component<{ children: React.ReactNode; loadingMode?: LoadingMode }, { failed: boolean }> {
+export class ContentBoundary extends React.Component<{ children: React.ReactNode; loadingMode?: LoadingMode }, { failed: boolean; message: string }> {
   state = { failed: false, message: '' };
 
   static getDerivedStateFromError() { return { failed: true }; }
