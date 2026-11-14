@@ -56,6 +56,11 @@ async function context(kind:MatchChatKind,rawId:string,user:User){
  return value;
 }
 
+/** Read-only authorization for the exhibition penalty scoreboard; does not create chat rooms. */
+export async function authorizePenaltyFixture(matchId:string,user:User){
+ const match=await context('fixture',matchId,user);
+ return {seasonId:match.seasonId,participants:match.participants.map(p=>p.id),side:match.participants[0].id===user.id?'home' as const:'away' as const,closed:match.closed};
+}
 function initialRoom(value:MatchContext):ChatRoom{const now=new Date().toISOString();return {id:roomId(value.kind,value.matchId,value.participants.map(p=>p.id)),kind:value.kind,matchId:value.matchId,seasonId:value.seasonId,title:value.title,subtitle:value.subtitle,participants:value.participants,messages:[],unread:Object.fromEntries(value.participants.map(p=>[p.id,0])),blockedBy:[],reports:[],createdAt:now,updatedAt:now,lastMessageAt:null,closed:value.closed,pinnedMessageId:null};}
 function view(room:ChatRoom,userId:string):MatchChatView{const opponent=room.participants.find(p=>p.id!==userId)!;const messages=(room.messages||[]).map(m=>({...m,avatarUrl:m.avatarUrl||room.participants.find(p=>p.id===m.senderId)?.avatarUrl||null}));return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,opponentPhotoUrl:opponent.avatarUrl||null,viewerSide:room.kind==='fixture'?(room.participants[0]?.id===userId?'home':'away'):undefined,messages,pinnedMessage:messages.find(m=>m.id===room.pinnedMessageId)||null,unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
 
