@@ -93,19 +93,64 @@ function clubCrest(el,name,url){
    image.src=imageUrl;
  }
 }
+// Serverless exhibition: animation stays on-device; only shot outcomes are
+// written. Each opponent reads the same transactional score every five seconds.
+let onlineRace=null, onlineFixtureId='', raceInFlight=false;
+function raceHeaders(){
+ const headers={'Accept':'application/json'};
+ try{
+  const token=sessionStorage.getItem('efootball_session_token');
+  const init=window.Telegram?.WebApp?.initData||sessionStorage.getItem('efootball_tg_init_data');
+  if(token)headers.Authorization='Bearer '+token;
+  else if(init)headers['x-telegram-init-data']=init;
+ }catch{}
+ return headers;
+}
 function updateRaceboard(){
  if(!activeFixture)return;
  $('homeName').textContent=activeFixture.home; clubCrest($('homeCrest'),activeFixture.home,activeFixture.homeLogo);
  $('awayName').textContent=activeFixture.away; clubCrest($('awayCrest'),activeFixture.away,activeFixture.awayLogo);
- $('homeGoals').textContent=readTeamGoals('home');
- $('awayGoals').textContent=readTeamGoals('away');
- $('raceNote').textContent='MAHALLIY DEMO · GLOBAL HISOB EMAS';
+ $('homeGoals').textContent=onlineRace?.goals?.home??readTeamGoals('home');
+ $('awayGoals').textContent=onlineRace?.goals?.away??readTeamGoals('away');
+ $('raceNote').textContent=onlineRace?'ONLAYN MASHG‘ULOT · RASMIY HISOB EMAS':'MAHALLIY DEMO · GLOBAL HISOB EMAS';
+}
+async function fetchOnlineRace(){
+ if(!activeFixture||activeFixture.isDemo||document.hidden||raceInFlight)return;
+ const id=activeFixture.id;
+ if(!/^[A-Za-z0-9:_-]{1,180}$/.test(id))return;
+ raceInFlight=true;
+ try{
+  const r=await fetch('/api/penalty-race/'+encodeURIComponent(id),{credentials:'same-origin',headers:raceHeaders(),signal:AbortSignal.timeout(4500)});
+  if(!r.ok)throw Error('RACE_UNAVAILABLE');
+  const data=await r.json();
+  if(data.ok&&activeFixture?.id===id){onlineRace=data.race;onlineFixtureId=id;updateRaceboard();}
+ }catch{if(activeFixture?.id===id&&!onlineRace)$('raceNote').textContent='OFFLAYN REJIM · HISOB FAQAT SHU QURILMADA';}
+ finally{raceInFlight=false;}
+}
+function resetOnlineRace(){
+ onlineRace=null;onlineFixtureId='';updateRaceboard();
+ if(activeFixture&&!activeFixture.isDemo)void fetchOnlineRace();
+}
+async function sendExhibitionShot(goal){
+ const id=activeFixture?.id;
+ if(!id||activeFixture?.isDemo||!onlineRace||onlineFixtureId!==id)return;
+ const shotId=window.crypto?.randomUUID?.()||('shot_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2));
+ try{
+  const r=await fetch('/api/penalty-race/'+encodeURIComponent(id)+'/shot',{method:'POST',
+   headers:{...raceHeaders(),'Content-Type':'application/json'},credentials:'same-origin',
+   body:JSON.stringify({shotId,goal}),signal:AbortSignal.timeout(6000)});
+  if(!r.ok)throw Error('WRITE_FAILED');
+  const data=await r.json();
+  if(data.ok&&activeFixture?.id===id){onlineRace=data.race;updateRaceboard();}
+ }catch{if(activeFixture?.id===id){$('raceNote').textContent='ALOQA XATOSI · HISOB SINXRONLANMADI';}}
 }
 function countRaceGoal(){
+ if(onlineRace)return;
  const side=$('teamSelect').value==='away'?'away':'home';
  try{localStorage.setItem(teamGoalKey(side),String(readTeamGoals(side)+1))}catch{}
  updateRaceboard();
 }
+setInterval(()=>{if(activeFixture&&!activeFixture.isDemo)void fetchOnlineRace();},5000);
 
 const knownDemo=[{id:'demo-clasico',home:'Real Madrid',away:'Barcelona',label:'Real Madrid — Barcelona'},{id:'demo-premier',home:'Arsenal',away:'Chelsea',label:'Arsenal — Chelsea'},{id:'demo-uz',home:'Paxtakor',away:'Nasaf',label:'Paxtakor — Nasaf'}];
 const safeLabel=value=>String(value||'').slice(0,85);
@@ -133,7 +178,7 @@ function setAutomaticFixture(f,side,isDemo){
  fixtureList=[f]; const fs=$('fixtureSelect'),ts=$('teamSelect');
  fs.replaceChildren();opt(fs,f.id,f.label);fs.value=f.id;
  ts.replaceChildren();opt(ts,side,side==='home'?f.home:f.away);ts.value=side;
- activeFixture=f;activeTeam=side==='home'?f.home:f.away;updateRaceboard();
+ activeFixture=f;activeTeam=side==='home'?f.home:f.away;resetOnlineRace();
  $('autoMatch').innerHTML='';const main=document.createElement('div');
  main.textContent=f.home+'  ⚽  '+f.away;
  const small=document.createElement('small');
@@ -189,7 +234,7 @@ if(window.parent===window){
   if(!raw.home||!raw.away)return;
   const fixture={id,home:safe(raw.home),away:safe(raw.away),homeLogo:typeof raw.homeLogo==='string'&&/^https:\/\//.test(raw.homeLogo)?raw.homeLogo:'',awayLogo:typeof raw.awayLogo==='string'&&/^https:\/\//.test(raw.awayLogo)?raw.awayLogo:'',label:safe(raw.home)+' — '+safe(raw.away),round:raw.round||'',isDemo:false};
   setAutomaticFixture(fixture,side,false);
-  notice('Mashg‘ulot gollari faqat shu qurilmada saqlanadi. Rasmiy EFL natijasi o‘zgarmaydi.');
+  notice('Ikkala o‘yinchi uchun umumiy mashg‘ulot hisobi yuklanadi. Rasmiy EFL natijasi o‘zgarmaydi.');
  });
  window.parent.postMessage({type:'EFL_PENALTY_READY',version:1},window.location.origin);
 }
@@ -341,6 +386,7 @@ function keeperContact(s, width, height) {
 function resolve(){if(!shot||shot.finished)return;shot.finished=true;
  shot.hit=keeperContact(shot,W,H);
  shot.success=!shot.out&&!shot.hit;
+ if(onlineRace)void sendExhibitionShot(shot.success);
  if(shot.success){score++;matchGoalTotal++;saveGoalTotal();countRaceGoal();$('matchGoals').textContent=matchGoalTotal;$('goals').textContent=score;if(score>best){best=score;$('best').textContent=score;try{localStorage.setItem('efl_penalty_munfiz_v9_best',String(best))}catch{}}updateDifficulty();status('GOOOOL! ⚽');$('combo').textContent=score>1?'🔥 '+score+' TA KETMA-KET GOL':'';sound(392,.15,'triangle',.06);sound(587,.18,'triangle',.06,.14);sound(784,.25,'triangle',.06,.29);const x=shot.tx*W,y=shot.ty;netHit={x,y,t:0,life:1};burst(x,y,true);shake=6;flash=.65;zoom=.08;anim='sad';poseT=0;}
  else{status(shot.out?'DARVOZADAN TASHQARI!':'MUNFIZ SEYV!', '#ffdba7');$('combo').textContent='';sound(142,.25,'sawtooth',.045);burst(shot.tx*W,shot.ty,false);shake=2;anim=shot.hit?'save':'recover';poseT=0;}
  try{navigator.vibrate?.(shot.success?[30,20,50]:55)}catch{}
