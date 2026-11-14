@@ -166,3 +166,18 @@ assert.match(leagueSource, /EFL_SECOND_SEASON\.leagues\.map\(/,
 assert.match(leagueSource, /api\.getLeagueClubs\(leagueId, activeSeasonId, forceRefresh\)/,
   'Club owners and availability are never inferred from bundled metadata');
 console.log('PASS leagues navigation state purity and verified club ownership preservation');
+
+
+const crashBoundary = (await import('node:fs')).readFileSync('src/components/AppCrashBoundary.tsx','utf8');
+const appSafeShell = (await import('node:fs')).readFileSync('src/App.tsx','utf8');
+const authSeasonGuard = (await import('node:fs')).readFileSync('src/context/AuthContext.tsx','utf8');
+assert.match(appSafeShell, /<AppCrashBoundary><I18nProvider><AuthProvider>/,
+  'A provider crash must not leave the whole Telegram WebView blank');
+assert.match(crashBoundary, /getDerivedStateFromError/);
+assert.match(crashBoundary, /window\\.location\\.reload\\(\\)/,
+  'Crash recovery allows the user to reload without losing persisted ownership');
+assert.match(authSeasonGuard, /requestVersion !== ownershipRequestVersion\\.current/,
+  'Late season-one reads never replace newer season-two ownership');
+assert.match(authSeasonGuard, /if \\(meRes\\.currentClubStatus !== 'unavailable'\\)/,
+  'Temporary backend failures must not masquerade as a verified absence of clubs');
+console.log('PASS Telegram WebView last-resort crash shell and out-of-order season ownership guard');
