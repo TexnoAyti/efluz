@@ -93,9 +93,12 @@ const it=ids('league-serie-a');
 const fullItaly=previewPreparedLeagueSchedule('league-serie-a')!.fixtures.map((f,index)=>{
   const leaderHome=[it[18],it[19]].includes(f.homeClubId);
   const leaderAway=[it[18],it[19]].includes(f.awayClubId);
+  // Lower-table teams have distinct results, preventing unrelated draws
+  // from blocking finalization after the title tiebreak is resolved.
+  const nonLeaderMatch=!leaderHome&&!leaderAway;
   return {...f,id:'italy-full-'+index,seasonId,status:'CONFIRMED' as const,
-    homeScore:leaderHome&&!leaderAway?(f.homeClubId===it[18]?3:2):0,
-    awayScore:leaderAway&&!leaderHome?(f.awayClubId===it[18]?3:2):0};
+    homeScore:leaderHome&&!leaderAway?(f.homeClubId===it[18]?3:2):nonLeaderMatch&&it.indexOf(f.homeClubId)<it.indexOf(f.awayClubId)?1:0,
+    awayScore:leaderAway&&!leaderHome?(f.awayClubId===it[18]?3:2):nonLeaderMatch&&it.indexOf(f.awayClubId)<it.indexOf(f.homeClubId)?1:0};
 });
 assert.ok(rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true}).blockers.includes('SERIE_A_FINALIST_STATUS_REQUIRED'));
 const italianPlayoff=rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true,europeanFinalistClubIds:[]});
