@@ -94,7 +94,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ownedClubs, setOwnedClubs] = useState<Club[]>([]);
   const [retainedSeasonOneState, setRetainedSeasonOneState] = useState<{ userId: string; clubs: Club[] } | null>(null);
   // Never display a previous signed-in user's clubs while authentication changes.
-  const retainedSeasonOneClubs = retainedSeasonOneState?.userId === user?.id
+  // At cold start BOTH user and retainedSeasonOneState are null. Comparing
+  // optional IDs then yields undefined === undefined, which must never be
+  // treated as verified ownership (and would dereference null.clubs).
+  const retainedSeasonOneClubs = retainedSeasonOneState !== null && user !== null &&
+    retainedSeasonOneState.userId === user.id
     ? retainedSeasonOneState.clubs : [];
   const [premiumClubIds, setPremiumClubIds] = useState<string[]>([]);
   const [userStats, setUserStats] = useState<{
