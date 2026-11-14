@@ -95,7 +95,7 @@ function clubCrest(el,name,url){
 }
 // Serverless exhibition: animation stays on-device; only shot outcomes are
 // written. Each opponent reads the same transactional score every five seconds.
-let onlineRace=null, onlineFixtureId='', raceInFlight=false;
+let onlineRace=null, onlineFixtureId='', raceInFlight=false, activeRunOnline=false, lastIdleRacePoll=0;
 function raceHeaders(){
  const headers={'Accept':'application/json'};
  try{
@@ -110,12 +110,13 @@ function updateRaceboard(){
  if(!activeFixture)return;
  $('homeName').textContent=activeFixture.home; clubCrest($('homeCrest'),activeFixture.home,activeFixture.homeLogo);
  $('awayName').textContent=activeFixture.away; clubCrest($('awayCrest'),activeFixture.away,activeFixture.awayLogo);
- $('homeGoals').textContent=onlineRace?.goals?.home??readTeamGoals('home');
- $('awayGoals').textContent=onlineRace?.goals?.away??readTeamGoals('away');
- $('raceNote').textContent=onlineRace?'ONLAYN MASHG‘ULOT · RASMIY HISOB EMAS':'MAHALLIY DEMO · GLOBAL HISOB EMAS';
+ const shared=onlineRace&&(!run||activeRunOnline);
+ $('homeGoals').textContent=shared?onlineRace.goals.home:readTeamGoals('home');
+ $('awayGoals').textContent=shared?onlineRace.goals.away:readTeamGoals('away');
+ $('raceNote').textContent=shared?'ONLAYN MASHG‘ULOT · RASMIY HISOB EMAS':'MAHALLIY DEMO · GLOBAL HISOB EMAS';
 }
 async function fetchOnlineRace(){
- if(!activeFixture||activeFixture.isDemo||document.hidden||raceInFlight)return;
+ if(!activeFixture||activeFixture.isDemo||document.hidden||raceInFlight||(run&&!activeRunOnline))return;
  const id=activeFixture.id;
  if(!/^[A-Za-z0-9:_-]{1,180}$/.test(id))return;
  raceInFlight=true;
@@ -125,15 +126,15 @@ async function fetchOnlineRace(){
   const data=await r.json();
   if(data.ok&&activeFixture?.id===id){onlineRace=data.race;onlineFixtureId=id;updateRaceboard();}
  }catch{if(activeFixture?.id===id&&!onlineRace)$('raceNote').textContent='OFFLAYN REJIM · HISOB FAQAT SHU QURILMADA';}
- finally{raceInFlight=false;}
+ finally{raceInFlight=false;if(activeFixture?.id===id)$('start').disabled=false;}
 }
 function resetOnlineRace(){
- onlineRace=null;onlineFixtureId='';updateRaceboard();
+ onlineRace=null;onlineFixtureId='';activeRunOnline=false;lastIdleRacePoll=0;updateRaceboard();
  if(activeFixture&&!activeFixture.isDemo)void fetchOnlineRace();
 }
 async function sendExhibitionShot(goal){
  const id=activeFixture?.id;
- if(!id||activeFixture?.isDemo||!onlineRace||onlineFixtureId!==id)return;
+ if(!id||activeFixture?.isDemo||!onlineRace||!activeRunOnline||onlineFixtureId!==id)return;
  const shotId=window.crypto?.randomUUID?.()||('shot_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2));
  try{
   const r=await fetch('/api/penalty-race/'+encodeURIComponent(id)+'/shot',{method:'POST',
@@ -145,12 +146,14 @@ async function sendExhibitionShot(goal){
  }catch{if(activeFixture?.id===id){$('raceNote').textContent='ALOQA XATOSI · HISOB SINXRONLANMADI';}}
 }
 function countRaceGoal(){
- if(onlineRace)return;
+ if(activeRunOnline)return;
  const side=$('teamSelect').value==='away'?'away':'home';
  try{localStorage.setItem(teamGoalKey(side),String(readTeamGoals(side)+1))}catch{}
  updateRaceboard();
 }
-setInterval(()=>{if(activeFixture&&!activeFixture.isDemo)void fetchOnlineRace();},5000);
+setInterval(()=>{if(!activeFixture||activeFixture.isDemo)return;
+ if(run||Date.now()-lastIdleRacePoll>=20000){lastIdleRacePoll=Date.now();void fetchOnlineRace();}
+},5000);
 
 const knownDemo=[{id:'demo-clasico',home:'Real Madrid',away:'Barcelona',label:'Real Madrid — Barcelona'},{id:'demo-premier',home:'Arsenal',away:'Chelsea',label:'Arsenal — Chelsea'},{id:'demo-uz',home:'Paxtakor',away:'Nasaf',label:'Paxtakor — Nasaf'}];
 const safeLabel=value=>String(value||'').slice(0,85);
@@ -185,7 +188,7 @@ function setAutomaticFixture(f,side,isDemo){
  small.textContent=isDemo?'DEMO · natijalar rasmiy emas':'JORIY EFL UCHRASHUVI'+(f.round?' · '+f.round+'-tur':'');
  main.appendChild(small);$('autoMatch').appendChild(main);
  $('autoMatch').classList.toggle('demo',Boolean(isDemo));
- $('start').disabled=false;
+ $('start').disabled=!isDemo&&!onlineRace;
  notice(isDemo?'Offline demo rejimi. Joriy klub uchrashuvini olish uchun EFLUZ orqali akkauntingizga kirib o‘yinni oching.':'Sizning joriy EFL uchrashuvingiz. Mini-o‘yin gollari rasmiy uchrashuv hisobiga qo‘shilmaydi.');
 }
 function normalizeMyFixture(f){
@@ -338,7 +341,7 @@ function updateDifficulty(){
  goalieSpeed=1.35*multiplier;
  $('speed').textContent=multiplier.toFixed(2)+'×';
 }
-function begin(){activeFixture=currentFixture();activeTeam=$('teamSelect').value==='home'?activeFixture?.home:activeFixture?.away;if(!activeFixture||!activeTeam)return;$('matchBanner').textContent='⚽ '+safeLabel(activeTeam)+' · '+safeLabel(activeFixture.label);score=0;matchGoalTotal=readGoalTotal();$('matchGoals').textContent=matchGoalTotal;updateRaceboard();shotCount=0;shot=null;aim=null;pointerStart=null;goaliePhase=-Math.PI/2;goalieX=keeperXAt(goaliePhase);phase='ready';anim='idle';poseT=0;run=true;particles=[];netHit=null;shake=zoom=0;$('goals').textContent='0';$('combo').textContent='';updateDifficulty();$('intro').classList.add('hidden');$('over').classList.add('hidden');$('hint').textContent='⚽ Munfiz harakatini kuzating — vaqtida teping'}
+function begin(){activeRunOnline=Boolean(onlineRace&&activeFixture?.id===onlineFixtureId);activeFixture=currentFixture();activeTeam=$('teamSelect').value==='home'?activeFixture?.home:activeFixture?.away;if(!activeFixture||!activeTeam)return;$('matchBanner').textContent='⚽ '+safeLabel(activeTeam)+' · '+safeLabel(activeFixture.label);score=0;matchGoalTotal=readGoalTotal();$('matchGoals').textContent=matchGoalTotal;updateRaceboard();shotCount=0;shot=null;aim=null;pointerStart=null;goaliePhase=-Math.PI/2;goalieX=keeperXAt(goaliePhase);phase='ready';anim='idle';poseT=0;run=true;particles=[];netHit=null;shake=zoom=0;$('goals').textContent='0';$('combo').textContent='';updateDifficulty();$('intro').classList.add('hidden');$('over').classList.add('hidden');$('hint').textContent='⚽ Munfiz harakatini kuzating — vaqtida teping'}
 function finish(win){run=false;phase='ended';$('finalGoals').textContent=score;$('finalMatchGoals').textContent=matchGoalTotal;$('finalBest').textContent=best;$('overIcon').textContent=mode==='five'?'🏆':win?'🏆':'🧤';$('overTitle').textContent=mode==='five'?'SERIYA YAKUNLANDI':'O‘YIN TUGADI';$('overText').textContent=mode==='five'?`${activeTeam}: 5 ta penaltidan ${score} tasi gol.`:win?'Yangi rekord!':`${activeTeam}: Munfiz zarbani qaytardi yoki zarba xato ketdi.`;$('over').classList.remove('hidden')}
 function tryShot(sx,sy,ex,ey){
  if(!run||phase!=='ready')return;
@@ -386,7 +389,7 @@ function keeperContact(s, width, height) {
 function resolve(){if(!shot||shot.finished)return;shot.finished=true;
  shot.hit=keeperContact(shot,W,H);
  shot.success=!shot.out&&!shot.hit;
- if(onlineRace)void sendExhibitionShot(shot.success);
+ if(activeRunOnline)void sendExhibitionShot(shot.success);
  if(shot.success){score++;matchGoalTotal++;saveGoalTotal();countRaceGoal();$('matchGoals').textContent=matchGoalTotal;$('goals').textContent=score;if(score>best){best=score;$('best').textContent=score;try{localStorage.setItem('efl_penalty_munfiz_v9_best',String(best))}catch{}}updateDifficulty();status('GOOOOL! ⚽');$('combo').textContent=score>1?'🔥 '+score+' TA KETMA-KET GOL':'';sound(392,.15,'triangle',.06);sound(587,.18,'triangle',.06,.14);sound(784,.25,'triangle',.06,.29);const x=shot.tx*W,y=shot.ty;netHit={x,y,t:0,life:1};burst(x,y,true);shake=6;flash=.65;zoom=.08;anim='sad';poseT=0;}
  else{status(shot.out?'DARVOZADAN TASHQARI!':'MUNFIZ SEYV!', '#ffdba7');$('combo').textContent='';sound(142,.25,'sawtooth',.045);burst(shot.tx*W,shot.ty,false);shake=2;anim=shot.hit?'save':'recover';poseT=0;}
  try{navigator.vibrate?.(shot.success?[30,20,50]:55)}catch{}
