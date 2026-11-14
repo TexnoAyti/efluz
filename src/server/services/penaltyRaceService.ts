@@ -7,6 +7,7 @@ type Race={
   fixtureId:string; seasonId:string; participants:[string,string];
   goals:Record<Side,number>; shots:Record<Side,number>;
   recentShotIds:string[]; lastShotAt:Record<Side,number>;
+  legacyImported?:Partial<Record<Side,boolean>>;
   updatedAt:string; expiresAt:number;
 };
 export class PenaltyRaceError extends Error {
@@ -14,10 +15,11 @@ export class PenaltyRaceError extends Error {
 }
 const validId=(id:string)=>/^[A-Za-z0-9:_-]{1,180}$/.test(id);
 const BASE='penalty_exhibition_v1_';
-const lifetime=24*60*60*1000;
+// Keep historical exhibition scores through the season instead of expiring after a day.
+const lifetime=90*24*60*60*1000;
 const blank=(fixtureId:string,seasonId:string,participants:string[]):Race=>({
  fixtureId,seasonId,participants:[participants[0],participants[1]],
- goals:{home:0,away:0},shots:{home:0,away:0},recentShotIds:[],
+ goals:{home:0,away:0},shots:{home:0,away:0},recentShotIds:[],legacyImported:{home:false,away:false},
  lastShotAt:{home:0,away:0},updatedAt:new Date().toISOString(),expiresAt:Date.now()+lifetime,
 });
 const show=(race:Race,user:User)=>({
@@ -74,6 +76,31 @@ export async function submitPenaltyShot(fixtureId:string,user:User,shotId:string
    expiresAt:now+lifetime,
   };
   tx.set(ref,next);return next;
+ });
+ return show(result,user);
+}
+
+/** Migrate a phone's old device-local exhibition goals exactly once per team.
+ * Calls are authenticated as the actual fixture owner; values remain
+ * explicitly unverified exhibition counters and never update match results. */
+export async function importLocalPenaltyGoals(fixtureId:string,user:User,localGoals:number){
+ if(!validId(fixtureId)||!Number.isSafeInteger(localGoals)||localGoals<0||localGoals>500)
+  throw new PenaltyRaceError('INVALID_LEGACY_GOALS',400);
+ const auth=await authorizePenaltyFixture(fixtureId,user);
+ const ref=refFor(fixtureId),now=Date.now(),side=auth.side;
+ const result=await getFirestoreDb().runTransaction(async tx=>{
+  const snap=await tx.get(ref),stored=snap.data() as Race|undefined;
+  const current=stored&&stored.expiresAt>now&&stored.participants[0]===auth.participants[0]&&stored.participants[1]===auth.participants[1]
+   ?stored:blank(fixtureId,auth.seasonId,auth.participants);
+  if(current.legacyImported?.[side])return current;
+  const next:Race={...current,
+    legacyImported:{...current.legacyImported,[side]:true},
+    goals:{...current.goals,[side]:current.goals[side]+localGoals},
+    updatedAt:new Date(now).toISOString(),
+    expiresAt:now+lifetime,
+  };
+  tx.set(ref,next);
+  return next;
  });
  return show(result,user);
 }
