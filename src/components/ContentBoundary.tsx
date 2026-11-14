@@ -5,12 +5,18 @@ import { AppLoading, type LoadingMode } from './AppLoading';
 export class ContentBoundary extends React.Component<{ children: React.ReactNode; loadingMode?: LoadingMode }, { failed: boolean }> {
   state = { failed: false, message: '' };
 
-  static getDerivedStateFromError() { return { failed: true }; }\n\n  componentDidCatch(error: Error) {\n    this.setState({ message: String(error?.message || 'React render error').slice(0, 160) });\n    console.error('[EFL_SECTION_RENDER_ERROR]', error?.message || error);\n  }
+  static getDerivedStateFromError() { return { failed: true }; }
+
+  componentDidCatch(error: Error) {
+    this.setState({ message: String(error?.message || 'React render error').slice(0, 160) });
+    console.error('[EFL_SECTION_RENDER_ERROR]', error?.message || error);
+  }
 
   render() {
     if (this.state.failed) {
       return <div role="alert" className="rounded-2xl border border-slate-500/30 p-5 text-center">
-        <p>Bo‘lim yuklanmadi. Qayta urinib ko‘ring.</p>\n        <p data-testid="efl-section-error" className="mt-2 break-words font-mono text-xs opacity-80">{this.state.message || 'Render error'}</p>
+        <p>Bo‘lim yuklanmadi. Qayta urinib ko‘ring.</p>
+        <p data-testid="efl-section-error" className="mt-2 break-words font-mono text-xs opacity-80">{this.state.message || 'Render error'}</p>
         <button type="button" onClick={() => window.location.reload()} className="mt-3 min-h-11 rounded-xl bg-emerald-400 px-5 font-bold text-slate-950">Qayta yuklash</button>
       </div>;
     }
