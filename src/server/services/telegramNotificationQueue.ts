@@ -21,6 +21,7 @@ import { queryAll, queryGet } from '../db';
 import crypto from 'crypto';
 import { recoverBackupNotifications, pendingBackupNotifications } from './notificationBackupQueue';
 import { waitUntil, getDeadline } from '@vercel/functions';
+import {notificationDeliveryMode} from './notificationDeliveryGate';
 
 export interface RecipientDirectoryEntry {
   userId: string;
@@ -151,12 +152,9 @@ export async function drainNotificationQueue(options: {
   hop?: number;
   continueDrain?: (hop: number) => Promise<void>;
 } = {}): Promise<void> {
-  // Emergency free-tier protection: pause background Telegram draining while
-  // Supabase is I/O-throttled. Durable jobs remain in Redis for later recovery.
-  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
-  if (process.env.MIGRATION_WRITE_FREEZE === 'true') return;
-  // The preview uses a copied database, but the Redis notification queue is live.
-  if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.SUPABASE_DATA_NAMESPACE === 'preview') return;
+  // The global incident switch can keep every other background task paused
+  // while this bounded durable queue runs in isolated mode.
+  if (notificationDeliveryMode() === 'disabled') return;
   // Mutation reconciliation prepares matchday intents independently. Ready
   // messages must not wait behind a full round's recipient/card generation.
   const hop = options.hop || 0;
@@ -185,7 +183,7 @@ export async function drainNotificationQueue(options: {
 }
 
 export async function triggerNotificationContinuation(hop: number): Promise<void> {
-  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
+  if (notificationDeliveryMode() === 'disabled') return;
   if (process.env.VERCEL === '1') {
     // Use only Vercel-provided project/deployment hosts, never a request Host.
     // Production uses the public production domain; protected previews may need
@@ -209,7 +207,7 @@ export async function triggerNotificationContinuation(hop: number): Promise<void
 }
 
 export function scheduleNotificationQueueDrain(hop = 0): void {
-  if (process.env.DISABLE_BACKGROUND_WORKERS === 'true') return;
+  if (notificationDeliveryMode() === 'disabled') return;
   if (process.env.VERCEL !== '1' && !process.env.K_SERVICE) return;
   const work = drainNotificationQueue({ hop }).catch(error => {
     console.warn('[NOTIF_QUEUE] Drain interrupted; durable jobs retained for recovery:', error?.message || error);

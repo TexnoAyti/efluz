@@ -11,6 +11,7 @@ import express from 'express';
 import { readCostMiddleware } from './services/durableReadCosts';
 import { timingSafeEqual } from 'node:crypto';
 import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
+import {notificationDeliveryMode} from './services/notificationDeliveryGate';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedMissingStaticCatalog } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
@@ -186,9 +187,23 @@ export function createApp() {
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
       await ensureDbReady();
-      if (hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
-      if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleUNotices(hop); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
-      else { await reconcileDurableMutations(); await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]')); await processTeamInvitationNotices().catch(()=>console.warn('[TEAM_INVITATION_OUTBOX_DEFERRED]')); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
+      const deliveryMode = notificationDeliveryMode();
+      if (deliveryMode === 'disabled') { res.status(202).json({ accepted: false, paused: true }); return; }
+      if (deliveryMode === 'full' && hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
+      if (process.env.VERCEL === '1') {
+        if (deliveryMode === 'full') { scheduleMutationReconciliation(); scheduleUNotices(hop); }
+        scheduleNotificationQueueDrain(hop);
+        res.status(202).json({ accepted: true, mode: deliveryMode });
+      }
+      else {
+        if (deliveryMode === 'full') {
+          await reconcileDurableMutations();
+          await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]'));
+          await processTeamInvitationNotices().catch(()=>console.warn('[TEAM_INVITATION_OUTBOX_DEFERRED]'));
+        }
+        await drainNotificationQueue({ hop });
+        res.json({ drained: true, mode: deliveryMode });
+      }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
   });
 
