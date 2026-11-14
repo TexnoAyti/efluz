@@ -11,14 +11,24 @@ export const seasonsRouter = Router();
 seasonsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const seasons = await getAllSeasonsFirestore();
-    const second = await getFirestoreDb().collection('seasons').doc('season-2027-28').get();
-    if (second.exists) {
-      const index = seasons.findIndex(s => s.id === second.id);
-      const live = { ...second.data(), id: second.id } as (typeof seasons)[number];
-      if (index >= 0) seasons[index] = live; else seasons.push(live);
+    // A read-only season catalog must stay reachable when live Season 2
+    // metadata is temporarily unavailable. Do not pretend Season 2 has a
+    // verified status: only return the canonical static Season 1 record,
+    // explicitly marked degraded, until the live database can be read.
+    let degraded = false;
+    try {
+      const second = await getFirestoreDb().collection('seasons').doc('season-2027-28').get();
+      if (second.exists) {
+        const index = seasons.findIndex(s => s.id === second.id);
+        const live = { ...second.data(), id: second.id } as (typeof seasons)[number];
+        if (index >= 0) seasons[index] = live; else seasons.push(live);
+      }
+    } catch (error) {
+      degraded = true;
+      console.warn('[SEASON_CATALOG_DEGRADED]', error instanceof Error ? error.message : String(error));
     }
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
-    res.json({ seasons });
+    res.setHeader('Cache-Control', degraded ? 'no-store' : 'public, max-age=60, stale-while-revalidate=120');
+    res.json({ seasons, degraded });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/seasons');
   }

@@ -17,8 +17,13 @@ try {
   const response=await fetch(base+path);assert.equal(response.status,status,path);
   const timing=response.headers.get('server-timing')||'';assert.match(timing,/rate_limit;dur=/);
   const ms=Number(timing.match(/rate_limit;dur=([\d.]+)/)?.[1]);assert.ok(ms<100,'Broad request gate cannot wait for storage');
+  if(path==='/api/seasons') {
+    const catalog=await response.json();
+    assert.equal(catalog.degraded,true,'Offline live Season 2 status must not be fabricated');
+    assert.ok(catalog.seasons.some((season:any)=>season.id==='season-2026-27'));
+  }
  }
- assert.equal(accesses,0,'Static reads and unauthenticated identity checks must not touch the database');
+ assert.equal(accesses,1,'Only the optional live Season 2 metadata probe may reach the offline database');
 }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));(db as any).collection=collection;(db as any).runTransaction=transaction;}
 const guards=express();
 guards.get('/local',rateLimit('local-gate-regression',2,60,{distributed:false}),(_req,res)=>res.json({ok:true}));
