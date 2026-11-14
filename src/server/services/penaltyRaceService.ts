@@ -25,6 +25,7 @@ const blank=(fixtureId:string,seasonId:string,participants:string[]):Race=>({
 const show=(race:Race,user:User)=>({
  fixtureId:race.fixtureId,goals:race.goals,shots:race.shots,
  side:race.participants[0]===user.id?'home':'away',
+ legacyImported:Boolean(race.legacyImported?.[race.participants[0]===user.id?'home':'away']),
  updatedAt:race.updatedAt,official:false,
 });
 const refFor=(fixtureId:string)=>getFirestoreDb().collection('penalty_exhibition_races').doc(BASE+fixtureId);
