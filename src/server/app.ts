@@ -52,6 +52,7 @@ import {uzeflifeRouter} from './routes/uzeflife.routes';
 import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
 import { matchChatRouter } from './routes/matchChat.routes';
+import { seasonTwoAdmissionRouter } from './routes/seasonTwoAdmission.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -225,6 +226,7 @@ export function createApp() {
   app.use('/api/auth/android',androidAuthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
+  app.use('/api/season-two-admission', seasonTwoAdmissionRouter);
   app.use('/api/season-lifecycle', seasonLifecycleRouter);
   app.use('/api/season-ops', seasonOperationsConsistencyRouter);
   app.use('/api/season-ops', seasonOperationsRouter);
