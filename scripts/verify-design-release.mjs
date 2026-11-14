@@ -215,3 +215,23 @@ const seasonTwoUi = (await import('node:fs')).readFileSync('src/components/Seaso
 assert.ok(seasonTwoUi.includes('Bir davra · har juftlik bir marta'));
 assert.ok(!seasonTwoUi.includes('Ikki davra · uy va safar'));
 console.log('PASS Season 2 one-round league format, 19/17/15 turns and unique pair counts');
+
+
+/** Serverless penalty is an exhibition: never update official match scores.
+ * The browser only posts one outcome per shot, with no frame-by-frame traffic. */
+const penaltyService = (await import('node:fs')).readFileSync('src/server/services/penaltyRaceService.ts','utf8');
+const penaltyGame = (await import('node:fs')).readFileSync('public/games/efl-penalty.html','utf8');
+const penaltyRoutes = (await import('node:fs')).readFileSync('src/server/routes/penaltyRace.routes.ts','utf8');
+assert.match(penaltyService,/authorizePenaltyFixture\(fixtureId,user\)/);
+assert.match(penaltyService,/runTransaction\(async tx=>/);
+assert.match(penaltyService,/current\.recentShotIds\.includes\(shotId\)/);
+assert.match(penaltyService,/official:false/);
+assert.match(penaltyService,/SHOT_TOO_FAST/);
+assert.match(penaltyGame,/lastIdleRacePoll>=20000/);
+assert.match(penaltyGame,/},5000\);/);
+assert.match(penaltyGame,/activeRunOnline/);
+assert.match(penaltyGame,/void sendExhibitionShot\(shot\.success\)/);
+assert.match(penaltyGame,/ONLAYN MASHG‘ULOT · RASMIY HISOB EMAS/);
+assert.match(penaltyRoutes,/penaltyRaceRouter\.use\(requireAuth\)/);
+assert.doesNotMatch(penaltyService,/updateFixture|submitResult|confirmResult|setScore/);
+console.log('PASS penalty serverless: authorized atomic exhibition score, no official results or animation traffic');
