@@ -12,6 +12,7 @@ import { readCostMiddleware } from './services/durableReadCosts';
 import { timingSafeEqual } from 'node:crypto';
 import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
 import {notificationDeliveryMode} from './services/notificationDeliveryGate';
+import {scheduleEssentialNotifications} from './services/essentialNotificationPreparation';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedMissingStaticCatalog } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
@@ -192,7 +193,8 @@ export function createApp() {
       if (deliveryMode === 'full' && hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
       if (process.env.VERCEL === '1') {
         if (deliveryMode === 'full') { scheduleMutationReconciliation(); scheduleUNotices(hop); }
-        scheduleNotificationQueueDrain(hop);
+        else scheduleEssentialNotifications(hop);
+        if (deliveryMode === 'full') scheduleNotificationQueueDrain(hop);
         res.status(202).json({ accepted: true, mode: deliveryMode });
       }
       else {
