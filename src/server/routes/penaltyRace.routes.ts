@@ -1,7 +1,7 @@
 import {Router} from 'express';
 import {z} from 'zod';
 import {requireAuth} from '../middleware/authMiddleware';
-import {getPenaltyRace,submitPenaltyShot,PenaltyRaceError} from '../services/penaltyRaceService';
+import {getPenaltyRace,submitPenaltyShot,importLocalPenaltyGoals,PenaltyRaceError} from '../services/penaltyRaceService';
 
 export const penaltyRaceRouter=Router();
 penaltyRaceRouter.use(requireAuth);
@@ -17,5 +17,13 @@ penaltyRaceRouter.post('/:fixtureId/shot',async(req,res)=>{
   const id=valid.parse(req.params.fixtureId);
   const body=z.object({shotId:z.string().min(8).max(80),goal:z.boolean()}).parse(req.body);
   res.json({ok:true,race:await submitPenaltyShot(id,req.user!,body.shotId,body.goal)});
+ }catch(err){fail(res,err);}
+});
+
+penaltyRaceRouter.post('/:fixtureId/import',async(req,res)=>{
+ try {
+  const id=valid.parse(req.params.fixtureId);
+  const body=z.object({goals:z.number().int().min(0).max(500)}).parse(req.body);
+  res.json({ok:true,race:await importLocalPenaltyGoals(id,req.user!,body.goals)});
  }catch(err){fail(res,err);}
 });
