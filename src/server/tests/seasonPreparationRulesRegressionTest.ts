@@ -89,13 +89,13 @@ uzFixtures[0].technicalLossClubId=uz[1];
 assert.deepEqual(rankPreparedLeagueResults('league-uzbekistan-superliga',uzFixtures).standings.slice(0,2).map(row=>row.id),uz.slice(0,2),'Uzbek technical-loss exception takes precedence over head-to-head goal difference');
 const it=ids('league-serie-a');
 // Single-leg Serie A: two leaders defeat everyone else, then draw their sole
-// head-to-head. The identical points total exercises the title-playoff rule.
+// head-to-head. Equal points with differing goal difference resolves the ranking before the title-playoff rule.
 const fullItaly=previewPreparedLeagueSchedule('league-serie-a')!.fixtures.map((f,index)=>{
   const leaderHome=[it[18],it[19]].includes(f.homeClubId);
   const leaderAway=[it[18],it[19]].includes(f.awayClubId);
   return {...f,id:'italy-full-'+index,seasonId,status:'CONFIRMED' as const,
-    homeScore:leaderHome&&!leaderAway?2:0,
-    awayScore:leaderAway&&!leaderHome?2:0};
+    homeScore:leaderHome&&!leaderAway?(f.homeClubId===it[18]?3:2):0,
+    awayScore:leaderAway&&!leaderHome?(f.awayClubId===it[18]?3:2):0};
 });
 assert.ok(rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true}).blockers.includes('SERIE_A_FINALIST_STATUS_REQUIRED'));
 const italianPlayoff=rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true,europeanFinalistClubIds:[]});
