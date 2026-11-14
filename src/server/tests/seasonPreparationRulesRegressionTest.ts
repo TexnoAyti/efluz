@@ -33,7 +33,7 @@ const fullSaudi=previewPreparedLeagueSchedule('league-saudi-pro-league')!.fixtur
   homeScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.homeScore||0,
   awayScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.awayScore||0,
 }));
-assert.deepEqual(rankPreparedLeagueResults('league-saudi-pro-league',fullSaudi,{final:true}).standings.slice(0,3).map(row=>row.id),saudi.slice(0,3),'Saudi mini-table criteria must finish before reapplying to a reduced tie');
+assert.deepEqual(rankPreparedLeagueResults('league-saudi-pro-league',fullSaudi,{final:true}).standings.slice(0,3).map(row=>row.id),['club-al-ettifaq','club-abha','club-al-fateh'],'Saudi ranking follows the actual single-round fixture orientation, not duplicate reverse matches');
 const pl=ids('league-premier-league');
 const first=result(pl,0,1,1,0);
 assert.throws(()=>rankPreparedLeagueResults('league-premier-league',[first,{...first,id:'duplicate'}]),/DUPLICATE/);
