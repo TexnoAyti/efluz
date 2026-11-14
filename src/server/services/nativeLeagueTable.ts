@@ -1,3 +1,4 @@
+import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
 import type { StandingsRow } from '../../types';
 import { assertSeasonCompetitionEnabled, CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
 import { seasonClubs } from './seasonCatalog';
@@ -11,7 +12,7 @@ const pending = new Map<string, Promise<{standings: StandingsRow[]; fixtureTruth
  * publishing durable snapshots. No completed-value cache: the next read sees edits. */
 export async function readNativeLeagueTable(competitionId: string, seasonId: string) {
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
-  if (process.env.DATABASE_PROVIDER !== 'supabase' || !config) return null;
+  if (process.env.DATABASE_PROVIDER !== 'supabase' || !config || (seasonId !== CURRENT_SEASON_ID && (seasonId !== EFL_SECOND_SEASON.id || !EFL_SECOND_SEASON.leagues.some(l => l.competitionId === competitionId)))) return null;
   assertSeasonCompetitionEnabled(competitionId, seasonId);
   const key = JSON.stringify([seasonId, competitionId]);
   const existing = pending.get(key);
