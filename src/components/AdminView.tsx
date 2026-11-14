@@ -1010,7 +1010,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
         </button>
 
         {/* 5A. DOMESTIC CUPS */}
-        <button
+        {activeSeasonId !== 'season-2026-27' && <button
           id="tab-admin-domestic-cups"
           onClick={() => setActiveAdminTab('domestic_cups')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all min-h-[40px] ${
@@ -1021,7 +1021,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
         >
           <Trophy className="w-4 h-4 text-amber-400" />
           <span>{t.adminDomesticCups}</span>
-        </button>
+        </button>}
 
         {/* 5B. EUROPEAN (UCL & UEL) */}
         {!isScoped && (<button
@@ -2090,7 +2090,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Trophy className="w-4 h-4 text-amber-400" />
-                  <span>{isScoped ? allowedLeagues.map(league => league.name).join(', ') : '18 Official Tournament Competitions'}</span>
+                  <span>{isScoped ? allowedLeagues.map(league => league.name).join(', ') : activeSeasonId === 'season-2026-27' ? '1-mavsum · Yevrokuboklar va Superkubok' : '2-mavsum · Musobaqalar boshqaruvi'}</span>
                 </h2>
                 <p className="text-xs text-slate-400">
                   {isScoped ? loc('Tanlangan liga boshqaruvi', 'Управление выбранной лигой', 'Selected league management') : activeSeasonId === 'season-2026-27' ? 'Season 1: European Competitions and Super Cups only.' : 'Season 2: European domestic leagues and their match operations.'}
@@ -2122,7 +2122,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
           <AdminFixtureSchedule competitions={competitions.filter((c) => activeSeasonId !== 'season-2026-27' || c.type === 'SUPER_CUP' || c.type === 'EUROPEAN_LEAGUE_PHASE' || c.type === 'EUROPEAN_KNOCKOUT')} />
 
           {/* 1. DOMESTIC LEAGUES (5) */}
-          <div className="space-y-3">
+          {groupedCompetitions.domesticLeagues.length > 0 && <div className="space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
               <Globe2 className="w-3.5 h-3.5" />
               <span>{isScoped ? loc('Liga boshqaruvi', 'Управление лигой', 'League management') : 'Domestic Leagues (5) • Single Round-Robin (19 MDs for 20 teams, 17 MDs for 18 teams)'}</span>
@@ -2210,10 +2210,10 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
                 );
               })}
             </div>
-          </div>
+          </div>}
 
           {/* 2. DOMESTIC CUPS */}
-          <div className="space-y-3 pt-2">
+          {groupedCompetitions.domesticCups.length > 0 && <div className="space-y-3 pt-2">
             <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
               <Trophy className="w-3.5 h-3.5" />
               <span>{isScoped ? "Milliy kuboklar" : "National Cups (5) • FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal, Coupe de France"}</span>
@@ -2249,7 +2249,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
 
           {!isScoped && <>
           {/* 3. SUPER CUPS (5) */}
@@ -2372,7 +2372,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
       {/* ========================================================================= */}
       {/* 5A. DOMESTIC CUPS SECTION */}
       {/* ========================================================================= */}
-      {activeAdminTab === 'domestic_cups' && <AdminDomesticCupsTab canUseDangerZone={canUseDangerZone} allowedCupIds={isScoped ? allowedLeagues.map(league => league.cupCompetitionId) : undefined} />}
+      {activeAdminTab === 'domestic_cups' && activeSeasonId !== 'season-2026-27' && <AdminDomesticCupsTab canUseDangerZone={canUseDangerZone} allowedCupIds={isScoped ? allowedLeagues.map(league => league.cupCompetitionId) : undefined} />}
 
       {/* ========================================================================= */}
       {/* 5B. UCL / UEL STANDINGS & QUALIFICATIONS SECTION */}
