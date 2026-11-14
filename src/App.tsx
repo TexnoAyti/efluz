@@ -12,6 +12,7 @@ import { I18nProvider, useI18n } from './i18n';
 import { AppTheme, Header } from './components/Header';
 import { Navigation, TabType } from './components/Navigation';
 import { ContentBoundary } from './components/ContentBoundary';
+import { AppCrashBoundary } from './components/AppCrashBoundary';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture, AdminPermissions, Club } from './types';
 import { readUzeflifeLaunch } from './lib/uzeflifeLinks';
@@ -370,4 +371,4 @@ const AppContent: React.FC = () => {
   );
 };
 
-export default function App() { return <I18nProvider><AuthProvider><UserProfileProvider><AppContent /></UserProfileProvider></AuthProvider></I18nProvider>; }
+export default function App() { return <AppCrashBoundary><I18nProvider><AuthProvider><UserProfileProvider><AppContent /></UserProfileProvider></AuthProvider></I18nProvider></AppCrashBoundary>; }
