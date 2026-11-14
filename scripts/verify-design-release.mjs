@@ -181,3 +181,20 @@ assert.ok(authSeasonGuard.includes('requestVersion !== ownershipRequestVersion.c
 assert.ok(authSeasonGuard.includes("if (meRes.currentClubStatus !== 'unavailable')"),
   'Temporary backend failures must not masquerade as a verified absence of clubs');
 console.log('PASS Telegram WebView last-resort crash shell and out-of-order season ownership guard');
+
+
+/** Regression: a brand-new Telegram WebView starts with both user and
+ * retained ownership null. Their optional IDs must not compare as proof
+ * of ownership and the render must never attempt to access null.clubs. */
+const retainedGuard = (await import('node:fs')).readFileSync('src/context/AuthContext.tsx', 'utf8');
+assert.match(retainedGuard, /retainedSeasonOneState !== null && user !== null &&/,
+  'Cold-start ownership must guard both nullable objects before reading clubs');
+assert.doesNotMatch(retainedGuard, /retainedSeasonOneState\?\.userId === user\?\.id/,
+  'Undefined IDs on cold start must not match and dereference null.clubs');
+const retainedFor = (state, person) =>
+  state !== null && person !== null && state.userId === person.id ? state.clubs : [];
+assert.deepEqual(retainedFor(null, null), []);
+assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, null), []);
+assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, {id:'two'}), []);
+assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, {id:'one'}), [{id:'safe'}]);
+console.log('PASS cold Telegram start: null ownership never crashes or leaks other users clubs');
