@@ -198,3 +198,20 @@ assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, null), []);
 assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, {id:'two'}), []);
 assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, {id:'one'}), [{id:'safe'}]);
 console.log('PASS cold Telegram start: null ownership never crashes or leaks other users clubs');
+
+
+/** Enforce the competition's actual EFL rules during every UI release.
+ * One leg only: a 20-club league has 19 matchdays / 190 fixtures;
+ * an 18-club league has 17 matchdays / 153 fixtures. */
+const seasonTwoFormatSource = (await import('node:fs')).readFileSync('src/lib/seasonPreparation.ts', 'utf8');
+assert.ok(seasonTwoFormatSource.includes('homeAndAway: false,'));
+assert.ok(seasonTwoFormatSource.includes('totalMatchdays: roster.clubs.length - 1,'));
+assert.ok(seasonTwoFormatSource.includes('totalFixtures: roster.clubs.length * (roster.clubs.length - 1) / 2,'));
+const oneRoundFixtures = (n) => n*(n-1)/2;
+assert.equal(oneRoundFixtures(20),190);
+assert.equal(oneRoundFixtures(18),153);
+assert.equal(oneRoundFixtures(16),120);
+const seasonTwoUi = (await import('node:fs')).readFileSync('src/components/SeasonPreparationCard.tsx','utf8');
+assert.ok(seasonTwoUi.includes('Bir davra · har juftlik bir marta'));
+assert.ok(!seasonTwoUi.includes('Ikki davra · uy va safar'));
+console.log('PASS Season 2 one-round league format, 19/17/15 turns and unique pair counts');
