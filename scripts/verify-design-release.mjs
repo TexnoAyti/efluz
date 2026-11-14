@@ -132,8 +132,8 @@ const competitionHubSource = ownershipFs.readFileSync('src/components/Competitio
 const retainedSource = ownershipFs.readFileSync('src/components/RetainedSeasonOneClubs.tsx','utf8');
 assert.match(authOwnerSource, /api\.getMyClubState\('season-2026-27'\)/,
   'Retained Season 1 club list is independently verified by the server');
-assert.match(authOwnerSource, /retainedSeasonOneState\?\.userId === user\?\.id/,
-  'Never display ownership from another authenticated user');
+assert.match(authOwnerSource, /retainedSeasonOneState !== null && user !== null &&\s*retainedSeasonOneState\.userId === user\.id/,
+  'Never read null ownership or display clubs from another authenticated user');
 assert.match(authOwnerSource, /retainedSeasonOneClubs,\s*premiumClubIds/,
   'Separate season-one clubs must be exposed without counting toward Season 2 claims');
 assert.ok(clubHubSource.includes('<RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />'),
