@@ -2156,8 +2156,8 @@ async function getFixtureByIdFirestoreUncorrected(fixtureId: string, currentUser
         const r = doc.data() as FirestoreFixtureDoc;
 
         // Enrich with home and away clubs using SEED_CLUB_MAP (0 Firestore reads!)
-        const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
-        const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
+        const homeSeed = seasonClubs(r.seasonId || 'season-2026-27').find(c => c.id === r.homeClubId);
+        const awaySeed = seasonClubs(r.seasonId || 'season-2026-27').find(c => c.id === r.awayClubId);
 
         const { clubOccupancyMap, usernameMap, userMap } = await getActiveOccupanciesForSeason(r.seasonId || 'season-2026-27');
         const homeOcc = clubOccupancyMap.get(r.homeClubId);
@@ -2916,6 +2916,11 @@ export async function getCompetitionMatchdayLocksFirestore(
   competitionId: string
 ): Promise<Record<number, FirestoreMatchdayLockDoc>> {
   const result: Record<number, FirestoreMatchdayLockDoc> = {};
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    const rows = await getFirestoreDb().collection(COLLECTIONS.MATCHDAY_LOCKS).where('seasonId', '==', seasonId).where('competitionId', '==', competitionId).get();
+    for (const doc of rows.docs) { const lock = doc.data() as FirestoreMatchdayLockDoc; result[lock.matchday] = lock; }
+    return result;
+  }
   try {
     const { redisGetFresh, redisGetLkg } = await import('../readModel/readModelStore');
     const snapshot = await redisGetFresh<{ competition: FirestoreCompetitionDoc; locks: FirestoreMatchdayLockDoc[] }>(`matchday-state:${seasonId}:${competitionId}`) || await redisGetLkg<{ competition: FirestoreCompetitionDoc; locks: FirestoreMatchdayLockDoc[] }>(`matchday-state:${seasonId}:${competitionId}`);
@@ -6435,8 +6440,8 @@ export async function getPendingResultsFirestore(seasonId = 'season-2026-27'): P
 
     const fixturesWithSubmissions = allDocs.map((doc) => {
       const r = doc.data() as FirestoreFixtureDoc;
-      const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
-      const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
+      const homeSeed = seasonClubs(r.seasonId || 'season-2026-27').find(c => c.id === r.homeClubId);
+      const awaySeed = seasonClubs(r.seasonId || 'season-2026-27').find(c => c.id === r.awayClubId);
       const submissions = submissionsMap.get(doc.id) || [];
 
       return {

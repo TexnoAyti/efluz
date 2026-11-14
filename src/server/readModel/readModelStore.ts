@@ -2093,8 +2093,8 @@ export async function getCompetitionFixturesFromReadModel(
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
   // The result entry policy must never be inferred from old isPlayable flags
   // stored in a shared fixture snapshot. Refresh only active legacy cups.
-  const requiresLivePermission = seasonId === 'season-2026-27' &&
-    /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId);
+  const requiresLivePermission = seasonId === 'season-2027-28' || (seasonId === 'season-2026-27' &&
+    /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId));
   const { enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules } = await import('../firebase/firestoreStore');
   try {
     fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
@@ -2110,6 +2110,7 @@ export async function getCompetitionFixturesFromReadModel(
       console.error('[COMPETITION_FIXTURES] Authoritative cup eligibility unavailable:', err);
       throw new ReadModelNotWarmedError('Competition matchday eligibility temporarily unavailable');
     }
+    if (seasonId === 'season-2026-27') {
     try {
       // Historical cup ownership is match-scoped. Do not reactivate a former
       // club in domestic standings or change Season 2 registration records.
@@ -2127,6 +2128,7 @@ export async function getCompetitionFixturesFromReadModel(
       }));
     } catch (err) {
       console.warn('[COMPETITION_FIXTURES] Historical cup participants unavailable:', err);
+    }
     }
   }
   return {
