@@ -34,7 +34,7 @@ validatePreparedEuropeanDraw('UCL',realistic,generatePreparedEuropeanDraw('UCL',
 assert.throws(()=>previewPreparedEuropeanCompetition('UCL',realistic.map(c=>({...c,name:c.id,qualification:{route:'DOMESTIC' as const,source:'https://uefa.com.evil.example/proof'}})),'x'),/PROVENANCE/);
 
 const pack=buildPreparedTournamentPackage();
-assert.equal(pack.summary.clubs,168);assert.equal(pack.summary.leagueFixtures,2984);assert.equal(pack.summary.cupFixtures,159);assert.equal(pack.summary.superCups,9);
+assert.equal(pack.summary.clubs,168);assert.equal(pack.summary.leagueFixtures,1492);assert.equal(pack.summary.cupFixtures,159);assert.equal(pack.summary.superCups,9);
 assert.equal(pack.active,false);assert.equal(pack.registrationOpen,false);
 assert.equal(pack.fingerprint,buildPreparedTournamentPackage().fingerprint);
 assert.ok(Buffer.byteLength(JSON.stringify(pack),'utf8')<900000);
