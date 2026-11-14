@@ -115,6 +115,27 @@ function updateRaceboard(){
  $('awayGoals').textContent=shared?onlineRace.goals.away:readTeamGoals('away');
  $('raceNote').textContent=shared?'ONLAYN MASHG‘ULOT · RASMIY HISOB EMAS':'MAHALLIY DEMO · GLOBAL HISOB EMAS';
 }
+function previousLocalGoals(id,side){
+ // The v12 and v13 counters overlap across historical game versions.
+ // Taking their maximum, not their sum, avoids double-counting one goal.
+ try{
+  const v13=readTeamGoals(side);
+  const v12=Number(localStorage.getItem('efl_penalty_v12_goals_'+id+'_'+side))||0;
+  return Math.min(500,Math.max(0,Math.floor(v13),Math.floor(v12)));
+ }catch{return 0;}
+}
+async function importPreviousGoals(id,side){
+ const goals=previousLocalGoals(id,side);
+ const res=await fetch('/api/penalty-race/'+encodeURIComponent(id)+'/import',{
+  method:'POST',credentials:'same-origin',
+  headers:{...raceHeaders(),'Content-Type':'application/json'},
+  body:JSON.stringify({goals}),signal:AbortSignal.timeout(6000),
+ });
+ if(!res.ok)throw Error('LEGACY_IMPORT_FAILED');
+ const data=await res.json();
+ if(!data.ok||!data.race?.legacyImported)throw Error('LEGACY_IMPORT_FAILED');
+ if(activeFixture?.id===id){onlineRace=data.race;onlineFixtureId=id;updateRaceboard();}
+}
 async function fetchOnlineRace(){
  if(!activeFixture||activeFixture.isDemo||document.hidden||raceInFlight||(run&&!activeRunOnline))return;
  const id=activeFixture.id;
@@ -124,9 +145,20 @@ async function fetchOnlineRace(){
   const r=await fetch('/api/penalty-race/'+encodeURIComponent(id),{credentials:'same-origin',headers:raceHeaders(),signal:AbortSignal.timeout(4500)});
   if(!r.ok)throw Error('RACE_UNAVAILABLE');
   const data=await r.json();
-  if(data.ok&&activeFixture?.id===id){onlineRace=data.race;onlineFixtureId=id;updateRaceboard();}
- }catch{if(activeFixture?.id===id&&!onlineRace)$('raceNote').textContent='OFFLAYN REJIM · HISOB FAQAT SHU QURILMADA';}
- finally{raceInFlight=false;if(activeFixture?.id===id)$('start').disabled=false;}
+  if(data.ok&&activeFixture?.id===id){
+   onlineRace=data.race;onlineFixtureId=id;updateRaceboard();
+   if(!onlineRace.legacyImported){
+    await importPreviousGoals(id,onlineRace.side);
+   }
+  }
+ }catch{
+  if(activeFixture?.id===id){
+   if(!onlineRace?.legacyImported){onlineRace=null;onlineFixtureId='';}
+   updateRaceboard();
+   $('raceNote').textContent='OFFLAYN REJIM · OLDINGI HISOB SAQLANGAN';
+  }
+ }
+ finally{raceInFlight=false;if(activeFixture?.id===id)$('start').disabled=Boolean(!activeFixture.isDemo&&!onlineRace?.legacyImported);}
 }
 function resetOnlineRace(){
  onlineRace=null;onlineFixtureId='';activeRunOnline=false;lastIdleRacePoll=0;updateRaceboard();
@@ -341,7 +373,7 @@ function updateDifficulty(){
  goalieSpeed=1.35*multiplier;
  $('speed').textContent=multiplier.toFixed(2)+'×';
 }
-function begin(){activeRunOnline=Boolean(onlineRace&&activeFixture?.id===onlineFixtureId);activeFixture=currentFixture();activeTeam=$('teamSelect').value==='home'?activeFixture?.home:activeFixture?.away;if(!activeFixture||!activeTeam)return;$('matchBanner').textContent='⚽ '+safeLabel(activeTeam)+' · '+safeLabel(activeFixture.label);score=0;matchGoalTotal=readGoalTotal();$('matchGoals').textContent=matchGoalTotal;updateRaceboard();shotCount=0;shot=null;aim=null;pointerStart=null;goaliePhase=-Math.PI/2;goalieX=keeperXAt(goaliePhase);phase='ready';anim='idle';poseT=0;run=true;particles=[];netHit=null;shake=zoom=0;$('goals').textContent='0';$('combo').textContent='';updateDifficulty();$('intro').classList.add('hidden');$('over').classList.add('hidden');$('hint').textContent='⚽ Munfiz harakatini kuzating — vaqtida teping'}
+function begin(){activeRunOnline=Boolean(onlineRace?.legacyImported&&activeFixture?.id===onlineFixtureId);activeFixture=currentFixture();activeTeam=$('teamSelect').value==='home'?activeFixture?.home:activeFixture?.away;if(!activeFixture||!activeTeam)return;$('matchBanner').textContent='⚽ '+safeLabel(activeTeam)+' · '+safeLabel(activeFixture.label);score=0;matchGoalTotal=readGoalTotal();$('matchGoals').textContent=matchGoalTotal;updateRaceboard();shotCount=0;shot=null;aim=null;pointerStart=null;goaliePhase=-Math.PI/2;goalieX=keeperXAt(goaliePhase);phase='ready';anim='idle';poseT=0;run=true;particles=[];netHit=null;shake=zoom=0;$('goals').textContent='0';$('combo').textContent='';updateDifficulty();$('intro').classList.add('hidden');$('over').classList.add('hidden');$('hint').textContent='⚽ Munfiz harakatini kuzating — vaqtida teping'}
 function finish(win){run=false;phase='ended';$('finalGoals').textContent=score;$('finalMatchGoals').textContent=matchGoalTotal;$('finalBest').textContent=best;$('overIcon').textContent=mode==='five'?'🏆':win?'🏆':'🧤';$('overTitle').textContent=mode==='five'?'SERIYA YAKUNLANDI':'O‘YIN TUGADI';$('overText').textContent=mode==='five'?`${activeTeam}: 5 ta penaltidan ${score} tasi gol.`:win?'Yangi rekord!':`${activeTeam}: Munfiz zarbani qaytardi yoki zarba xato ketdi.`;$('over').classList.remove('hidden')}
 function tryShot(sx,sy,ex,ey){
  if(!run||phase!=='ready')return;
