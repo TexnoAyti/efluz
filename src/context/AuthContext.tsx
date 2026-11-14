@@ -1,6 +1,6 @@
 import { resolveTelegramContext } from '../lib/telegramContext';
 import {isAndroidApp} from '../lib/androidApp';
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { User, Club, Season, Notification } from '../types';
 import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken, getSessionToken } from '../lib/api';
 import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
@@ -111,6 +111,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [clubUnavailable, setClubUnavailable] = useState(false);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string>('season-2026-27');
+  // Ignore out-of-order ownership responses when the user switches season
+  // quickly (European cups <-> Season 2 registration).
+  const ownershipRequestVersion = useRef(0);
+
   useEffect(() => {
     if (!user?.isAdmin) { setPremiumClubIds([]); return; }
     let mounted = true;
@@ -170,8 +174,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchUserData = useCallback(async (seasonId: string) => {
+    const requestVersion = ++ownershipRequestVersion.current;
     try {
       const meRes = await api.getMe(seasonId);
+      // A slower request from the previous season must never overwrite newer
+      // verified club ownership after the user enters/leaves Leagues.
+      if (requestVersion !== ownershipRequestVersion.current) return;
       setUser(meRes.user);
       setClubUnavailable(meRes.currentClubStatus === 'unavailable');
       if (meRes.currentClubStatus !== 'unavailable') {
