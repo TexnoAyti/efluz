@@ -1222,8 +1222,8 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
     const updatedAt = doc.updatedAt ?? doc.updated_at;
     const docSeasonId = doc.seasonId ?? doc.season_id;
 
-    const homeClubSeed = SEED_CLUBS.find((c) => c.id === homeClubId);
-    const awayClubSeed = SEED_CLUBS.find((c) => c.id === awayClubId);
+    const homeClubSeed = seasonClubs(docSeasonId || seasonId).find((c) => c.id === homeClubId);
+    const awayClubSeed = seasonClubs(docSeasonId || seasonId).find((c) => c.id === awayClubId);
 
     return {
       id: doc.id,

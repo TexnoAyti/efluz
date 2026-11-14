@@ -1680,8 +1680,8 @@ async function getFixturesFirestoreUnfiltered(filter: {
     }
 
     const fixtures: Fixture[] = docs.map((r) => {
-      const homeSeed = SEED_CLUB_MAP.get(r.homeClubId);
-      const awaySeed = SEED_CLUB_MAP.get(r.awayClubId);
+      const homeSeed = seasonClubs(r.seasonId || 'season-2026-27').find(c => c.id === r.homeClubId);
+      const awaySeed = seasonClubs(r.seasonId || 'season-2026-27').find(c => c.id === r.awayClubId);
 
       const comp = compMap.get(r.competitionId);
       const preloadedLock = compLocksMap.get(r.competitionId)?.[r.matchday] || null;

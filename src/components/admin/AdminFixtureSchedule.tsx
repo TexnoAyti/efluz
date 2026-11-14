@@ -6,8 +6,8 @@ import { clubStadium } from '../../constants/clubStadiums';
 import type { Competition, Fixture } from '../../types';
 
 type Preview = Awaited<ReturnType<typeof api.previewFixtureSchedule>>;
-export function AdminFixtureSchedule({ fixture, competitionId: initialCompetitionId, competitions = [], onSaved }: {
-  fixture?:Fixture;competitionId?:string;competitions?:Competition[];onSaved?:(scheduledAt:string)=>void;
+export function AdminFixtureSchedule({ fixture, competitionId: initialCompetitionId, competitions = [], onSaved, seasonId }: {
+  seasonId?:string;fixture?:Fixture;competitionId?:string;competitions?:Competition[];onSaved?:(scheduledAt:string)=>void;
 }) {
   const { activeSeasonId }=useAuth();
   const [expanded,setExpanded]=useState(false);
@@ -22,7 +22,7 @@ export function AdminFixtureSchedule({ fixture, competitionId: initialCompetitio
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
   const [error,setError]=useState('');
-  const selector=useMemo(()=>({seasonId:fixture?.seasonId || activeSeasonId,...(fixture ? {fixtureId:fixture.id,includeCompleted:true} : {category,includeCompleted,...(competitionId?{competitionId}:{}),...(matchday?{matchday:Number(matchday)}:{})})}),[fixture?.id,fixture?.seasonId,activeSeasonId,category,competitionId,matchday,includeCompleted]);
+  const selector=useMemo(()=>({seasonId:fixture?.seasonId || seasonId || activeSeasonId,...(fixture ? {fixtureId:fixture.id,includeCompleted:true} : {category,includeCompleted,...(competitionId?{competitionId}:{}),...(matchday?{matchday:Number(matchday)}:{})})}),[fixture?.id,fixture?.seasonId,seasonId,activeSeasonId,category,competitionId,matchday,includeCompleted]);
   const clearPreview=()=>{setPreview(null);setMessage('');setError('');};
   const inspect=async()=>{
     setBusy(true);setError('');setMessage('');

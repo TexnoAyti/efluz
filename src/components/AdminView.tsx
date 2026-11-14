@@ -2121,7 +2121,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
             </div>
           </div>
 
-          <AdminFixtureSchedule competitions={competitions.filter((c) => activeSeasonId !== 'season-2026-27' || c.type === 'SUPER_CUP' || c.type === 'EUROPEAN_LEAGUE_PHASE' || c.type === 'EUROPEAN_KNOCKOUT')} />
+          <AdminFixtureSchedule seasonId={activeSeasonId} competitions={competitions.filter((c) => activeSeasonId !== 'season-2026-27' || c.type === 'SUPER_CUP' || c.type === 'EUROPEAN_LEAGUE_PHASE' || c.type === 'EUROPEAN_KNOCKOUT')} />
 
           {/* 1. DOMESTIC LEAGUES (5) */}
           {groupedCompetitions.domesticLeagues.length > 0 && <div className="space-y-3">
