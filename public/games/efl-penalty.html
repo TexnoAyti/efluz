@@ -158,7 +158,7 @@ async function fetchOnlineRace(){
    $('raceNote').textContent='OFFLAYN REJIM · OLDINGI HISOB SAQLANGAN';
   }
  }
- finally{raceInFlight=false;if(activeFixture?.id===id)$('start').disabled=Boolean(!activeFixture.isDemo&&!onlineRace?.legacyImported);}
+ finally{raceInFlight=false;if(activeFixture?.id===id)$('start').disabled=false;}
 }
 function resetOnlineRace(){
  onlineRace=null;onlineFixtureId='';activeRunOnline=false;lastIdleRacePoll=0;updateRaceboard();
