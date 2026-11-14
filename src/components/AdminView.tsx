@@ -772,8 +772,12 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
 
   // Clean, official competition categorization
   const groupedCompetitions = useMemo(() => {
+    // Season 1 is now a residual view: only European cups and Super Cups remain.
+    // Season 2 keeps the full domestic-league administration surface.
+    const seasonOneResidual = activeSeasonId === 'season-2026-27';
+
     // 1. Domestic Leagues (5)
-    const domesticLeagues = competitions.filter(
+    const domesticLeagues = (seasonOneResidual ? [] : competitions).filter(
       (c) =>
         c.type === 'LEAGUE' ||
         (c.type as string) === 'league' ||
@@ -785,7 +789,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
     );
 
     // 2. Domestic Cups (5)
-    const domesticCups = competitions.filter(
+    const domesticCups = (seasonOneResidual ? [] : competitions).filter(
       (c) =>
         c.id.includes('fa-cup') ||
         c.id.includes('copa-del-rey') ||
@@ -815,7 +819,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
     );
 
     return { domesticLeagues, domesticCups, superCups, european };
-  }, [competitions]);
+  }, [competitions, activeSeasonId]);
 
   // Match Status Metrics
   const matchMetrics = useMemo(() => {
@@ -2089,7 +2093,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
                   <span>{isScoped ? allowedLeagues.map(league => league.name).join(', ') : '18 Official Tournament Competitions'}</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  {isScoped ? loc('Tanlangan liga boshqaruvi', 'Управление выбранной лигой', 'Selected league management') : '5 Single Round-Robin Domestic Leagues, 6 National Cups, 5 Super Cups, and 2 32-Team European Competitions.'}
+                  {isScoped ? loc('Tanlangan liga boshqaruvi', 'Управление выбранной лигой', 'Selected league management') : activeSeasonId === 'season-2026-27' ? 'Season 1: European Competitions and Super Cups only.' : 'Season 2: European domestic leagues and their match operations.'}
                 </p>
               </div>
 
@@ -2115,7 +2119,7 @@ const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone
             </div>
           </div>
 
-          <AdminFixtureSchedule competitions={competitions} />
+          <AdminFixtureSchedule competitions={competitions.filter((c) => activeSeasonId !== 'season-2026-27' || c.type === 'SUPER_CUP' || c.type === 'EUROPEAN_LEAGUE_PHASE' || c.type === 'EUROPEAN_KNOCKOUT')} />
 
           {/* 1. DOMESTIC LEAGUES (5) */}
           <div className="space-y-3">
