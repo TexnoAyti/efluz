@@ -54,6 +54,7 @@ import {uzeflifeRouter} from './routes/uzeflife.routes';
 import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
 import { matchChatRouter } from './routes/matchChat.routes';
+import { penaltyRaceRouter } from './routes/penaltyRace.routes';
 import { seasonTwoAdmissionRouter } from './routes/seasonTwoAdmission.routes';
 
 let dbInitPromise: Promise<void> | null = null;
@@ -236,6 +237,7 @@ export function createApp() {
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
   app.use('/api/match-chat', rateLimit('match-chat', 45, 60, { distributed: false }));
+  app.use('/api/penalty-race', rateLimit('penalty-race', 30, 60, { distributed: false }));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
   app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
@@ -253,6 +255,7 @@ export function createApp() {
   app.use('/api/competitions', competitionsRouter);
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/match-chat', matchChatRouter);
+  app.use('/api/penalty-race', penaltyRaceRouter);
   app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
