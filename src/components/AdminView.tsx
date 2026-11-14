@@ -103,6 +103,7 @@ interface PendingFixtureItem extends Fixture {
 
 export const AdminView: React.FC = () => {
   const { user } = useAuth();
+  const [managementSeason, setManagementSeason] = useState('season-2027-28');
   const [dangerAllowed, setDangerAllowed] = useState(false);
   const [permissions, setPermissions] = useState<AdminPermissions | null>(null);
   const [error, setError] = useState('');
@@ -116,14 +117,15 @@ export const AdminView: React.FC = () => {
   if (!user?.isAdmin) return <FullAdminView />;
   if (error) return <div role="alert" className="p-6 text-white">{error}<button className="ml-3 underline" onClick={() => setRetry(value => value + 1)}>Qayta tekshirish</button></div>;
   if (!permissions) return <div role="status" className="p-6 text-slate-300">Ruxsatlar tekshirilmoqda...</div>;
-  return <FullAdminView key={JSON.stringify(permissions)} permissions={permissions} canUseDangerZone={dangerAllowed} />;
+  return <><div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Boshqaruv mavsumi">{[['season-2027-28', '2-mavsum'], ['season-2026-27', '1-mavsum · Yevrokuboklar va Superkubok']].map(([id,label]) => <button key={id} type="button" aria-pressed={managementSeason === id} onClick={() => setManagementSeason(id)} className={`px-4 py-3 rounded-xl text-sm font-bold ${managementSeason === id ? 'bg-blue-600 text-white' : 'glass-card text-slate-300'}`}>{label}</button>)}</div><FullAdminView key={`${managementSeason}:${JSON.stringify(permissions)}`} managementSeason={managementSeason} permissions={permissions} canUseDangerZone={dangerAllowed} /></>;
 };
 
-const FullAdminView: React.FC<{ permissions?: AdminPermissions; canUseDangerZone?: boolean }> = ({ permissions, canUseDangerZone = false }) => {
+const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPermissions; canUseDangerZone?: boolean }> = ({ managementSeason = 'season-2027-28', permissions, canUseDangerZone = false }) => {
   const isScoped = Boolean(permissions && permissions.scope !== 'ALL');
   const allowedLeagues = permittedAdminLeagues({ adminPermissions: permissions });
   const [scopedFixtures, setScopedFixtures] = useState<Fixture[]>([]);
-  const { user, activeSeasonId, showToast } = useAuth();
+  const { user, showToast } = useAuth();
+  const activeSeasonId = managementSeason;
   const isPrimaryOwner = String(user?.telegramId || '').trim() === '5209126900';
   const [showTicketManagement, setShowTicketManagement] = useState(false);
   const { t, language } = useI18n();

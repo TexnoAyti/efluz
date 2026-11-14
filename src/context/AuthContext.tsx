@@ -288,7 +288,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await loadLoginBootstrap(api, tgCtx.initData, getDevUserId() || 'user-dev-a', seasons => {
           if (!isMounted) return;
           setSeasons(seasons);
-          const season = seasons.find(item => item.id === 'season-2026-27' && item.status === 'active') || seasons.find(item => item.status === 'active') || seasons[0];
+          const season = seasons.find(item => item.id === 'season-2027-28' && item.status === 'active') || seasons.find(item => item.status === 'active') || seasons[0];
           if (season) {
             targetSeasonId = season.id;
             setActiveSeasonId(season.id);

@@ -1,6 +1,6 @@
 import type { StandingsRow } from '../../types';
 import { assertSeasonCompetitionEnabled, CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
-import { SEED_CLUBS } from '../db/seed';
+import { seasonClubs } from './seasonCatalog';
 import { getFirestoreDb } from '../firebase/admin';
 import { DOMESTIC_LEAGUE_CONFIG, normalizeFixtureSnapshot, ReadModelNotWarmedError } from '../readModel/readModelStore';
 import { filterRetiredFixtures } from './retiredFixtureService';
@@ -11,7 +11,7 @@ const pending = new Map<string, Promise<{standings: StandingsRow[]; fixtureTruth
  * publishing durable snapshots. No completed-value cache: the next read sees edits. */
 export async function readNativeLeagueTable(competitionId: string, seasonId: string) {
   const config = DOMESTIC_LEAGUE_CONFIG[competitionId];
-  if (process.env.DATABASE_PROVIDER !== 'supabase' || !config || seasonId !== CURRENT_SEASON_ID) return null;
+  if (process.env.DATABASE_PROVIDER !== 'supabase' || !config) return null;
   assertSeasonCompetitionEnabled(competitionId, seasonId);
   const key = JSON.stringify([seasonId, competitionId]);
   const existing = pending.get(key);
@@ -26,7 +26,7 @@ export async function readNativeLeagueTable(competitionId: string, seasonId: str
     const deleted = new Set(tombstones.map(row => row.fixtureId));
     const fixtures = filterRetiredFixtures(docs.docs.map(doc => normalizeFixtureSnapshot({...doc.data(), id: doc.id}, seasonId)), seasonId)
       .filter(row => row.seasonId === seasonId && row.competitionId === competitionId && !deleted.has(row.id));
-    const baseRows: StandingsRow[] = SEED_CLUBS.filter(club => club.leagueId === config.leagueId).map(club => ({
+    const baseRows: StandingsRow[] = seasonClubs(seasonId).filter(club => club.leagueId === config.leagueId).map(club => ({
       clubId: club.id, clubName: club.name, shortName: club.shortName, logoUrl: club.logoUrl, clubLogoUrl: club.logoUrl, position: 0,
       played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: 0, form: [],
     }));

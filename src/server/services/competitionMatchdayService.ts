@@ -16,7 +16,7 @@ const finalStatuses = new Set(['CONFIRMED', 'CANCELLED', 'POSTPONED']);
 function totalRounds(comp: FirestoreCompetitionDoc, fixtures: FirestoreFixtureDoc[]): number {
   if (comp.type === 'LEAGUE') {
     const teams = Number(comp.formatConfig?.totalClubs || (comp.leagueId === 'league-bundesliga' || comp.leagueId === 'league-ligue-1' ? 18 : 20));
-    return teams - 1;
+    return Number(comp.totalMatchdays) || (teams - 1) * (comp.formatConfig?.homeAndAway === true ? 2 : 1);
   }
   return Math.max(1, Number(comp.totalMatchdays || 1), ...fixtures.map(f => Number(f.matchday || 1)));
 }
