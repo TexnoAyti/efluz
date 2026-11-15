@@ -18,6 +18,7 @@ import { scheduleNotificationQueueDrain } from './telegramNotificationQueue';
 import { isSmartNotificationEventEnabled, SmartNotificationEvent } from './smartNotificationSettingsService';
 import { telegramMiniAppButton } from './telegramMiniAppButton';
 import { persistBackupNotification, SMART_ENQUEUE_SCRIPT } from './notificationBackupQueue';
+import {unplayedReminderCompetitionAllowed} from './seasonReminderPolicy';
 
 interface RecipientDirectoryEntry {
   userId: string;
@@ -378,6 +379,7 @@ export async function notifySmartMatchdayOpened(params: {
   return recipientContext.run(new Map(), () => enqueueMatchdayNotifications(params));
 }
 async function enqueueMatchdayNotifications(params: {competitionId: string; seasonId: string; matchday: number; deadlineAt?: string | null}): Promise<number> {
+  if(!unplayedReminderCompetitionAllowed(params.seasonId,params.competitionId))return 0;
   if (!(await isSmartNotificationEventEnabled(params.seasonId, 'matchdayOpened'))) return 0;
   const fixtures = await getCompetitionFixtureSnapshot(params.competitionId, params.seasonId, params.matchday);
   const matchdayFixtures = fixtures.filter((fixture) => Number(fixture.matchday) === Number(params.matchday));
