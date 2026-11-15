@@ -3,7 +3,8 @@ import express from 'express';
 import {adminNotificationsRouter} from '../routes/adminNotifications.routes';
 import {runDeadlineSweep} from '../services/matchOperationsV4Service';
 import {getFirestoreDb} from '../firebase/admin';
-import {CURRENT_SEASON_ID as season} from '../../lib/seasonParticipationPolicy';
+import {CURRENT_SEASON_ID as workerStateSeason} from '../../lib/seasonParticipationPolicy';
+const season='season-2027-28'; // Active leagues, not historical Season 1
 import {loadLeagueBacklog,leagueBacklogMessage,processLeagueBacklogReminders,freshLeagueReminder,reminderDay,BACKLOG_STATE_COLLECTION,BACKLOG_SCAN_VERSION} from '../services/leagueBacklogReminders';
 import {enqueueSmartTelegramNotification} from '../services/smartNotificationService';
 import {PostgresNotificationStore} from '../services/postgresNotificationStore';
@@ -50,7 +51,7 @@ export async function verifyLeagueBacklogReminders(){
     await db.collection('competitions').doc(competitionId).update({currentMatchday:19});
     for(let i=1;i<=7;i++)await db.collection('fixtures').doc('backlog-game-'+i).update({matchday:i,status:i===7?'PENDING_CONFIRMATION':'SCHEDULED'});
     assert.equal(await processLeagueBacklogReminders({now:Date.parse(reminderDay()+'T22:00:00Z')}),false,'Nighttime does not enqueue');
-    const state=db.collection(BACKLOG_STATE_COLLECTION).doc(season);await state.delete();
+    const state=db.collection(BACKLOG_STATE_COLLECTION).doc(workerStateSeason);await state.delete();
     // Isolate this synthetic league from other native-suite fixtures without touching their scores.
     let failOnce=true,events=0;
     const enqueue:typeof enqueueSmartTelegramNotification=async params=>{
