@@ -2,9 +2,9 @@ import {PostgresAiStore} from './postgresAiStore';
 import { Redis } from '@upstash/redis';
 import { resolveRedisConfig } from '../readModel/redisConfig';
 
-/** Dedicated AI state transport: PostgreSQL in migrated deployments, optional Redis elsewhere. */
+/** Dedicated AI state transport. Explicit Redis opt-in offloads AI ephemeral state from PostgreSQL. */
 export function getAiRedisClient(signal?: AbortSignal): Redis | null {
-  if (process.env.DATABASE_PROVIDER === 'supabase') return new PostgresAiStore(signal) as unknown as Redis;
+  if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.EFL_AI_STATE_BACKEND !== 'redis') return new PostgresAiStore(signal) as unknown as Redis;
   const config = resolveRedisConfig(process.env);
   if (!config) return null;
   const client = new Redis({
