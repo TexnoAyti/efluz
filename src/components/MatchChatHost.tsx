@@ -69,7 +69,7 @@ export function MatchChatHost(){
         blockedByMe:false,closed:true,reportedByMe:false,canSend:false,
         quickMessages:[],updatedAt:adminRoom?.updatedAt||new Date().toISOString(),
         pinnedMessageId:adminRoom?.pinnedMessageId||null,
-        matchInfo:null,
+        matchInfo:target.matchInfo||null,
       }
       :await matchChatApi.read(target);
     const next=restoreChatView(raw);
