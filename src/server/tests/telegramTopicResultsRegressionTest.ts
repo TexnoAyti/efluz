@@ -29,6 +29,8 @@ const fillers=Array.from({length:32},(_,i)=>({id:'comp-dummy-'+i,name:'Other Lea
 competitions.push(...fillers,europaComp as any);
 games.push({...fixture('europa-game',europaComp.id),competition:'UEFA Europa League'});
 assert.equal((await planTopicResult('Real Madrid 2-1 Barca',1001,7,signal))?.plan.targetId,'europa-game','Must paginate beyond the first 30 competitions and resolve Europa fixture');
+assert.equal((await planTopicResult('Real Madrid 1-1 Barca',1001,7,signal))?.plan.body.homeScore,1,'Draws are legal in UEFA league phase');
+await assert.rejects(planTopicResult('Real Madrid 1-1 Barca penalti 4-3',1001,7,signal),/penaltilar bo‘lmaydi/);
 competitions.splice(competitions.length-fillers.length-1);
 games.pop();
 
