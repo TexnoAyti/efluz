@@ -94,7 +94,14 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
         const migrated = {
           ...DEFAULT_AI_CONFIG,
           ...(parsed && typeof parsed === 'object' ? parsed : {}),
-          enabled: false,
+          // Preserve an already enabled, correctly bound production AI.
+          // Preview environments always start disabled after migration.
+          enabled: process.env.VERCEL_ENV === 'production'
+            && parsed?.enabled === true
+            && parsed.allowedChatId != null
+            && parsed.allowedThreadId != null
+            && Number.isSafeInteger(Number(parsed.allowedChatId))
+            && Number.isSafeInteger(Number(parsed.allowedThreadId)),
           updatedAt: new Date().toISOString(),
           updatedBy: 'ai_redis_migration',
         };
