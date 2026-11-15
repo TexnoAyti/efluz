@@ -315,6 +315,7 @@ async function sendDeadlineReminder(deadline: any, kind: '24h' | '6h' | 'overdue
   const body = `<b>${competition}</b> • ${fixture.roundName || `Matchday ${fixture.matchday || 1}`}\n\n⚽ <b>${fixtureClubName(fixture, 'home')}</b> vs <b>${fixtureClubName(fixture, 'away')}</b>\n⏳ Deadline: <b>${deadlineText}</b>\n\n${kind === 'overdue' ? 'Muddat tugadi. Natijani yuboring yoki no-show holatini EFL UZ ichida belgilang.' : 'O‘yinni kelishib, muddatdan oldin natijani yuboring.'}`;
   const results: PromiseSettledResult<boolean>[] = [];
   for (const userId of [...new Set(owners)]) results.push(...await Promise.allSettled([enqueueSmartTelegramNotification({
+    reminderCompetitionId:fixture.competitionId,
     userId,
     seasonId: deadline.seasonId || 'season-2026-27',
     eventId: `matchday-open:deadline:${kind}:${deadline.fixtureId}:${deadline.deadlineAt}`,
