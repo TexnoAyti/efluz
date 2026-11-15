@@ -4,7 +4,7 @@ import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
 import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
 import { randomUUID } from 'node:crypto';
-import {handleClubOwnerGroupExit,listClubOwnerGroupExits} from '../services/clubOwnerGroupExitService';
+import {handleClubOwnerGroupExit,listClubOwnerGroupExits,handleGroupLeaverRelease,markGroupLeaverReleaseConfirmation} from '../services/clubOwnerGroupExitService';
 import { Router, Request, Response } from 'express';
 import {
   handleTelegramStart,
@@ -118,6 +118,32 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       response = {ok:true,handled:'topic_result',result:topicResult.result};
     } else if(typeof update.callback_query?.data==='string'&&/^android_login:(approve|deny):[a-f0-9]{32}$/.test(update.callback_query.data)){
       const callback=update.callback_query;try{const result=await answerAndroidLogin(callback);await answerTelegramCallback(callback.id,result.status==='APPROVED'?'Kirish tasdiqlandi. EFLUZ ilovasiga qayting.':'Kirish rad etildi.',true);response={ok:true,handled:'android_login_callback'};}catch(error:any){await answerTelegramCallback(callback.id,error.statusCode?error.message:'Kirish tasdiqlanmadi. Qayta urinib ko‘ring.',true);response={ok:true,handled:'android_login_callback',approved:false};}
+    } else if(typeof update.callback_query?.data==='string'&&/^grouprelease:(ask|confirm|cancel):[a-f0-9]{32}$/.test(update.callback_query.data)){
+      const callback=update.callback_query;
+      try{
+        const result=await handleGroupLeaverRelease(callback);
+        if(result.status==='confirm'){
+          const sent=await sendTelegramMessage(callback.from.id,
+            'Klubni bo‘shatishni tasdiqlaysizmi?\\n'+result.clubName+
+            '\\nBu amal klub egaligini bekor qiladi, lekin foydalanuvchiga ban bermaydi.',{
+            parse_mode:null,
+            reply_markup:{inline_keyboard:[[
+              {text:'Tasdiqlash',callback_data:'grouprelease:confirm:'+result.token},
+              {text:'Bekor qilish',callback_data:'grouprelease:cancel:'+result.token},
+            ]]},
+          });
+          if(!sent.ok||!Number.isSafeInteger(sent.result?.message_id))throw new Error('GROUP_RELEASE_CONFIRMATION_UNDELIVERED');
+          await markGroupLeaverReleaseConfirmation(result.token,sent.result.message_id);
+          await answerTelegramCallback(callback.id,'Tasdiqlash xabari yuborildi.');
+        }else{
+          await answerTelegramCallback(callback.id,result.status==='released'?
+            result.clubName+' bo‘shatildi.':'Amal bekor qilindi.');
+        }
+        response={ok:true,handled:'group_leaver_release',status:result.status};
+      }catch(error:any){
+        await answerTelegramCallback(callback.id,error.statusCode?error.message:'Bo‘shatib bo‘lmadi. Qayta tekshiring.',true);
+        response={ok:true,handled:'group_leaver_release',applied:false};
+      }
     } else if(typeof update.callback_query?.data==='string'&&/^clubban:[a-f0-9]{32}$/.test(update.callback_query.data)){
       const callback=update.callback_query;
       try{const result=await applyBanControl(callback);await answerTelegramCallback(callback.id,result.replayed?'Bu tugma avval ishlatilgan. Ro‘yxatni yangilang.':result.isBanned?`Ban qo‘yildi.${result.releasedClubs?.length?' Klubdan ham bo‘shatildi.':''}`:'Klub tanlash bani olib tashlandi.',true);response={ok:true,handled:'club_selection_ban'};}
