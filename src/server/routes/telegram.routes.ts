@@ -13,6 +13,7 @@ import {
   sendTelegramMessage,
   answerTelegramCallback,
   inspectTelegramConnection,
+  repairProductionTelegramWebhook,
 } from '../services/telegramBotService';
 import { requireAdmin, requireAuth } from '../middleware/authMiddleware';
 import { claimTelegramUpdate, settleTelegramUpdate, isBasicBotUpdate, type WebhookLease } from '../services/telegramWebhookLease';
@@ -371,6 +372,22 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
  * Status of Telegram Bot configuration
  */
 telegramRouter.get('/status', async (req: Request, res: Response) => {
+  // The fixed-target repair is explicitly production-gated and never drops pending updates.
+  // It is only requested by an operator while the dedicated environment gate is enabled.
+  let repairResult: {ok:boolean;changed:boolean;urlMatches:boolean}|null=null;
+  if (req.query.repairMemberWebhook === '1') {
+    if (process.env.VERCEL_ENV !== 'production' || process.env.TELEGRAM_WEBHOOK_REPAIR_ENABLED !== 'true') {
+      res.status(404).json({error:'WEBHOOK_REPAIR_DISABLED'});
+      return;
+    }
+    try {
+      repairResult=await repairProductionTelegramWebhook();
+    } catch (error) {
+      console.error('[TELEGRAM_WEBHOOK_REPAIR_REQUEST_FAILED]',error);
+      res.status(503).json({error:'WEBHOOK_REPAIR_FAILED'});
+      return;
+    }
+  }
   const hasToken = Boolean(process.env.TELEGRAM_BOT_TOKEN);
   const hasSticker = Boolean(process.env.TELEGRAM_WELCOME_STICKER_FILE_ID);
   const group = process.env.TELEGRAM_GROUP_USERNAME || '@efleagueuz';
@@ -380,6 +397,7 @@ telegramRouter.get('/status', async (req: Request, res: Response) => {
   const connection = await inspectTelegramConnection(config.allowedChatId, config.allowedThreadId);
   res.json({
     status: 'ok',
+    ...(repairResult ? {webhookRepair:{ok:repairResult.ok,changed:repairResult.changed,urlMatches:repairResult.urlMatches}} : {}),
     aiEnabled: config.enabled,
     aiStateBackend: process.env.DATABASE_PROVIDER === 'supabase' && process.env.EFL_AI_STATE_BACKEND !== 'redis' ? 'postgres' : 'redis',
     redisAvailable,
