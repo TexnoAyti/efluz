@@ -56,6 +56,7 @@ import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
 import { matchChatRouter } from './routes/matchChat.routes';
 import { penaltyRaceRouter } from './routes/penaltyRace.routes';
+import { seasonAwardsRouter } from './routes/seasonAwards.routes';
 import { seasonTwoAdmissionRouter } from './routes/seasonTwoAdmission.routes';
 
 let dbInitPromise: Promise<void> | null = null;
