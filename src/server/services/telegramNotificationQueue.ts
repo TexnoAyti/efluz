@@ -22,6 +22,7 @@ import crypto from 'crypto';
 import { recoverBackupNotifications, pendingBackupNotifications } from './notificationBackupQueue';
 import { waitUntil, getDeadline } from '@vercel/functions';
 import {notificationDeliveryMode} from './notificationDeliveryGate';
+import {LEGACY_SEASON_ID,unplayedReminderJobAllowed} from './seasonReminderPolicy';
 
 export interface RecipientDirectoryEntry {
   userId: string;
@@ -62,6 +63,7 @@ export interface BroadcastRecipientStatus {
 
 export interface TelegramBroadcastRecord {
   leagueReminder?: import('./leagueBacklogReminders').LeagueReminderGuard;
+  reminderCompetitionId?: string;
   id: string;
   seasonId: string;
   title: string;
@@ -86,6 +88,7 @@ export interface TelegramBroadcastRecord {
 
 export interface NotificationQueueJob {
   leagueReminder?: import('./leagueBacklogReminders').LeagueReminderGuard;
+  reminderCompetitionId?: string;
   photoModel?: TournamentImageModel;
   jobId: string;
   broadcastId: string;
@@ -582,6 +585,19 @@ export async function processNotificationQueue(batchSize = 25, stopClaimingAt = 
       if (recipient.status === 'SENDING') {
         await updateBroadcastRecipientState(job.broadcastId, job.userId, 'FAILED', 'DELIVERY_UNKNOWN: interrupted send');
         await client.hdel(PROCESSING_KEY, job.jobId);
+        continue;
+      }
+      // Some historical Season 1 domestic reminders were already queued
+      // before the policy changed. Drop them *before* any Telegram send.
+      // Older jobs without competition metadata fail closed; fresh UEFA
+      // jobs have their authenticated competition ID and remain deliverable.
+      const isUnplayedReminder=job.leagueReminder
+        || /(?:o‘ynalmagan o‘yin|matchday ochildi|match deadline|24 soat qoldi|6 soat qoldi)/i.test(job.title||'');
+      if (isUnplayedReminder && (job.seasonId||record.seasonId)===LEGACY_SEASON_ID &&
+          !unplayedReminderJobAllowed({seasonId:job.seasonId||record.seasonId,
+            leagueReminder:job.leagueReminder,competitionId:job.reminderCompetitionId||record.reminderCompetitionId})) {
+        await updateBroadcastRecipientState(job.broadcastId,job.userId,'SKIPPED_NO_TELEGRAM','REMINDER_SEASON_CLOSED');
+        await client.hdel(PROCESSING_KEY,job.jobId);
         continue;
       }
       if (job.leagueReminder) {
