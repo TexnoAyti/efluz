@@ -1,7 +1,7 @@
 import {getFirestoreDb} from '../firebase/admin';
 import {randomBytes} from 'node:crypto';
 import {isPrimaryOwner} from './telegramAiConfigService';
-import {sendTelegramMessage} from './telegramBotService';
+import {sendTelegramMessage,verifyTelegramGroupMembership} from './telegramBotService';
 import {PRIMARY_OWNER_TELEGRAM_ID} from './telegramAiConfigService';
 
 type ExitState='left'|'kicked'|'returned';
@@ -10,6 +10,7 @@ type ExitEntry={
  id:string;telegramId:string;userId:string;name:string;username:string;
  state:ExitState;exitedAt:string;returnedAt?:string;group:string;
  clubs:OwnerClub[];lastUpdateId:number;notifiedAt?:string;personalNotifiedAt?:string;
+ discoveredBy?:'membership_audit';verifiedAt?:string;
 };
 const COLLECTION='club_owner_group_exits';
 const CONTROLS='club_owner_group_exit_release_controls';
@@ -40,7 +41,7 @@ export async function handleClubOwnerGroupExit(update:any):Promise<'ignored'|'re
  const db=getFirestoreDb(),telegramId=String(evt.user.id),userId='user-'+telegramId;
  const ref=db.collection(COLLECTION).doc(telegramId);
  const previous=await ref.get(),existing=previous.data() as ExitEntry|undefined;
- if(existing&&existing.lastUpdateId>=update.update_id)return 'ignored';
+ if(existing&&existing.lastUpdateId>=update.update_id&&!update.membership_audit)return 'ignored';
  if(evt.state==='returned'){
   if(existing){
    await ref.set({...existing,state:'returned',returnedAt:new Date(evt.at*1000).toISOString(),lastUpdateId:update.update_id});
@@ -58,15 +59,16 @@ export async function handleClubOwnerGroupExit(update:any):Promise<'ignored'|'re
  const name=String([evt.user.first_name,evt.user.last_name].filter(Boolean).join(' ')||evt.user.username||telegramId).slice(0,90);
  const now=new Date((Number.isFinite(evt.at)?evt.at:Date.now()/1000)*1000).toISOString();
  const record:ExitEntry={id:telegramId,telegramId,userId,name,username:String(evt.user.username||'').slice(0,70),
-  group:expectedGroup(),state:evt.state,exitedAt:now,clubs,lastUpdateId:update.update_id};
+  group:expectedGroup(),state:evt.state,exitedAt:now,clubs,lastUpdateId:update.membership_audit?(existing?.lastUpdateId||0):update.update_id,
+  ...(update.membership_audit?{discoveredBy:'membership_audit' as const,verifiedAt:now}:{})};
  // Avoid duplicate alerts when Telegram repeats a service message and a member update.
- if(existing?.state===evt.state&&Date.parse(now)-Date.parse(existing.exitedAt)<60_000)return 'ignored';
+ if(existing?.state===evt.state&&(update.membership_audit || Date.parse(now)-Date.parse(existing.exitedAt)<60_000))return 'ignored';
  await ref.set(record);
  const detail=clubs.map(x=>x.clubName+' ('+x.seasonId.replace('season-','')+')').join(', ');
- const label=evt.state==='kicked'?'guruhdan chiqarildi':'guruhdan chiqdi';
+ const label=update.membership_audit?'tekshiruvda guruhda topilmadi':evt.state==='kicked'?'guruhdan chiqarildi':'guruhdan chiqdi';
  const message='EFLUZ · Klub egasi '+label+'\n\n'+name+
   (record.username?' (@'+record.username+')':'')+'\nKlub: '+detail+
-  '\nVaqt: '+now+'\nGuruh: @'+expectedGroup()+
+  '\n'+(update.membership_audit?'Tekshirilgan vaqt: ':'Vaqt: ')+now+'\nGuruh: @'+expectedGroup()+
   '\n\nKlub egaligi avtomatik bekor qilinmadi.';
  // Buttons are bound to a specific departure and a specific club.
  const buttons=clubs.map(club=>({club,token:randomBytes(16).toString('hex')}));
@@ -113,7 +115,8 @@ export async function listClubOwnerGroupExits(){
   .filter(x=>x.state==='left'||x.state==='kicked')
   .sort((a,b)=>b.exitedAt.localeCompare(a.exitedAt))
   .slice(0,150).map(x=>({name:x.name,username:x.username,telegramId:x.telegramId,
-   userId:x.userId,clubs:x.clubs,state:x.state,exitedAt:x.exitedAt,group:x.group,notified:!!x.notifiedAt})));
+   userId:x.userId,clubs:x.clubs,state:x.state,exitedAt:x.exitedAt,group:x.group,notified:!!x.notifiedAt,
+   discoveredBy:x.discoveredBy,verifiedAt:x.verifiedAt})));
 }
 
 /** Two-step, admin-only callback: releasing is irreversible, but never issues a ban. */
@@ -136,6 +139,14 @@ export async function handleGroupLeaverRelease(callback:any){
  const club=exit.clubs.find(c=>c.seasonId===control.seasonId&&c.clubId===control.clubId);
  if(!club)fail('Klub xabari mos kelmadi.');
  if(action==='ask')return {status:'confirm' as const,token,clubName:club.clubName};
+ // Recheck membership at the point of the destructive admin action.
+ // On transient Telegram failures, refuse rather than removing a possible
+ // returning owner's club.
+ if(process.env.FIREBASE_FORCE_LOCAL_FALLBACK!=='true'){
+  const membership=await verifyTelegramGroupMembership(control.telegramId,true);
+  if(membership.isMember || !['left','kicked','restricted'].includes(membership.status))
+   fail('A’zolik hozir aniq tasdiqlanmadi yoki egasi guruhga qaytgan. Klub bo‘shatilmadi.');
+ }
  const actorId='user-'+String(callback.from.id),at=new Date().toISOString();
  const released=await db.runTransaction(async tx=>{
   const controlDoc=(await tx.get(controlRef)).data() as any;
@@ -192,4 +203,57 @@ export async function handleGroupLeaverRelease(callback:any){
 export async function markGroupLeaverReleaseConfirmation(token:string,messageId:number){
  if(!/^[a-f0-9]{32}$/.test(token)||!Number.isSafeInteger(messageId))throw new Error('INVALID_GROUP_RELEASE_CONFIRMATION');
  await getFirestoreDb().collection(CONTROLS).doc(token).set({confirmationMessageId:messageId},{merge:true});
+}
+
+/**
+ * A bounded, admin-invoked audit for club owners who left before Telegram
+ * chat_member updates were enabled. Telegram cannot provide historic exit dates.
+ * Persist only explicit Telegram 'left'/'kicked' (or restricted/non-member).
+ * Transient API errors never count as departures.
+ */
+export async function reconcileExistingClubOwnerLeavers(options?:{start?:number;batchSize?:number}){
+ const db=getFirestoreDb(),start=Math.max(0,Math.floor(options?.start||0));
+ const batchSize=Math.max(1,Math.min(15,Math.floor(options?.batchSize||10)));
+ // The season occupancy collection is small relative to generic Telegram users.
+ // Sort stable IDs before scanning and deduplicate users with several clubs.
+ const snapshot=await db.collection('club_occupancies').where('status','==','active').get();
+ const users=[...new Set(snapshot.docs.map(d=>String(d.data()?.userId||''))
+  .filter(id=>/^user-\d{1,20}$/.test(id)))].sort((a,b)=>a.localeCompare(b));
+ const ids=users.slice(start,start+batchSize);
+ let found=0,already=0,returned=0,unknown=0;
+ for(const id of ids){
+  const telegramId=Number(id.slice(5));
+  if(!Number.isSafeInteger(telegramId))continue;
+  const result=await verifyTelegramGroupMembership(telegramId,true);
+  if(['left','kicked','restricted','left_or_not_found'].includes(result.status)&&!result.isMember){
+   // 'left_or_not_found' is not definitive: Telegram can return that status
+   // for inaccessible users. Do not report them as verified leavers.
+   if(result.status==='left_or_not_found'){unknown++;continue;}
+   const existing=(await db.collection(COLLECTION).doc(String(telegramId)).get()).data() as ExitEntry|undefined;
+   if(existing&&(existing.state==='left'||existing.state==='kicked')){already++;continue;}
+   const owner=(await db.collection('users').doc(id).get()).data() as any;
+   const now=Math.floor(Date.now()/1000);
+   const event={update_id:0,membership_audit:true,chat_member:{
+    chat:{type:'supergroup',username:expectedGroup()},
+    date:now,old_chat_member:{status:'member',user:{id:telegramId}},
+    new_chat_member:{status:result.status,user:{
+     id:telegramId,first_name:String(owner?.firstName||owner?.displayName||owner?.username||id),
+     username:String(owner?.username||'').replace(/^@/,''),
+    }},
+   }};
+   const outcome=await handleClubOwnerGroupExit(event);
+   if(outcome==='recorded')found++;
+   else unknown++;
+  }else if(result.isMember&&!result.status.startsWith('fail_open')&&
+   !['dev_mock_allowed','empty_user_id'].includes(result.status)){
+   const ref=db.collection(COLLECTION).doc(String(telegramId));
+   const previous=(await ref.get()).data() as ExitEntry|undefined;
+   if(previous&&(previous.state==='left'||previous.state==='kicked')){
+    await ref.set({...previous,state:'returned',returnedAt:new Date().toISOString()});
+    returned++;
+   }
+  }else unknown++;
+ }
+ return {total:users.length,checked:ids.length,found,already,returned,unknown,
+  next: start+ids.length<users.length?start+ids.length:null};
 }

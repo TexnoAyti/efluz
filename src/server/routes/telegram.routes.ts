@@ -4,7 +4,7 @@ import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
 import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
 import { randomUUID } from 'node:crypto';
-import {handleClubOwnerGroupExit,listClubOwnerGroupExits,handleGroupLeaverRelease,markGroupLeaverReleaseConfirmation} from '../services/clubOwnerGroupExitService';
+import {handleClubOwnerGroupExit,listClubOwnerGroupExits,handleGroupLeaverRelease,markGroupLeaverReleaseConfirmation,reconcileExistingClubOwnerLeavers} from '../services/clubOwnerGroupExitService';
 import { Router, Request, Response } from 'express';
 import {
   handleTelegramStart,
@@ -179,13 +179,23 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
       if (message?.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
         /^\/group_leavers(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(String(message.text||''))) {
+        const auditMatch=/^\/group_leavers(?:@[A-Za-z0-9_]+)?(?:\s+(?:scan\s*)?(\d{1,5}))?/i.exec(String(message.text||''));
+        const offset=Number(auditMatch?.[1]||0);
+        // At most 10 live Telegram checks per command. Running a scan is
+        // explicit and resumable; /group_leavers alone remains a cheap read.
+        const audit=/\bscan\b/i.test(String(message.text||''))?
+          await reconcileExistingClubOwnerLeavers({start:offset,batchSize:10}):null;
         const owners=await listClubOwnerGroupExits();
         const lines=owners.slice(0,25).map((o,index)=>(index+1)+'. '+o.name+
           (o.username?' (@'+o.username+')':'')+' — '+o.clubs.map(c=>c.clubName).join(', ')+
-          ' — '+o.exitedAt.slice(0,16).replace('T',' '));
-        const text='EFLUZ guruhdan chiqqan klub egalari: '+owners.length+'\n\n'+
-          (lines.length?lines.join('\n'):'Hozircha kuzatuvda qayd etilgan klub egasi yo‘q.')+
-          '\n\nBu ro‘yxat Telegram bot olgan chiqish hodisalariga asoslangan.';
+          ' — '+(o.discoveredBy==='membership_audit'?'Tekshirildi: ':'Chiqdi: ')+o.exitedAt.slice(0,16).replace('T',' '));
+        const text='EFLUZ guruhda bo‘lmagan klub egalari: '+owners.length+'\n\n'+
+          (lines.length?lines.join('\n'):'Hozircha ro‘yxatda klub egasi yo‘q.')+
+          (audit?'\n\nTekshiruv: '+audit.checked+'/'+audit.total+
+            ' (shu qism), yangi topilgan: '+audit.found+
+            ', qaytgan: '+audit.returned+', noaniq: '+audit.unknown+
+            (audit.next!==null?'\nDavom ettirish: /group_leavers scan '+audit.next:'\nTekshiruv yakunlandi.'):'\n\nOldinroq chiqqanlarni tekshirish: /group_leavers scan 0')+
+          '\nTekshiruv Telegramning hozirgi a’zolik holatini ko‘rsatadi; eski chiqish sanalari noma’lum.';
         const sent=await sendTelegramMessage(message.chat.id,text,{parse_mode:null});
         if(!sent.ok)throw new Error('GROUP_LEAVERS_REPORT_NOT_DELIVERED');
         response={ok:true,handled:'group_club_owner_leavers_report'};
