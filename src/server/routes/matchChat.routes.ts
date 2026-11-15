@@ -1,7 +1,7 @@
 import {Router} from 'express';
 import {z} from 'zod';
 import {requireAuth} from '../middleware/authMiddleware';
-import {listMatchChatReports,listMatchChatRoomsForOwner,readMatchChatRoomForOwner,MatchChatError,readMatchChat,readMatchChatAvatar,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,pinMatchChatMessage,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
+import {listMatchChatReports,listMatchChatRoomsForOwner,readMatchChatRoomForOwner,readMatchChatForOwnerByMatch,MatchChatError,readMatchChat,readMatchChatAvatar,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,pinMatchChatMessage,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
 import type {MatchChatKind} from '../../types/matchChat';
 
 export const matchChatRouter=Router();
@@ -9,6 +9,7 @@ const target=z.object({kind:z.enum(['fixture','uzeflife']),matchId:z.string().mi
 const fail=(res:any,e:any)=>res.status(e instanceof MatchChatError?e.statusCode:503).json({ok:false,error:e instanceof MatchChatError?e.message:'Chat vaqtincha ishlamayapti. Qayta urinib ko‘ring.',code:e?.code});
 matchChatRouter.use(requireAuth);
 matchChatRouter.get('/admin/rooms',async(req,res)=>{try{res.json({ok:true,rooms:await listMatchChatRoomsForOwner(req.user!)});}catch(e){fail(res,e);}});
+matchChatRouter.get('/admin/fixture/:kind/:matchId',async(req,res)=>{try{const p=target.parse(req.params);res.json({ok:true,room:await readMatchChatForOwnerByMatch(req.user!,p.kind as MatchChatKind,p.matchId)});}catch(e){fail(res,e);}});
 matchChatRouter.get('/admin/rooms/:roomId',async(req,res)=>{try{res.json({ok:true,room:await readMatchChatRoomForOwner(req.user!,req.params.roomId)});}catch(e){fail(res,e);}});
 matchChatRouter.get('/reports',async(req,res)=>{try{res.json({ok:true,reports:await listMatchChatReports(req.user!)});}catch(e){fail(res,e);}});
 matchChatRouter.post('/reports/:roomId/:reportId/resolve',async(req,res)=>{try{await resolveMatchChatReport(req.user!,req.params.roomId,req.params.reportId);res.json({ok:true});}catch(e){fail(res,e);}});
