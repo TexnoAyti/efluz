@@ -217,7 +217,7 @@ export async function reconcileExistingClubOwnerLeavers(options?:{start?:number;
   const telegramId=Number(id.slice(5));
   if(!Number.isSafeInteger(telegramId))continue;
   const result=await verifyTelegramGroupMembership(telegramId,true);
-  if(['left','kicked','left_or_not_found'].includes(result.status)&&!result.isMember){
+  if(['left','kicked','restricted','left_or_not_found'].includes(result.status)&&!result.isMember){
    // 'left_or_not_found' is not definitive: Telegram can return that status
    // for inaccessible users. Do not report them as verified leavers.
    if(result.status==='left_or_not_found'){unknown++;continue;}
