@@ -339,6 +339,67 @@ Quyidagi tugma orqali ilovani oching va o‘z klubingizni band qiling!`;
 
 let connectionCheck: { expiresAt: number; value: Record<string, unknown> } | undefined;
 let connectionInFlight: Promise<Record<string, unknown>> | undefined;
+
+const PRODUCTION_TELEGRAM_WEBHOOK = 'https://efluz.vercel.app/api/telegram/webhook';
+const PRODUCTION_ALLOWED_UPDATES = [
+  'message', 'edited_message', 'channel_post', 'edited_channel_post',
+  'callback_query', 'pre_checkout_query',
+];
+
+/**
+ * Repair only the fixed EFLUZ production webhook. The bot token and webhook
+ * secret stay inside the serverless runtime and are never returned or logged.
+ */
+export async function repairProductionTelegramWebhook(): Promise<{
+  ok: boolean;
+  changed: boolean;
+  urlMatches: boolean;
+  pendingUpdates: number | null;
+  lastError: string | null;
+}> {
+  if (process.env.VERCEL_ENV !== 'production' || process.env.TELEGRAM_WEBHOOK_REPAIR_ENABLED !== 'true') {
+    throw Object.assign(new Error('WEBHOOK_REPAIR_DISABLED'), { statusCode: 404 });
+  }
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  if (!token || !secret) throw new Error('TELEGRAM_WEBHOOK_CONFIG_REQUIRED');
+
+  const call = async (method: string, body: Record<string, unknown> = {}) => {
+    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json() as any;
+    if (!response.ok || data?.ok !== true) throw new Error(`TELEGRAM_${method.toUpperCase()}_FAILED`);
+    return data.result;
+  };
+
+  let info = await call('getWebhookInfo');
+  const allowed = Array.isArray(info?.allowed_updates) ? info.allowed_updates : [];
+  const allowedComplete = PRODUCTION_ALLOWED_UPDATES.every(update => allowed.includes(update));
+  let changed = false;
+  if (info?.url !== PRODUCTION_TELEGRAM_WEBHOOK || !allowedComplete || info?.has_custom_certificate) {
+    await call('setWebhook', {
+      url: PRODUCTION_TELEGRAM_WEBHOOK,
+      secret_token: secret,
+      allowed_updates: PRODUCTION_ALLOWED_UPDATES,
+      drop_pending_updates: false,
+      max_connections: 40,
+    });
+    changed = true;
+    info = await call('getWebhookInfo');
+  }
+  const urlMatches = info?.url === PRODUCTION_TELEGRAM_WEBHOOK;
+  console.info('[TELEGRAM_WEBHOOK_REPAIR]', JSON.stringify({ changed, urlMatches, pendingUpdates: info?.pending_update_count ?? null, hasError: Boolean(info?.last_error_message) }));
+  return {
+    ok: urlMatches,
+    changed,
+    urlMatches,
+    pendingUpdates: Number.isFinite(info?.pending_update_count) ? Number(info.pending_update_count) : null,
+    lastError: typeof info?.last_error_message === 'string' ? info.last_error_message.slice(0, 240) : null,
+  };
+}
+
 /** Bounded read-only Telegram inspection, cached per process. No messages or webhook changes. */
 export async function inspectTelegramConnection(chatId: number | null, threadId: number | null): Promise<Record<string, unknown>> {
   if (connectionCheck && connectionCheck.expiresAt > Date.now()) return connectionCheck.value;

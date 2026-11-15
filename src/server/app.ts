@@ -13,6 +13,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
 import {notificationDeliveryMode} from './services/notificationDeliveryGate';
 import {scheduleEssentialNotifications} from './services/essentialNotificationPreparation';
+import {repairProductionTelegramWebhook} from './services/telegramBotService';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedMissingStaticCatalog } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
@@ -208,6 +209,18 @@ export function createApp() {
         res.json({ drained: true, mode: deliveryMode });
       }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
+  });
+
+  // Fixed-target, opt-in production recovery. It cannot accept a caller URL
+  // and never exposes Telegram credentials.
+  app.get('/api/internal/telegram-webhook-repair', async (_req, res) => {
+    try {
+      const result = await repairProductionTelegramWebhook();
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(result.ok ? 200 : 503).json(result);
+    } catch (error: any) {
+      res.status(error?.statusCode || 503).json({ error: error?.message || 'WEBHOOK_REPAIR_UNAVAILABLE' });
+    }
   });
 
   app.use(async (req, res, next) => {
