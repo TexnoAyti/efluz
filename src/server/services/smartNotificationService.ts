@@ -39,6 +39,7 @@ interface SmartRecipientStatus {
 
 interface SmartBroadcastRecord {
   leagueReminder?: LeagueReminderGuard;
+  reminderCompetitionId?:string;
   id: string;
   seasonId: string;
   title: string;
@@ -57,6 +58,7 @@ interface SmartBroadcastRecord {
 
 interface SmartQueueJob {
   leagueReminder?: LeagueReminderGuard;
+  reminderCompetitionId?:string;
   jobId: string;
   broadcastId: string;
   userId: string;
@@ -286,8 +288,13 @@ export async function enqueueSmartTelegramNotification(params: {
   replyMarkup?: any;
   deferDrain?:boolean;
   leagueReminder?: LeagueReminderGuard;
+  reminderCompetitionId?:string;
 }): Promise<boolean> {
   const event = inferSmartEvent(params.eventId);
+  // Source-level rule: never enqueue an old-season domestic unfinished match,
+  // including manually retried or newly opened round reminders.
+  if(event==='matchdayOpened' && !unplayedReminderCompetitionAllowed(params.seasonId,params.leagueReminder?.competitionId||params.reminderCompetitionId))
+   return false;
   if (!(await isSmartNotificationEventEnabled(params.seasonId, event))) {
     console.info('[SMART_NOTIFY_DISABLED]', JSON.stringify({ event, eventId: params.eventId, seasonId: params.seasonId }));
     return false;
@@ -307,6 +314,7 @@ export async function enqueueSmartTelegramNotification(params: {
   const now = new Date().toISOString();
   const record: SmartBroadcastRecord = {
     leagueReminder: params.leagueReminder,
+    reminderCompetitionId: params.leagueReminder?.competitionId||params.reminderCompetitionId,
     id: broadcastId,
     seasonId: params.seasonId,
     title: params.title,
@@ -324,6 +332,7 @@ export async function enqueueSmartTelegramNotification(params: {
   };
   const job: SmartQueueJob = {
     leagueReminder: params.leagueReminder,
+    reminderCompetitionId: params.leagueReminder?.competitionId||params.reminderCompetitionId,
     jobId,
     broadcastId,
     userId: recipient?.userId || params.userId,
@@ -390,6 +399,7 @@ async function enqueueMatchdayNotifications(params: {competitionId: string; seas
     const homeUserId = ownerId(fixture, 'home');
     const awayUserId = ownerId(fixture, 'away');
     if (homeUserId) tasks.push(async () => enqueueSmartTelegramNotification({
+      reminderCompetitionId:params.competitionId,
       userId: homeUserId,
       seasonId: params.seasonId,
       eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ''}`,
@@ -398,6 +408,7 @@ async function enqueueMatchdayNotifications(params: {competitionId: string; seas
       replyMarkup: await fixtureReplyMarkup(fixture, awayUserId),
     }));
     if (awayUserId) tasks.push(async () => enqueueSmartTelegramNotification({
+      reminderCompetitionId:params.competitionId,
       userId: awayUserId,
       seasonId: params.seasonId,
       eventId: `matchday-open:${params.competitionId}:${params.matchday}:${fixture.id}:${params.deadlineAt || ''}`,
