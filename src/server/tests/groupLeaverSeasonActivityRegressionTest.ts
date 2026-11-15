@@ -30,11 +30,11 @@ assert.equal(season2?.total,1);
 assert.equal(season1?.owners[0].lastWebAppOpenedAt,old);
 assert.equal(season2?.owners[0].lastWebAppOpenedAt,null,
  'Changing a user profile must never be mislabeled as visiting Web App');
-const verified=await getOrCreateTelegramUserFirestore({id:20202,first_name:'Ikkinchi',username:'ikkinchi'});
+const verified=await getOrCreateTelegramUserFirestore({id:20202,first_name:'Ikkinchi',username:'ikkinchi'},true);
 assert.equal(verified.id,'user-20202');
 const after=(await db.collection('users').doc('user-20202').get()).data() as any;
 assert.ok(Number.isFinite(Date.parse(after.lastWebAppOpenedAt)));
-const again=await getOrCreateTelegramUserFirestore({id:20202,first_name:'Ikkinchi',username:'ikkinchi'});
+const again=await getOrCreateTelegramUserFirestore({id:20202,first_name:'Ikkinchi',username:'ikkinchi'},true);
 assert.equal(again.id,'user-20202');
 assert.equal((await db.collection('users').doc('user-20202').get()).data()?.lastWebAppOpenedAt,
   after.lastWebAppOpenedAt,'Repeated login within 30 minutes must not rewrite visit timestamp');
