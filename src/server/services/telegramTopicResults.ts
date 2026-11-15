@@ -231,9 +231,9 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   const parsedScore=parseAiMatchScore(text);
   const [a,b]=[parsedScore.homeScore,parsedScore.awayScore];
   const c = competitions.find(c => c.id === f.competitionId)!;
-  if (c.type !== 'LEAGUE' && a === b && parsedScore.homePenaltyScore===null && (parsedScore.homeExtraTimeScore??a)===(parsedScore.awayExtraTimeScore??b)) throw Error('CLARIFY:Kubokdagi durangda g‘olib yoki penalti natijasini ham aniqlashtirish kerak. Bu hisobni avtomatik yakuniy deb tasdiqlamayman.');
+  if (c.type !== 'LEAGUE' && c.type !== 'EUROPEAN_LEAGUE_PHASE' && a === b && parsedScore.homePenaltyScore===null && (parsedScore.homeExtraTimeScore??a)===(parsedScore.awayExtraTimeScore??b)) throw Error('CLARIFY:Kubokdagi durangda g‘olib yoki penalti natijasini ham aniqlashtirish kerak. Bu hisobni avtomatik yakuniy deb tasdiqlamayman.');
   const homeScore = firstClub.id === f.homeClubId ? a : b, awayScore = firstClub.id === f.homeClubId ? b : a;
-  if(c.type==='LEAGUE'&&parsedScore.homePenaltyScore!==null)throw Error('CLARIFY:Liga o‘yinida penaltilar bo‘lmaydi.');
+  if((c.type==='LEAGUE'||c.type==='EUROPEAN_LEAGUE_PHASE')&&parsedScore.homePenaltyScore!==null)throw Error('CLARIFY:Liga bosqichi o‘yinida penaltilar bo‘lmaydi.');
   if(declaredWinner){const winner=eligibleClubs.find(c=>String(c.ownerUsername||'').replace(/^@/,'').toLowerCase()===declaredWinner);const left=parsedScore.homePenaltyScore??parsedScore.homeExtraTimeScore??a,right=parsedScore.awayPenaltyScore??parsedScore.awayExtraTimeScore??b;const actual=left===right?null:left>right?firstClub.id:(firstClub.id===f.homeClubId?f.awayClubId:f.homeClubId);if(!winner||winner.id!==actual)throw Error('CLARIFY:Yozilgan g‘olib va hisob mos emas. Hisobni username tartibida tekshiring.');}
   const reverse=firstClub.id!==f.homeClubId;
   const expectedFixture = { competitionId: f.competitionId, homeClubId: f.homeClubId, awayClubId: f.awayClubId, status: f.status, updatedAt: f.updatedAt ?? null };
