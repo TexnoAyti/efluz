@@ -43,7 +43,8 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const [standings, setStandings] = useState<StandingsRow[]>([]);
   const [participants, setParticipants] = useState<any[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  const [activeTab, setActiveTab] = useState<'STANDINGS' | 'BRACKET' | 'QUALIFICATION' | 'MATCHES'>('MATCHES');
+  const [activeTab, setActiveTab] = useState<'STANDINGS' | 'BRACKET' | 'QUALIFICATION'>('STANDINGS');
+  const [leaguePhaseView,setLeaguePhaseView]=useState<'TABLE'|'MATCHES'>('TABLE');
   const [fixturesLoading,setFixturesLoading]=useState(false);
   const [selectedMatchday,setSelectedMatchday]=useState<number|null>(null);
   const [selectedAdminFixture,setSelectedAdminFixture]=useState<Fixture|null>(null);
@@ -107,7 +108,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
         api.getCompetitionStandings(compId, false, europeanSeasonId).catch(() => ({ standings: [] })),
         api.getCompetitionParticipants(compId).catch(() => ({ participants: [] })),
       ];
-      if (loadFix || activeTab === 'BRACKET' || activeTab === 'MATCHES') {
+      if (loadFix || activeTab === 'BRACKET' || (activeTab === 'STANDINGS' && leaguePhaseView === 'MATCHES')) {
         promises.push(api.getCompetitionFixtures(compId, undefined, undefined, false, europeanSeasonId).catch(() => ({ fixtures: [] })));
       }
 
@@ -129,9 +130,9 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
     loadTournamentDetails(comp.id, true);
   };
 
-  const handleTabChange = (tab: 'STANDINGS' | 'BRACKET' | 'MATCHES') => {
+  const handleTabChange = (tab: 'STANDINGS' | 'BRACKET') => {
     setActiveTab(tab);
-    if ((tab === 'BRACKET' || tab === 'MATCHES') && selectedTournament && fixtures.length === 0) {
+    if ((tab === 'BRACKET' || (tab === 'STANDINGS' && leaguePhaseView === 'MATCHES')) && selectedTournament && fixtures.length === 0) {
       setFixturesLoading(true);
       api.getCompetitionFixtures(selectedTournament.id, undefined, undefined, false, europeanSeasonId)
         .then((res) => setFixtures(res.fixtures || []))
@@ -431,10 +432,6 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             >
               {t.knockoutBracket} {fixtures.length > 0 ? `(${fixtures.length})` : ''}
             </button>
-            <button type="button" onClick={()=>handleTabChange('MATCHES')}
-              className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap ${activeTab==='MATCHES'?'bg-white dark:bg-[#111722] text-blue-600 dark:text-blue-400 shadow-sm':'text-slate-600 dark:text-slate-400'}`}>
-              O‘yinlar {fixtures.length?('('+fixtures.length+')'):''}
-            </button>
             <button
               onClick={() => setActiveTab('QUALIFICATION')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
@@ -447,8 +444,19 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             </button>
           </div>
 
+          {/* League phase contains both the standings and the actual fixtures. */}
+          {activeTab==='STANDINGS'&&<div className="space-y-3">
+            <div className="flex gap-1 rounded-2xl p-1 preview-surface bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10" role="group" aria-label="Liga bosqichi">
+              <button type="button" aria-pressed={leaguePhaseView==='TABLE'}
+                onClick={()=>setLeaguePhaseView('TABLE')}
+                className={`flex-1 min-h-[40px] rounded-xl text-xs font-black transition-colors ${leaguePhaseView==='TABLE'?'bg-white dark:bg-[#111722] text-blue-600 dark:text-blue-400 shadow-sm':'text-slate-600 dark:text-slate-400'}`}>Jadval</button>
+              <button type="button" aria-pressed={leaguePhaseView==='MATCHES'}
+                onClick={()=>{setLeaguePhaseView('MATCHES');if(!fixtures.length&&selectedTournament)void loadTournamentDetails(selectedTournament.id,true);}}
+                className={`flex-1 min-h-[40px] rounded-xl text-xs font-black transition-colors ${leaguePhaseView==='MATCHES'?'bg-white dark:bg-[#111722] text-blue-600 dark:text-blue-400 shadow-sm':'text-slate-600 dark:text-slate-400'}`}>O‘yinlar</button>
+            </div>
+          </div>}
           {/* TAB 1: League Phase Table & Participants */}
-          {activeTab === 'STANDINGS' && (
+          {activeTab === 'STANDINGS' && leaguePhaseView==='TABLE' && (
             <div className="space-y-4">
               <div className="preview-surface rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 overflow-hidden shadow-xs">
                 <div className="p-4 sm:p-5 border-b border-slate-200/80 efl-theme-border dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -671,12 +679,12 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
           )}
 
       {/* UEFA League Phase: actual server fixtures, not projected knockout matches */}
-      {activeTab==='MATCHES'&&<section className="space-y-4" aria-label="Yevrokubok uchrashuvlari">
+      {activeTab==='STANDINGS'&&leaguePhaseView==='MATCHES'&&<section className="space-y-4" aria-label="Liga bosqichi uchrashuvlari">
        <header className="flex justify-between items-start gap-3">
-        <div><h3 className="text-base font-black text-slate-900 dark:text-white">Uchrashuvlar · {selectedTournament?.name}</h3>
+        <div><h3 className="text-base font-black text-slate-900 efl-theme-text dark:text-white">Liga bosqichi · {selectedTournament?.name}</h3>
          <p className="text-xs text-slate-500 dark:text-slate-400">Joriy va avvalgi turlar. Hisob, raqib va tasdiqlash holati.</p></div>
         <button type="button" disabled={fixturesLoading||!selectedTournament} onClick={()=>{if(!selectedTournament)return;setFixturesLoading(true);api.getCompetitionFixtures(selectedTournament.id,undefined,undefined,true,europeanSeasonId).then(res=>setFixtures(res.fixtures||[])).catch(e=>setError(e.message||'O‘yinlar yuklanmadi.')).finally(()=>setFixturesLoading(false));}}
-          className="rounded-xl px-3 py-2 text-xs font-bold border border-blue-400/30 text-blue-500 dark:text-blue-300">Yangilash</button>
+          className="rounded-xl px-3 py-2 text-xs font-bold border border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-300">Yangilash</button>
        </header>
        {fixturesLoading&&<p role="status" className="text-xs text-slate-400">O‘yinlar yuklanmoqda…</p>}
        {error&&<p role="alert" className="text-xs text-rose-400">{error}</p>}
@@ -687,7 +695,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {fixtures.filter(f=>selectedMatchday===null||f.matchday===selectedMatchday).sort((a,b)=>a.matchday-b.matchday||a.id.localeCompare(b.id)).map(f=>{
          const participant=!!user&&(f.homeOwnerId===user.id||f.awayOwnerId===user.id||ownedClubs.some(club=>club.id===f.homeClubId||club.id===f.awayClubId));
-         return <article key={f.id} className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#141c2a] p-4 space-y-3">
+         return <article key={f.id} className="preview-surface rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-white efl-theme-surface dark:bg-[#141c2a] p-4 space-y-3 shadow-sm">
           <div className="flex justify-between text-xs text-slate-500"><b>{f.roundName||f.matchday+'-tur'}</b><span>{f.status==='CONFIRMED'?'Tasdiqlangan':f.status==='PENDING_CONFIRMATION'?'Tasdiq kutilmoqda':f.status==='DISPUTED'?'Nizo':'O‘ynalmagan'}</span></div>
           <div className="flex justify-between items-center gap-2 text-center text-sm font-bold text-slate-900 dark:text-white">
            <span className="flex-1 truncate">{f.homeClub?.name||f.homeClubId}</span>
@@ -695,9 +703,9 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
            <span className="flex-1 truncate">{f.awayClub?.name||f.awayClubId}</span>
           </div>
           <div className="flex flex-wrap gap-2">
-           {canUseDangerZone(user)&&<button type="button" onClick={()=>setSelectedAdminFixture(f)} className="px-3 py-2 text-xs rounded-xl bg-blue-600 text-white font-bold">Uchrashuvni ochish</button>}
-           {participant&&<><button type="button" onClick={()=>openMatchChat({kind:'fixture',matchId:f.id})} className="px-3 py-2 text-xs rounded-xl glass-card text-slate-300 font-bold">Chat</button>
-            {f.status!=='CONFIRMED'&&<button type="button" onClick={()=>setSelectedFixtureForSubmit(f)} className="px-3 py-2 text-xs rounded-xl bg-emerald-600 text-white font-bold">Hisob kiritish</button>}</>}
+           {canUseDangerZone(user)&&<button type="button" onClick={()=>setSelectedAdminFixture(f)} className="px-3 py-2 text-xs rounded-xl bg-blue-600 text-white font-bold shadow-sm">Uchrashuvni ochish</button>}
+           {participant&&<><button type="button" onClick={()=>openMatchChat({kind:'fixture',matchId:f.id})} className="px-3 py-2 text-xs rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-300 font-bold">Chat</button>
+            {f.status!=='CONFIRMED'&&<button type="button" onClick={()=>setSelectedFixtureForSubmit(f)} className="px-3 py-2 text-xs rounded-xl bg-emerald-600 text-white font-bold shadow-sm">Hisob kiritish</button>}</>}
           </div>
          </article>;
         })}
