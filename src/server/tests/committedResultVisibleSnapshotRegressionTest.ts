@@ -32,6 +32,8 @@ assert.equal(result.visibleSynced,true,'A committed score must be visible on bot
 assert.deepEqual(result.pendingKeys,[]);
 for(const key of keys){
  const view=await readPostgresSnapshotBundle(getFreshKey(key),getLkgKey(key),getDirtyKey(key));
+ const direct=(await db.collection('durable_read_snapshots').doc(hash(getFreshKey(key))).get()).data();
+ console.info('[RESULT_SNAPSHOT_TEST_DIAGNOSTIC]',JSON.stringify({key,expectedId:hash(getFreshKey(key)),direct:direct?{expiresAt:direct.expiresAt,results:JSON.parse(direct.snapshotJson||'{}').data?.map((f:any)=>({id:f.id,score:f.homeScore}))}:null,visible:view.fresh?.data?.map((f:any)=>({id:f.id,score:f.homeScore}))}));
  assert.equal(view.fresh?.data?.find((f:any)=>f.id===fixture.id)?.homeScore,3);
  assert.equal(view.fresh?.data?.find((f:any)=>f.id===fixture.id)?.awayScore,1);
  assert.equal(view.lkg?.data?.find((f:any)=>f.id===fixture.id)?.homeScore,3);
