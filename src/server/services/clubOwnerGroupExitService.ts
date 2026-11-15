@@ -7,7 +7,7 @@ type OwnerClub={seasonId:string;clubId:string;clubName:string};
 type ExitEntry={
  id:string;telegramId:string;userId:string;name:string;username:string;
  state:ExitState;exitedAt:string;returnedAt?:string;group:string;
- clubs:OwnerClub[];lastUpdateId:number;notifiedAt?:string;
+ clubs:OwnerClub[];lastUpdateId:number;notifiedAt?:string;personalNotifiedAt?:string;
 };
 const COLLECTION='club_owner_group_exits';
 const member=(m:any)=>Boolean(m&&(['creator','administrator','member'].includes(m.status)||(m.status==='restricted'&&m.is_member===true)));
@@ -68,9 +68,22 @@ export async function handleClubOwnerGroupExit(update:any):Promise<'ignored'|'re
  // Record first. If delivery fails, it remains available in the admin endpoint.
  if(PRIMARY_OWNER_TELEGRAM_ID&&process.env.FIREBASE_FORCE_LOCAL_FALLBACK!=='true'){
   const sent=await sendTelegramMessage(PRIMARY_OWNER_TELEGRAM_ID,message,{parse_mode:null});
-  if(sent.ok)await ref.set({...record,notifiedAt:new Date().toISOString()});
+  if(sent.ok)await ref.set({notifiedAt:new Date().toISOString()},{merge:true});
   else console.warn('[CLUB_OWNER_EXIT_ALERT_UNDELIVERED]',{userId});
  }
+ // Direct messages are initiated only for known club owners. Telegram may
+ // reject users who have not started the bot or have blocked it.
+ const personalText='EFLUZ · Guruhga qaytish eslatmasi\\n\\n'+
+  'Siz EFLUZ klub egasi sifatida @'+expectedGroup()+' guruhida hozir a’zo emassiz.\\n'+
+  'Klubingiz: '+detail+'\\n\\n'+
+  'Uchrashuvlar, joriy tur va muhim e’lonlarni o‘tkazib yubormaslik uchun guruhga qayting.\\n'+
+  'Klubingiz avtomatik olib qo‘yilmadi.';
+ const personal=await sendTelegramMessage(telegramId,personalText,{
+  parse_mode:null,
+  reply_markup:{inline_keyboard:[[{text:'Guruhga qaytish',url:'https://t.me/'+expectedGroup()}]]},
+ });
+ if(personal.ok)await ref.set({personalNotifiedAt:new Date().toISOString()},{merge:true});
+ else console.warn('[CLUB_OWNER_EXIT_DM_UNDELIVERED]',{userId,errorCode:personal.error_code||null});
  return 'recorded';
 }
 
