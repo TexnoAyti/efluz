@@ -188,7 +188,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         const owners=await listClubOwnerGroupExits();
         const lines=owners.slice(0,25).map((o,index)=>(index+1)+'. '+o.name+
           (o.username?' (@'+o.username+')':'')+' — '+o.clubs.map(c=>c.clubName).join(', ')+
-          ' — '+o.exitedAt.slice(0,16).replace('T',' '));
+          ' — '+(o.discoveredBy==='membership_audit'?'Tekshirildi: ':'Chiqdi: ')+o.exitedAt.slice(0,16).replace('T',' '));
         const text='EFLUZ guruhda bo‘lmagan klub egalari: '+owners.length+'\n\n'+
           (lines.length?lines.join('\n'):'Hozircha ro‘yxatda klub egasi yo‘q.')+
           (audit?'\n\nTekshiruv: '+audit.checked+'/'+audit.total+
