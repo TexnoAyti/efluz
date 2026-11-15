@@ -139,6 +139,12 @@ export async function handleGroupLeaverRelease(callback:any){
  const club=exit.clubs.find(c=>c.seasonId===control.seasonId&&c.clubId===control.clubId);
  if(!club)fail('Klub xabari mos kelmadi.');
  if(action==='ask')return {status:'confirm' as const,token,clubName:club.clubName};
+ // Recheck membership at the point of the destructive admin action.
+ // On transient Telegram failures, refuse rather than removing a possible
+ // returning owner's club.
+ const membership=await verifyTelegramGroupMembership(control.telegramId,true);
+ if(membership.isMember || !['left','kicked','restricted'].includes(membership.status))
+  fail('A’zolik hozir aniq tasdiqlanmadi yoki egasi guruhga qaytgan. Klub bo‘shatilmadi.');
  const actorId='user-'+String(callback.from.id),at=new Date().toISOString();
  const released=await db.runTransaction(async tx=>{
   const controlDoc=(await tx.get(controlRef)).data() as any;
