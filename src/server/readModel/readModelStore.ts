@@ -2329,6 +2329,45 @@ export async function invalidateClubReadModels(seasonId = 'season-2026-27'): Pro
   await invalidateDataset(ReadModelKeys.adminFixtures(seasonId));
 }
 
+/**
+ * Publish a committed score to the two read models the Mini App actually uses.
+ * This is a pair of bounded single-row PostgreSQL snapshot patches; never
+ * scan fixtures or perform a full standings rebuild on the webhook path.
+ * When a snapshot does not contain the fixture, mark that cache dirty so the
+ * next read rehydrates it from authoritative records.
+ * Failure never undoes the durable fixture write.
+ */
+export async function patchCommittedFixtureVisibility(fixture: Fixture): Promise<{visibleSynced:boolean;pendingKeys:string[]}> {
+  if(!usesPostgresSnapshots())return {visibleSynced:true,pendingKeys:[]};
+  const keys=[
+    ReadModelKeys.adminFixtures(fixture.seasonId),
+    ReadModelKeys.competitionFixtures(fixture.competitionId,fixture.seasonId),
+  ];
+  const pendingKeys:string[]=[];
+  for(const key of keys){
+    const clean=getRawDatasetKey(key);
+    try {
+      const patched=await patchPostgresSnapshot(
+        getFreshKey(clean),getLkgKey(clean),getDirtyKey(clean),
+        fixture,false,86400,'fixture-commit-'+fixture.id+'-'+fixture.updatedAt);
+      if(!patched){
+        pendingKeys.push(key);
+        await invalidateDataset(key);
+      }
+    }catch(error:any){
+      pendingKeys.push(key);
+      console.warn('[RESULT_VISIBLE_SNAPSHOT_PATCH_DEFERRED]',{fixtureId:fixture.id,key,message:String(error?.message||error).slice(0,140)});
+      // A failed patch must never preserve an apparently fresh old score.
+      await invalidateDataset(key).catch(()=>{});
+    }
+    inProcessMemoryCache.delete(clean);
+    inProcessMemoryCache.delete(key);
+  }
+  const {clearPostgresSnapshotCache}=await import('./postgresSnapshots');
+  clearPostgresSnapshotCache();
+  return {visibleSynced:pendingKeys.length===0,pendingKeys};
+}
+
 /** Refresh one changed fixture with one document read instead of scanning the season. */
 export async function refreshChangedFixtureReadModel(fixtureId: string): Promise<void> {
   const document = await getFirestoreDb().collection(COLLECTIONS.FIXTURES).doc(fixtureId).get();
