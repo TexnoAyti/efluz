@@ -54,11 +54,29 @@ export function MatchChatHost(){
  };
  const focusMessage=(id:string)=>{const el=messages.current?.querySelector<HTMLElement>(`[data-chat-message-id="${id}"]`);el?.scrollIntoView({behavior:'smooth',block:'center'});};
  const changePin=async(id:string|null)=>{if(!target||busy)return;setBusy(true);try{setChat(restoreChatView(await matchChatApi.pin(target,id)));setError('');}catch(e:any){setError(e.message||'Xabarni mahkamlab bo‘lmadi.');}finally{setBusy(false);}};
- const load=useCallback(async(silent=false)=>{if(!target||loading.current)return;loading.current=true;if(!silent)setBusy(true);try{const next=restoreChatView(await matchChatApi.read(target));
+ const load=useCallback(async(silent=false)=>{if(!target||loading.current)return;loading.current=true;if(!silent)setBusy(true);try{
+    // Keep the player's exact chat sheet and bubbles for moderation.
+    // Only the data source differs. Owner viewing never acknowledges messages.
+    const adminRoom=target.adminSpectator
+      ? await matchChatApi.adminFixtureRoom(target.kind,target.matchId):null;
+    const raw=target.adminSpectator
+      ? {
+        roomId:adminRoom?.roomId||'',kind:target.kind,matchId:target.matchId,
+        title:adminRoom?.title||target.title||'Uchrashuv chati',
+        subtitle:adminRoom?.subtitle||'O‘yin chati',
+        opponentId:'',opponentName:adminRoom?.participants.map(p=>p.name).join(' ↔ ')||'O‘yinchilar',
+        messages:adminRoom?.messages||[],unreadCount:0,blocked:false,
+        blockedByMe:false,closed:true,reportedByMe:false,canSend:false,
+        quickMessages:[],updatedAt:adminRoom?.updatedAt||new Date().toISOString(),
+        pinnedMessageId:adminRoom?.pinnedMessageId||null,
+        matchInfo:null,
+      }
+      :await matchChatApi.read(target);
+    const next=restoreChatView(raw);
    const latest=next.messages.at(-1)?.id||null;
    if(silent&&!stickToBottom.current&&latest!==lastMessageId.current&&lastMessageId.current!==null)setHasNewMessages(true);
    lastMessageId.current=latest;
-   setChat(next);setError('');const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
+   setChat(next);setError('');if(!target.adminSpectator){const alerts=notifications.filter(n=>!n.isRead&&n.type==='MATCH_CHAT'&&n.data?.kind===target.kind&&n.data?.matchId===target.matchId);for(const alert of alerts)void markNotificationAsRead(alert.id);}}catch(e:any){if(!silent)setError(e.message||'Chat yuklanmadi.');}finally{loading.current=false;if(!silent)setBusy(false);}},[target,notifications,markNotificationAsRead]);
  useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setGameOpen(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),pending=consumePendingMatchChat(),launch=readMatchChatLaunch();if(launch||pending)open(launch||pending!);return stop;},[]);
  useEffect(()=>()=>{if(typingIdleTimer.current!==null)window.clearTimeout(typingIdleTimer.current);},[]);
  useEffect(()=>{if(!target)return;void load();
@@ -117,26 +135,26 @@ export function MatchChatHost(){
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
     <div className="match-chat-avatar"><MessageCircle size={20}/>{avatarBlobs.opponent&&<img key={avatarBlobs.opponent} src={avatarBlobs.opponent} alt="" onError={event=>{event.currentTarget.hidden=true;}}/>}</div>
     <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p><p className="text-[10px] text-amber-300/80">Xavfsizlik va nizolar uchun chatni asosiy admin ko‘rishi mumkin.</p></div>
-    {chat&&isValidTelegramUsername(chat.opponentUsername)&&<button className="match-chat-icon" onClick={()=>openTelegramChat(chat.opponentUsername)} aria-label="Telegram profilini ochish" title="Telegram profilini ochish"><Send size={17}/></button>}
-    <button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>
+    {!target.adminSpectator&&chat&&isValidTelegramUsername(chat.opponentUsername)&&<button className="match-chat-icon" onClick={()=>openTelegramChat(chat.opponentUsername)} aria-label="Telegram profilini ochish" title="Telegram profilini ochish"><Send size={17}/></button>}
+    {target.adminSpectator?<button className="match-chat-icon" onClick={()=>void load()} aria-label="Chatni yangilash"><RefreshCw size={18}/></button>:<button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>}
     <button className="match-chat-icon match-chat-close" onClick={close} aria-label="Yopish"><X size={20}/></button>
     {menu&&chat&&<div className="match-chat-menu">
       <button onClick={()=>void toggleBlock()}>{chat.blockedByMe?<Unlock size={16}/>:<Lock size={16}/>} {chat.blockedByMe?'Blokni olib tashlash':'Chatni bloklash'}</button>
       <button disabled={chat.reportedByMe} onClick={()=>{setReporting(true);setMenu(false);}}><Flag size={16}/> {chat.reportedByMe?'Shikoyat yuborilgan':'Shikoyat qilish'}</button>
     </div>}
    </header>
-   <div className="match-chat-context"><ShieldAlert size={14}/><span>Bu chat faqat <b>{chat?.title||target.title||'shu o‘yin'}</b> raqiblari uchun.</span></div>
+   <div className="match-chat-context"><ShieldAlert size={14}/><span>{target.adminSpectator?'Asosiy admin · faqat o‘qish:':'Bu chat faqat'} <b>{chat?.title||target.title||'shu o‘yin'}</b> {target.adminSpectator?'· xabarlarning o‘qilgan holati o‘zgarmaydi':'raqiblari uchun.'}</span></div>
    {chat?.matchInfo&&<section className="match-chat-match" aria-label="Uchrashuv ma’lumotlari">
      <div className="match-chat-team">{chat.matchInfo.homeLogoUrl&&<img src={chat.matchInfo.homeLogoUrl} alt="" loading="lazy" onError={e=>{e.currentTarget.hidden=true;}}/>}<span>{chat.matchInfo.homeName}</span></div>
      <div className="match-chat-score"><strong>{chat.matchInfo.homeScore===null?'–':chat.matchInfo.homeScore} : {chat.matchInfo.awayScore===null?'–':chat.matchInfo.awayScore}</strong><small>{chat.matchInfo.matchday}-tur · {chat.matchInfo.status==='CONFIRMED'?'Yakunlangan':'O‘yin'}</small></div>
      <div className="match-chat-team">{chat.matchInfo.awayLogoUrl&&<img src={chat.matchInfo.awayLogoUrl} alt="" loading="lazy" onError={e=>{e.currentTarget.hidden=true;}}/>}<span>{chat.matchInfo.awayName}</span></div>
    </section>}
-   {target.kind==='fixture'&&chat?.matchInfo&&<button type="button" className="match-chat-game-launch" onClick={openGame}><Gamepad2 size={17}/><span>Penalti o‘ynash</span><small>Joriy uchrashuv · mashg‘ulot rejimi</small></button>}
+   {!target.adminSpectator&&target.kind==='fixture'&&chat?.matchInfo&&<button type="button" className="match-chat-game-launch" onClick={openGame}><Gamepad2 size={17}/><span>Penalti o‘ynash</span><small>Joriy uchrashuv · mashg‘ulot rejimi</small></button>}
    {chat?.pinnedMessageId&&chat.messages.some(m=>m.id===chat.pinnedMessageId)&&<button className="match-chat-pinned" onClick={()=>focusMessage(chat.pinnedMessageId!)}><Pin size={15}/><span>{chat.messages.find(m=>m.id===chat.pinnedMessageId)?.text}</span><span>Ko‘rish</span></button>}
    {reporting&&<div className="match-chat-report"><label>Shikoyat sababi<textarea maxLength={300} value={reportReason} onChange={e=>setReportReason(e.target.value)} placeholder="Muammoni qisqa va aniq yozing"/></label><div><button onClick={()=>setReporting(false)}>Bekor qilish</button><button className="primary" disabled={busy||reportReason.trim().length<3} onClick={()=>void report()}><Flag size={14}/>Yuborish</button></div></div>}
    <div ref={messages} className="match-chat-messages" aria-live="polite" onScroll={e=>{const el=e.currentTarget;stickToBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<90;if(stickToBottom.current)setHasNewMessages(false);}}>
     {!chat&&busy&&<div className="match-chat-state"><LoaderCircle className="animate-spin"/><p>Chat ochilmoqda…</p></div>}
-    {chat&&!chat.messages.length&&<div className="match-chat-empty"><div><MessageCircle size={28}/></div><h3>Suhbatni boshlang</h3><p>O‘yin vaqtini kelishib oling yoki xona ID yuboring.</p></div>}
+    {chat&&!chat.messages.length&&<div className="match-chat-empty"><div><MessageCircle size={28}/></div><h3>{target.adminSpectator?'Hali yozishma yo‘q':'Suhbatni boshlang'}</h3><p>{target.adminSpectator?'Ushbu uchrashuvda chat ochilmagan yoki xabar yuborilmagan.':'O‘yin vaqtini kelishib oling yoki xona ID yuboring.'}</p></div>}
     {chat?.messages.map((message,index)=>{
       const mine=message.senderId===user?.id,previous=chat.messages[index-1];
       const showDay=!previous||new Date(previous.createdAt).toLocaleDateString('uz-UZ')!==new Date(message.createdAt).toLocaleDateString('uz-UZ');
@@ -152,7 +170,7 @@ export function MatchChatHost(){
          <div className="match-chat-bubble-bottom"><time>{new Date(message.createdAt).toLocaleTimeString('uz-UZ',{timeZone:'Asia/Tashkent',hour:'2-digit',minute:'2-digit'})}{mine&&(readIndex>=index?<CheckCheck size={13} aria-label="O‘qildi"/>:<Check size={12} aria-label="Yuborildi"/>)}</time>
           <div className="match-chat-bubble-actions">
            {chat.canSend&&<button type="button" onClick={()=>{setReplyTo(message.id);input.current?.focus();}} aria-label="Xabarga javob berish" title="Javob berish"><CornerUpLeft size={13}/></button>}
-           <button type="button" disabled={busy} onClick={()=>void changePin(chat.pinnedMessageId===message.id?null:message.id)} aria-label={chat.pinnedMessageId===message.id?'Mahkamdan olish':'Xabarni mahkamlash'} title={chat.pinnedMessageId===message.id?'Mahkamdan olish':'Mahkamlash'}>{chat.pinnedMessageId===message.id?<PinOff size={13}/>:<Pin size={13}/>}</button>
+           {!target.adminSpectator&&<button type="button" disabled={busy} onClick={()=>void changePin(chat.pinnedMessageId===message.id?null:message.id)} aria-label={chat.pinnedMessageId===message.id?'Mahkamdan olish':'Xabarni mahkamlash'} title={chat.pinnedMessageId===message.id?'Mahkamdan olish':'Mahkamlash'}>{chat.pinnedMessageId===message.id?<PinOff size={13}/>:<Pin size={13}/>}</button>}
           </div>
          </div>
        </article>
