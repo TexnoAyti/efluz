@@ -7,6 +7,13 @@ export function getAiRedisClient(signal?: AbortSignal): Redis | null {
   if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.EFL_AI_STATE_BACKEND !== 'redis') return new PostgresAiStore(signal) as unknown as Redis;
   const config = resolveRedisConfig(process.env);
   if (!config) return null;
+  // Vercel preview and production can share one Upstash integration. Never
+  // share their AI state keys. The opt-in must provide a stable namespace.
+  const scoped = process.env.DATABASE_PROVIDER === 'supabase' && process.env.EFL_AI_STATE_BACKEND === 'redis';
+  const scope = String(process.env.EFL_AI_STATE_NAMESPACE || '').trim();
+  if (scoped && !/^[a-zA-Z0-9_-]{3,64}$/.test(scope)) return null;
+  const prefix = scoped ? 'efluz:ai:state:' + scope + ':' : '';
+  const key = (value:unknown):unknown => prefix && typeof value === 'string' ? prefix + value : value;
   const client = new Redis({
     url: config.url,
     token: config.token,
@@ -19,8 +26,22 @@ export function getAiRedisClient(signal?: AbortSignal): Redis | null {
   return new Proxy(client, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
-      if (['get', 'set', 'eval', 'mget'].includes(String(property)) && typeof value === 'function') {
-        return (...args: unknown[]) => withinAiDeadline(signal, () => value.apply(target, args));
+      if (typeof value === 'function' && ['get', 'set', 'eval', 'mget', 'del',
+        'exists', 'expire', 'pexpire', 'ttl', 'pttl', 'incr', 'incrby',
+        'setex', 'getdel'].includes(String(property))) {
+        return (...args: unknown[]) => {
+          let scopedArgs = args;
+          if (prefix) {
+            if (property === 'eval') {
+              scopedArgs = [args[0], Array.isArray(args[1]) ? (args[1] as unknown[]).map(key) : args[1], ...args.slice(2)];
+            } else if (property === 'mget' || property === 'del' || property === 'exists') {
+              scopedArgs = args.map(key);
+            } else {
+              scopedArgs = [key(args[0]), ...args.slice(1)];
+            }
+          }
+          return withinAiDeadline(signal, () => value.apply(target, scopedArgs));
+        };
       }
       return value;
     },
