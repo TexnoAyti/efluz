@@ -126,7 +126,7 @@ export async function handleGroupLeaverRelease(callback:any){
  if(!match)fail('Tugma noto‘g‘ri.');
  const [,action,token]=match,db=getFirestoreDb(),controlRef=db.collection(CONTROLS).doc(token);
  const control=(await controlRef.get()).data() as any;
- if(!control||control.deliveredMessageId!==callback.message.message_id||
+ if(!control||(action==='ask'?control.deliveredMessageId:control.confirmationMessageId)!==callback.message.message_id||
    control.expiresAt<Date.now()||control.consumed)fail('Bu tugma eskirgan yoki ishlatilgan.');
  if(action==='cancel')return {status:'cancelled' as const};
  const exitRef=db.collection(COLLECTION).doc(control.telegramId);
@@ -144,7 +144,7 @@ export async function handleGroupLeaverRelease(callback:any){
   if(!user||!isPrimaryOwner(user.telegramId)||!user.isAdmin||user.isSuspended)
    fail('Asosiy admin tekshiruvi bajarilmadi.');
   if(!controlDoc||controlDoc.consumed||controlDoc.expiresAt<Date.now()||
-    controlDoc.deliveredMessageId!==callback.message.message_id||
+    controlDoc.confirmationMessageId!==callback.message.message_id||
     !exitDoc||exitDoc.state==='returned'||exitDoc.exitedAt!==controlDoc.exitedAt)
    fail('Holat o‘zgargan, qayta tekshiring.');
   const occRef=db.collection('club_occupancies').doc(control.seasonId+'_'+control.clubId);
@@ -187,4 +187,9 @@ export async function handleGroupLeaverRelease(callback:any){
     invalidateUserMembershipReadModel(released.userId,released.seasonId)]);
  }catch(error){console.warn('[GROUP_RELEASE_CACHE_INVALIDATION_FAILED]',error);}
  return {status:'released' as const,clubName:released.clubName};
+}
+
+export async function markGroupLeaverReleaseConfirmation(token:string,messageId:number){
+ if(!/^[a-f0-9]{32}$/.test(token)||!Number.isSafeInteger(messageId))throw new Error('INVALID_GROUP_RELEASE_CONFIRMATION');
+ await getFirestoreDb().collection(CONTROLS).doc(token).set({confirmationMessageId:messageId},{merge:true});
 }
