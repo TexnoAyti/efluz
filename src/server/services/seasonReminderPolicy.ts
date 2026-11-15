@@ -9,9 +9,11 @@ const LEGACY_EUROPEAN_IDS=new Set([
   'comp-europa-league-2026',
 ]);
 export function unplayedReminderCompetitionAllowed(seasonId:string|undefined,competitionId:string|undefined):boolean{
-  if(!seasonId||!competitionId)return false;
-  if(seasonId===LEGACY_SEASON_ID)return LEGACY_EUROPEAN_IDS.has(competitionId);
-  return seasonId===CURRENT_LEAGUE_SEASON_ID;
+  if(!seasonId)return false;
+  if(seasonId===LEGACY_SEASON_ID)return Boolean(competitionId)&&LEGACY_EUROPEAN_IDS.has(competitionId);
+  // Synthetic test seasons and future seasons retain the existing delivery
+  // behavior. This policy restricts *only* retired Season 1 competitions.
+  return true;
 }
 /** Prevent old queued Season 1 non-UEFA backlog jobs from reaching Telegram. */
 export function unplayedReminderJobAllowed(job:{seasonId?:string;leagueReminder?:{competitionId:string;seasonId:string};eventId?:string;competitionId?:string}):boolean{
