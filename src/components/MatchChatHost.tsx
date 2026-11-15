@@ -80,6 +80,7 @@ export function MatchChatHost(){
  useEffect(()=>{const open=(next:MatchChatTarget)=>{stickToBottom.current=true;lastMessageId.current=null;setHasNewMessages(false);setGameOpen(false);setTarget(next);setChat(null);setError('');setText('');setReplyTo(null);typingSentAt.current=0;setMenu(false);};const stop=onMatchChatOpen(open),pending=consumePendingMatchChat(),launch=readMatchChatLaunch();if(launch||pending)open(launch||pending!);return stop;},[]);
  useEffect(()=>()=>{if(typingIdleTimer.current!==null)window.clearTimeout(typingIdleTimer.current);},[]);
  useEffect(()=>{if(!target)return;void load();
+  if(target.adminSpectator)return; // owner refreshes manually; no persistent background DB reads
   const refresh=()=>{if(document.visibilityState==='visible')void load(true);};
   const timer=window.setInterval(refresh,5000);
   document.addEventListener('visibilitychange',refresh);
@@ -89,7 +90,7 @@ export function MatchChatHost(){
  // Telegram userpic hotlinks can fail inside Android Mini Apps. Fetch the
  // participant-only image with the existing signed session and use a local blob URL.
  useEffect(()=>{
-   if(!target||!chat?.roomId)return;
+   if(!target||target.adminSpectator||!chat?.roomId)return;
    let cancelled=false;
    const controller=new AbortController();
    const urls:string[]=[];
@@ -184,7 +185,7 @@ export function MatchChatHost(){
    {chat&&<div className="match-chat-quick" aria-label="Tezkor xabarlar">{chat.quickMessages.map(item=><button key={item} type="button" disabled={busy||!chat.canSend} onClick={()=>void send(item)}>{item}</button>)}</div>}
    {replyTo&&chat?.messages.find(m=>m.id===replyTo)&&<div className="match-chat-reply-draft"><CornerUpLeft size={15}/><span><b>Javob:</b> {chat.messages.find(m=>m.id===replyTo)?.text}</span><button type="button" onClick={()=>setReplyTo(null)} aria-label="Javobni bekor qilish"><X size={16}/></button></div>}
    <footer className="match-chat-compose">
-    {chat?.closed?<div className="match-chat-blocked"><Check size={16}/><span>Natija tasdiqlangan. Chat o‘qish holatida.</span></div>:chat?.blocked?<div className="match-chat-blocked"><Lock size={16}/><span>{chat.blockedByMe?'Siz chatni bloklagansiz.':'Chat vaqtincha bloklangan.'}</span>{chat.blockedByMe&&<button disabled={busy} onClick={()=>void toggleBlock()}>Blokni ochish</button>}</div>:<>
+    {target.adminSpectator?<div className="match-chat-blocked"><ShieldAlert size={16}/><span>Admin kuzatuvi: faqat o‘qish. Xabarlarga aralashib bo‘lmaydi.</span></div>:chat?.closed?<div className="match-chat-blocked"><Check size={16}/><span>Natija tasdiqlangan. Chat o‘qish holatida.</span></div>:chat?.blocked?<div className="match-chat-blocked"><Lock size={16}/><span>{chat.blockedByMe?'Siz chatni bloklagansiz.':'Chat vaqtincha bloklangan.'}</span>{chat.blockedByMe&&<button disabled={busy} onClick={()=>void toggleBlock()}>Blokni ochish</button>}</div>:<>
       <textarea ref={input} rows={1} maxLength={500} value={text} disabled={busy||!chat?.canSend} onChange={e=>{setText(e.target.value);typing(e.target.value);e.currentTarget.style.height='auto';e.currentTarget.style.height=`${Math.min(e.currentTarget.scrollHeight,104)}px`;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&(e.ctrlKey||e.metaKey||window.matchMedia('(pointer:fine)').matches)){e.preventDefault();void send();}}} onBlur={()=>stopTyping()} placeholder="Xabar yozing…" aria-label="Xabar"/>
       <button className="match-chat-send" disabled={busy||!text.trim()||!chat?.canSend} onClick={()=>void send()} aria-label="Xabarni yuborish">{busy?<LoaderCircle size={19} className="animate-spin"/>:<Send size={19}/>}</button>
     </>}
