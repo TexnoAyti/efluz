@@ -244,7 +244,7 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   if((c.type==='LEAGUE'||c.type==='EUROPEAN_LEAGUE_PHASE')&&parsedScore.homePenaltyScore!==null)throw Error('CLARIFY:Liga bosqichi o‘yinida penaltilar bo‘lmaydi.');
   if(declaredWinner){const winner=eligibleClubs.find(c=>String(c.ownerUsername||'').replace(/^@/,'').toLowerCase()===declaredWinner);const left=parsedScore.homePenaltyScore??parsedScore.homeExtraTimeScore??a,right=parsedScore.awayPenaltyScore??parsedScore.awayExtraTimeScore??b;const actual=left===right?null:left>right?firstClub.id:(firstClub.id===f.homeClubId?f.awayClubId:f.homeClubId);if(!winner||winner.id!==actual)throw Error('CLARIFY:Yozilgan g‘olib va hisob mos emas. Hisobni username tartibida tekshiring.');}
   const reverse=firstClub.id!==f.homeClubId;
-  const expectedFixture = { competitionId: f.competitionId, homeClubId: f.homeClubId, awayClubId: f.awayClubId, status: f.status, updatedAt: f.updatedAt ?? null };
+  const expectedFixture = { seasonId: f.seasonId || season, competitionId: f.competitionId, homeClubId: f.homeClubId, awayClubId: f.awayClubId, status: f.status, updatedAt: f.updatedAt ?? null };
   return { fixture: f, expectedFixture, plan: { action: 'result_edit', targetId: f.id, body: { homeScore, awayScore,homeExtraTimeScore:reverse?parsedScore.awayExtraTimeScore:parsedScore.homeExtraTimeScore,awayExtraTimeScore:reverse?parsedScore.homeExtraTimeScore:parsedScore.awayExtraTimeScore,homePenaltyScore:reverse?parsedScore.awayPenaltyScore:parsedScore.homePenaltyScore,awayPenaltyScore:reverse?parsedScore.homePenaltyScore:parsedScore.awayPenaltyScore, status: 'CONFIRMED', expectedFixture } } as AdminPlan };
 }
 
