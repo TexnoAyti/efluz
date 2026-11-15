@@ -4,7 +4,7 @@ import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
 import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
 import { randomUUID } from 'node:crypto';
-import {handleClubOwnerGroupExit,listClubOwnerGroupExits,handleGroupLeaverRelease,markGroupLeaverReleaseConfirmation,reconcileExistingClubOwnerLeavers} from '../services/clubOwnerGroupExitService';
+import {handleClubOwnerGroupExit,listClubOwnerGroupExits,listSeasonGroupedClubOwnerExits,handleGroupLeaverRelease,markGroupLeaverReleaseConfirmation,reconcileExistingClubOwnerLeavers} from '../services/clubOwnerGroupExitService';
 import { Router, Request, Response } from 'express';
 import {
   handleTelegramStart,
@@ -185,12 +185,19 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
         // explicit and resumable; /group_leavers alone remains a cheap read.
         const audit=/\bscan\b/i.test(String(message.text||''))?
           await reconcileExistingClubOwnerLeavers({start:offset,batchSize:10}):null;
-        const owners=await listClubOwnerGroupExits();
-        const lines=owners.slice(0,25).map((o,index)=>(index+1)+'. '+o.name+
-          (o.username?' (@'+o.username+')':'')+' — '+o.clubs.map(c=>c.clubName).join(', ')+
-          ' — '+(o.discoveredBy==='membership_audit'?'Tekshirildi: ':'Chiqdi: ')+o.exitedAt.slice(0,16).replace('T',' '));
-        const text='EFLUZ guruhda bo‘lmagan klub egalari: '+owners.length+'\n\n'+
-          (lines.length?lines.join('\n'):'Hozircha ro‘yxatda klub egasi yo‘q.')+
+        const report=await listSeasonGroupedClubOwnerExits();
+        const formatTime=(value:string|null)=>value?value.slice(0,16).replace('T',' '):'Oldingi kirish noma’lum';
+        const lines=report.bySeason.map(section=>
+          section.label+': '+section.total+'\n'+
+          (section.owners.length?section.owners.slice(0,15).map((o,index)=>
+            (index+1)+'. '+o.name+(o.username?' (@'+o.username+')':'')+
+            ' — '+o.clubs.map(c=>c.clubName).join(', ')+
+            ' — Web App: '+formatTime(o.lastWebAppOpenedAt)+
+            ' — '+(o.discoveredBy==='membership_audit'?'Tekshirildi: ':'Chiqdi: ')+o.exitedAt.slice(0,16).replace('T',' ')
+          ).join('\n'):'Hozircha yo‘q')
+        );
+        const text='EFLUZ guruhda bo‘lmagan klub egalari: '+report.total+'\n\n'+
+          (lines.length?lines.join('\n\n'):'Hozircha ro‘yxatda klub egasi yo‘q.')+
           (audit?'\n\nTekshiruv: '+audit.checked+'/'+audit.total+
             ' (shu qism), yangi topilgan: '+audit.found+
             ', qaytgan: '+audit.returned+', noaniq: '+audit.unknown+
@@ -426,11 +433,16 @@ telegramRouter.get('/status', async (req: Request, res: Response) => {
  * Always calls verifyTelegramGroupMembership with forceRefresh: true.
  */
 /** Admin-only group-leaver report. Unknown prior departures are not inferred. */
-telegramRouter.get('/admin/group-club-owners-left', requireAdmin, async (_req, res) => {
+telegramRouter.get('/admin/group-club-owners-left', requireAdmin, async (req, res) => {
  try {
   res.setHeader('Cache-Control','private, no-store');
-  const owners=await listClubOwnerGroupExits();
-  res.json({ok:true,total:owners.length,owners});
+  const actor=req.user;
+  const authoritative=actor?await getAuthoritativeUserForAuthorization(actor.id):null;
+  if(!authoritative||!isPrimaryOwner(authoritative.telegramId)||!authoritative.isAdmin||authoritative.isSuspended||
+     String(authoritative.telegramId)!==String(actor?.telegramId)){
+    res.status(403).json({ok:false,error:'PRIMARY_OWNER_REQUIRED'});return;
+  }
+  res.json({ok:true,...await listSeasonGroupedClubOwnerExits()});
  } catch (error) {
   console.error('[CLUB_OWNER_LEAVERS_READ_FAILED]',error);
   res.status(503).json({ok:false,error:'GROUP_LEAVERS_UNAVAILABLE'});
