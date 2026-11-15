@@ -83,12 +83,13 @@ import { AdminClubIntegrityPanel } from './admin/AdminClubIntegrityPanel';
 import { AdminClubAdmissionPanel } from './admin/AdminClubAdmissionPanel';
 import { AdminTicketManagementModal } from './customTournaments/AdminTicketManagementModal';
 
+const AdminGroupLeaversPanel=React.lazy(()=>import('./admin/AdminGroupLeaversPanel').then(m=>({default:m.AdminGroupLeaversPanel})));
 const PenaltyStatsPanel=React.lazy(()=>import('./admin/PenaltyStatsPanel').then(m=>({default:m.PenaltyStatsPanel})));
 const SeasonAwardsPanel=React.lazy(()=>import('./SeasonAwardsPanel').then(m=>({default:m.SeasonAwardsPanel})));
 const TeamsAdminView=React.lazy(()=>import('./teamLeaguePreview/TeamLeaguePreviewView').then(m=>({default:m.TeamLeaguePreviewView})));
 const UzeflifeAdminView = React.lazy(() => import('./uzeflife/UzeflifeView').then(m => ({default:m.UzeflifeView})));
 
-type AdminTab = 'chats' | 'penalty_stats' | 'awards' | 'teams' | 'uzeflife' | 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
+type AdminTab = 'group_leavers' | 'chats' | 'penalty_stats' | 'awards' | 'teams' | 'uzeflife' | 'overview' | 'clubs' | 'matches' | 'results' | 'competitions' | 'domestic_cups' | 'european' | 'telegram' | 'telegram_ai' | 'notifications' | 'users' | 'system';
 
 interface PendingFixtureItem extends Fixture {
   submissions?: {
@@ -969,6 +970,10 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
         </button>
 
         {canUseDangerZone&&<>
+          <button type="button" id="tab-admin-group-leavers" onClick={()=>setActiveAdminTab('group_leavers')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[40px] ${activeAdminTab==='group_leavers'?'bg-amber-500 text-slate-950':'glass-card text-slate-300'}`}>
+            Guruhdan chiqqanlar
+          </button>
           <button type="button" id="tab-admin-chats" onClick={()=>setActiveAdminTab('chats')}
             className={`px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap min-h-[40px] ${activeAdminTab==='chats'?'bg-sky-500 text-slate-950':'glass-card text-slate-300'}`}>
             O‘yin chatlari
@@ -1128,6 +1133,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
       {/* 1. OVERVIEW SECTION */}
       {/* ========================================================================= */}
       {activeAdminTab==='teams'&&canSeeTeamPreview(user?.telegramId)&&<React.Suspense fallback={<p role="status">TEAMS yuklanmoqda…</p>}><TeamsAdminView management /></React.Suspense>}
+      {activeAdminTab==='group_leavers'&&canUseDangerZone&&<React.Suspense fallback={<p role="status">Guruh a’zolari yuklanmoqda…</p>}><AdminGroupLeaversPanel/></React.Suspense>}
       {activeAdminTab==='chats'&&canUseDangerZone&&<MatchChatReportsPanel/>}
       {activeAdminTab==='penalty_stats'&&canUseDangerZone&&<React.Suspense fallback={<p role="status">Statistika yuklanmoqda…</p>}><PenaltyStatsPanel/></React.Suspense>}
       {activeAdminTab==='awards'&&<React.Suspense fallback={<p role="status">Mukofotlar yuklanmoqda…</p>}><SeasonAwardsPanel management/></React.Suspense>}
