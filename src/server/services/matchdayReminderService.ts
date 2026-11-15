@@ -253,6 +253,7 @@ export async function notifyOutstandingMatchdayOwners(params: {
         : 'Sizdan hali natija kelmagan.';
 
       tasks.push(async () => deps.enqueue({
+        reminderCompetitionId:params.competitionId,
         userId,
         seasonId: params.seasonId,
         // Prefix intentionally maps this to the existing matchdayOpened smart setting.
