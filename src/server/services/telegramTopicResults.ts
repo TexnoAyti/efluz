@@ -7,7 +7,7 @@ import {getFirestoreDb} from '../firebase/admin';
 import type {UState} from '../../types/uzeflife';
 import { randomBytes, createHash } from 'node:crypto';
 import {UZEFLIFE_RESULT_TOPIC,planUzeflifeTopicResult,prepareUzeflifeTopicResult,rejectUzeflifeTopicResult,authorizeUzeflifeTopicResult,executeUzeflifeTopicResult,uzeflifeMatchFingerprint} from './uzeflifeTopicResults';
-import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
+import { getTopicResultStateClient, withinAiDeadline } from './telegramAiDeadline';
 import { createAiTournamentReader } from './telegramAiDataService';
 import { createAiSnapshotReader } from './telegramAiSnapshotReader';
 import { ReadModelKeys, type OwnerNeutralClub } from '../readModel/readModelStore';
@@ -33,7 +33,7 @@ export type TopicResultProposal = { token: string; chat: number; thread: number;
 export async function listUzeflifeTopicQueue(state:UState){
  const db=getFirestoreDb(),rows=await db.collection('uzeflife_topic_queue').where('status','==','pending').limit(50).get();
  if(rows.empty)return [];
- const client=getAiRedisClient(AbortSignal.timeout(5000));if(!client)return [];
+ const client=getTopicResultStateClient(AbortSignal.timeout(5000));if(!client)return [];
  const entries=await Promise.all(rows.docs.map(async row=>{
   const p=await client.get<TopicResultProposal>(proposalKey(row.id));
   const source=p?await client.get<any>(sourceKey(p.chat,p.thread,p.sourceMessage)):null;
@@ -232,7 +232,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if (!Number.isSafeInteger(actor) || callback.from?.is_bot) {
         await answerTelegramCallback(callback.id, 'Faqat vakolatli admin tasdiqlaydi.', true); return { handled: true, result: 'unauthorized' };
       }
-      const client = getAiRedisClient(signal);
+      const client = getTopicResultStateClient(signal);
       if (!client) throw Error('RESULT_STATE_UNAVAILABLE');
       const [,action,token] = callback.data.split(':');
       const p = await client.get<TopicResultProposal>(proposalKey(token));
@@ -279,7 +279,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     if(forwarded&&!photo)return {handled:false};
     let photoRate:any=null,photoReadSummary='';
     if (!text && !photo && !update.edited_message) return {handled:false};
-    const client = getAiRedisClient(signal);
+    const client = getTopicResultStateClient(signal);
     if (!client) throw Error('RESULT_STATE_UNAVAILABLE');
     const latestKey = sourceKey(m.chat.id,m.message_thread_id,m.message_id);
     if (update.edited_message) await client.eval(TOPIC_RESULT_PUBLISH,[proposalKey('invalidated'),latestKey],['',update.update_id,'1',ttl,JSON.stringify({token:null,updateId:update.update_id})]);
