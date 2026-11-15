@@ -179,11 +179,11 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
       if (message?.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
         /^\/group_leavers(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(String(message.text||''))) {
-        const auditMatch=/^\\/group_leavers(?:@[A-Za-z0-9_]+)?(?:\\s+(?:scan\\s*)?(\\d{1,5}))?/i.exec(String(message.text||''));
+        const auditMatch=/^\/group_leavers(?:@[A-Za-z0-9_]+)?(?:\s+(?:scan\s*)?(\d{1,5}))?/i.exec(String(message.text||''));
         const offset=Number(auditMatch?.[1]||0);
         // At most 10 live Telegram checks per command. Running a scan is
         // explicit and resumable; /group_leavers alone remains a cheap read.
-        const audit=/\\bscan\\b/i.test(String(message.text||''))?
+        const audit=/\bscan\b/i.test(String(message.text||''))?
           await reconcileExistingClubOwnerLeavers({start:offset,batchSize:10}):null;
         const owners=await listClubOwnerGroupExits();
         const lines=owners.slice(0,25).map((o,index)=>(index+1)+'. '+o.name+
