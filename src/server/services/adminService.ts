@@ -81,6 +81,20 @@ export async function editFixtureResult(
   }
 ): Promise<{ success: boolean; message: string; fixture: Fixture; pendingSync?: boolean }> {
   const result = await adminEditFixtureResultFirestore(adminUserId, adminUsername, fixtureId, params);
+  if ((result as any).derivedPending && !result.pendingSync && process.env.DATABASE_PROVIDER==='supabase') {
+    // The result has already been committed. Update the exact visible
+    // snapshot rows before replying to Telegram; derived standings remain
+    // on their existing durable background job.
+    try {
+      const {patchCommittedFixtureVisibility}=await import('../readModel/readModelStore');
+      const state=await patchCommittedFixtureVisibility(result.fixture);
+      (result as any).webAppRefreshPending=!state.visibleSynced;
+      console.info('[RESULT_WEBAPP_VISIBILITY]',{fixtureId,visibleSynced:state.visibleSynced,pending:state.pendingKeys.length});
+    } catch (error:any) {
+      (result as any).webAppRefreshPending=true;
+      console.warn('[RESULT_WEBAPP_VISIBILITY_DEFERRED]',{fixtureId,message:String(error?.message||error).slice(0,150)});
+    }
+  }
   if (!(result as any).derivedPending) await refreshDerivedCompetitionState(result.fixture.competitionId, result.fixture.seasonId || 'season-2026-27').catch(() => {});
   return result;
 }
