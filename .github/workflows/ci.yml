@@ -44,6 +44,14 @@ jobs:
           bun run build
           node scripts/verify-startup-build.mjs
 
+      - name: Verify season-scoped notifications
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: |
+          node scripts/run-isolated-test.mjs src/server/tests/seasonReminderPolicyRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/leagueBacklogReminderRegressionTest.ts
+
       - name: Run Vercel Self-Check & Verification Suites
         timeout-minutes: 8
         env:

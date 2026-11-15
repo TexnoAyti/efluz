@@ -4,6 +4,7 @@ import {
   redisGetFresh,
 } from '../readModel/readModelStore';
 import { enqueueSmartTelegramNotification } from './smartNotificationService';
+import {unplayedReminderCompetitionAllowed} from './seasonReminderPolicy';
 
 const RESULT_TOPIC_BY_LEAGUE: Record<string, string> = {
   'league-premier-league': 'https://t.me/efleagueuz/2',
@@ -46,6 +47,7 @@ function resultTopicUrl(fixture: Fixture): string {
   const competition = `${f.competitionId || ''} ${f.competitionName || ''}`.toLowerCase();
   if (competition.includes('super')) return 'https://t.me/efleagueuz/2335';
   if (competition.includes('champions') || competition.includes('ucl')) return 'https://t.me/efleagueuz/7';
+  if (competition.includes('europa') || competition.includes('uel')) return 'https://t.me/efleagueuz/11429';
   if (
     competition.includes('cup') ||
     competition.includes('pokal') ||
@@ -180,6 +182,9 @@ export async function notifyOutstandingMatchdayOwners(params: {
   fixtureIds?: string[];
   deadlineAt?: string | null;
 }, deps: MatchdayReminderDependencies = reminderDependencies): Promise<MatchdayReminderResult> {
+  // No manual request may revive historical Season 1 domestic reminders.
+  if(!unplayedReminderCompetitionAllowed(params.seasonId,params.competitionId))
+   throw new Error('REMINDER_COMPETITION_INACTIVE: Birinchi mavsumdan faqat UCL va UEL o‘yinlari uchun eslatma yuboriladi.');
   const from = params.fromMatchday ?? params.matchday;
   if (!Number.isInteger(from) || !Number.isInteger(params.matchday) || from < 1 || params.matchday < from || params.matchday > 100 || params.fixtureIds && (!Array.isArray(params.fixtureIds) || !params.fixtureIds.length || params.fixtureIds.length > 1000 || params.fixtureIds.some(id=>typeof id !== 'string' || !id))) throw new Error('Eslatma uchun tur oralig‘i yoki o‘yinlar ro‘yxati noto‘g‘ri.');
   const selected = params.fixtureIds ? new Set(params.fixtureIds) : null;
@@ -248,6 +253,7 @@ export async function notifyOutstandingMatchdayOwners(params: {
         : 'Sizdan hali natija kelmagan.';
 
       tasks.push(async () => deps.enqueue({
+        reminderCompetitionId:params.competitionId,
         userId,
         seasonId: params.seasonId,
         // Prefix intentionally maps this to the existing matchdayOpened smart setting.

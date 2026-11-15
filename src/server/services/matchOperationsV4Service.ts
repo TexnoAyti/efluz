@@ -19,6 +19,7 @@ import {
   resolveDispute,
 } from './adminService';
 import { enqueueSmartTelegramNotification } from './smartNotificationService';
+import {unplayedReminderCompetitionAllowed} from './seasonReminderPolicy';
 import { telegramMiniAppButton } from './telegramMiniAppButton';
 import { quotaCachedRead, invalidateQuotaRead } from './quotaReadCache';
 
@@ -305,7 +306,7 @@ function reminderKind(deadline: any): '24h' | '6h' | 'overdue' | null {
 
 async function sendDeadlineReminder(deadline: any, kind: '24h' | '6h' | 'overdue') {
   const fixture: any = await getFixtureByIdFirestore(deadline.fixtureId);
-  if (!fixture || ['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(fixture.status))) return { attempted: false, queued: 0, failed: 0 };
+  if (!fixture || !unplayedReminderCompetitionAllowed(String(fixture.seasonId||deadline.seasonId||''),String(fixture.competitionId||'')) || ['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(fixture.status))) return { attempted: false, queued: 0, failed: 0 };
   const owners = [ownerId(fixture, 'home'), ownerId(fixture, 'away')].filter(Boolean) as string[];
   if (owners.length === 0) return { attempted: false, queued: 0, failed: 0 };
   const competition = fixture.competitionName || fixture.competitionId || 'EFL UZ';
@@ -314,6 +315,7 @@ async function sendDeadlineReminder(deadline: any, kind: '24h' | '6h' | 'overdue
   const body = `<b>${competition}</b> • ${fixture.roundName || `Matchday ${fixture.matchday || 1}`}\n\n⚽ <b>${fixtureClubName(fixture, 'home')}</b> vs <b>${fixtureClubName(fixture, 'away')}</b>\n⏳ Deadline: <b>${deadlineText}</b>\n\n${kind === 'overdue' ? 'Muddat tugadi. Natijani yuboring yoki no-show holatini EFL UZ ichida belgilang.' : 'O‘yinni kelishib, muddatdan oldin natijani yuboring.'}`;
   const results: PromiseSettledResult<boolean>[] = [];
   for (const userId of [...new Set(owners)]) results.push(...await Promise.allSettled([enqueueSmartTelegramNotification({
+    reminderCompetitionId:fixture.competitionId,
     userId,
     seasonId: deadline.seasonId || 'season-2026-27',
     eventId: `matchday-open:deadline:${kind}:${deadline.fixtureId}:${deadline.deadlineAt}`,
