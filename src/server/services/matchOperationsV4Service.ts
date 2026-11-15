@@ -19,6 +19,7 @@ import {
   resolveDispute,
 } from './adminService';
 import { enqueueSmartTelegramNotification } from './smartNotificationService';
+import {unplayedReminderCompetitionAllowed} from './seasonReminderPolicy';
 import { telegramMiniAppButton } from './telegramMiniAppButton';
 import { quotaCachedRead, invalidateQuotaRead } from './quotaReadCache';
 
@@ -305,7 +306,7 @@ function reminderKind(deadline: any): '24h' | '6h' | 'overdue' | null {
 
 async function sendDeadlineReminder(deadline: any, kind: '24h' | '6h' | 'overdue') {
   const fixture: any = await getFixtureByIdFirestore(deadline.fixtureId);
-  if (!fixture || ['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(fixture.status))) return { attempted: false, queued: 0, failed: 0 };
+  if (!fixture || !unplayedReminderCompetitionAllowed(String(fixture.seasonId||deadline.seasonId||''),String(fixture.competitionId||'')) || ['CONFIRMED', 'CANCELLED', 'POSTPONED'].includes(String(fixture.status))) return { attempted: false, queued: 0, failed: 0 };
   const owners = [ownerId(fixture, 'home'), ownerId(fixture, 'away')].filter(Boolean) as string[];
   if (owners.length === 0) return { attempted: false, queued: 0, failed: 0 };
   const competition = fixture.competitionName || fixture.competitionId || 'EFL UZ';
