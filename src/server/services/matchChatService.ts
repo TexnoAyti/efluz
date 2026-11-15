@@ -183,3 +183,17 @@ export async function readMatchChatRoomForOwner(user:User,roomIdValue:string){
   updatedAt:room.updatedAt,blocked:(room.blockedBy||[]).length>0,
   reports:(room.reports||[]).filter(r=>r.status==='OPEN').map(r=>({id:r.id,reason:r.reason,createdAt:r.createdAt}))};
 }
+
+/** Read a room by its visible fixture card, without creating a room or marking
+ * either opponent's messages as read. Existing participant messages are unchanged.
+ */
+export async function readMatchChatForOwnerByMatch(user:User,kind:MatchChatKind,matchId:string){
+ const account=await currentAccount(user);
+ if(!account.isAdmin||!isPrimaryOwner(account.telegramId))
+  throw new MatchChatError('Faqat asosiy admin o‘yin chatini kuzata oladi.',403,'PRIMARY_OWNER_REQUIRED');
+ const validMatchId=cleanId(matchId);
+ const db=getFirestoreDb();
+ const snap=await db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).where('kind','==',kind).where('matchId','==',validMatchId).limit(1).get();
+ if(snap.empty)return null;
+ return readMatchChatRoomForOwner(user,snap.docs[0].id);
+}
