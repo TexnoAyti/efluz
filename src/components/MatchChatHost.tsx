@@ -116,7 +116,7 @@ export function MatchChatHost(){
    <header className="match-chat-header">
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
     <div className="match-chat-avatar"><MessageCircle size={20}/>{avatarBlobs.opponent&&<img key={avatarBlobs.opponent} src={avatarBlobs.opponent} alt="" onError={event=>{event.currentTarget.hidden=true;}}/>}</div>
-    <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p></div>
+    <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p><p className="text-[10px] text-amber-300/80">Xavfsizlik va nizolar uchun chatni asosiy admin ko‘rishi mumkin.</p></div>
     {chat&&isValidTelegramUsername(chat.opponentUsername)&&<button className="match-chat-icon" onClick={()=>openTelegramChat(chat.opponentUsername)} aria-label="Telegram profilini ochish" title="Telegram profilini ochish"><Send size={17}/></button>}
     <button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>
     <button className="match-chat-icon match-chat-close" onClick={close} aria-label="Yopish"><X size={20}/></button>

@@ -53,3 +53,15 @@ export interface MatchChatAdminReport {
   blocked: boolean;
   messages: MatchChatMessage[];
 }
+
+export interface MatchChatAdminRoomSummary {
+ roomId:string;kind:MatchChatKind;matchId:string;title:string;subtitle:string;
+ participantNames:string[];messageCount:number;lastMessageAt:string|null;updatedAt:string;
+ openReports:number;blocked:boolean;
+}
+export interface MatchChatAdminRoomDetail {
+ roomId:string;kind:MatchChatKind;matchId:string;title:string;subtitle:string;
+ participants:Array<{name:string;username:string|null}>;
+ messages:MatchChatMessage[];pinnedMessageId:string|null;updatedAt:string;blocked:boolean;
+ reports:Array<{id:string;reason:string;createdAt:string}>;
+}
