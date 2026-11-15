@@ -1,8 +1,8 @@
 {
-  "asOf": "2026-11-08",
+  "asOf": "2026-11-15",
   "source": "efl_runtime.documents:production read-only inventory",
-  "note": "Read-only counts from a single SQL statement on 2026-11-08; NOT a consistent export, live data keeps changing. New result_refresh_jobs is quarantined for review. Review collections and runtime sessions must never be blindly imported. Newly observed archive/draft roots are explicitly quarantined for review; they are not projected into active normalized tables.",
-  "observedTotal": 26763,
+  "note": "Baseline inventory plus read-only classification of collections first observed on 2026-11-15. Live data keeps changing. Active penalty exhibition state is preserved in the verified raw archive; Season 2 rollback backups are quarantined for review and are never projected into active normalized tables.",
+  "observedTotal": 27755,
   "collections": [
     {
       "collection": "ai_community_sources",
@@ -194,6 +194,11 @@
       "observedDocuments": 3055
     },
     {
+      "collection": "penalty_exhibition_races",
+      "handling": "preserve",
+      "observedDocuments": 6
+    },
+    {
       "collection": "player_trophies",
       "handling": "preserve",
       "observedDocuments": 3
@@ -244,6 +249,26 @@
       "collection": "season2_retention_decisions",
       "handling": "preserve",
       "observedDocuments": 5
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_competitions",
+      "handling": "review",
+      "observedDocuments": 5
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_durable_read_snapshots",
+      "handling": "review",
+      "observedDocuments": 14
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_fixtures",
+      "handling": "review",
+      "observedDocuments": 876
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_matchday_locks",
+      "handling": "review",
+      "observedDocuments": 91
     },
     {
       "collection": "seasons",
@@ -394,6 +419,6 @@
     }
   ],
   "observedGeneration": null,
-  "observedCollectionPaths": 74,
-  "observedRootCollections": 72
+  "observedCollectionPaths": 79,
+  "observedRootCollections": 77
 }
