@@ -390,6 +390,7 @@ export async function repairProductionTelegramWebhook(): Promise<{
     info = await call('getWebhookInfo');
   }
   const urlMatches = info?.url === PRODUCTION_TELEGRAM_WEBHOOK;
+  if (changed) connectionCheck = undefined; // avoid stale membership diagnostics
   console.info('[TELEGRAM_WEBHOOK_REPAIR]', JSON.stringify({ changed, urlMatches, pendingUpdates: info?.pending_update_count ?? null, hasError: Boolean(info?.last_error_message) }));
   return {
     ok: urlMatches,
