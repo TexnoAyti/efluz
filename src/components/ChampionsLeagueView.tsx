@@ -8,6 +8,7 @@ import { useI18n } from '../i18n';
 import { api } from '../lib/api';
 import { Competition, StandingsRow, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
+import {CompetitionMark} from './CompetitionMark';
 import { TournamentBracket } from './TournamentBracket';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import {AdminFixtureQuickActions} from './AdminFixtureQuickActions';
@@ -318,7 +319,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const isLiveProjection = actualKnockoutFixtures.length === 0 && projectedKnockoutFixtures.length > 0;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
+    <div className="efl-uefa-view space-y-5 animate-in fade-in duration-300 pb-20">
       {/* Category Quick Switcher Hub */}
       {!canUseDangerZone(user) && onNavigateTab && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -346,14 +347,14 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       )}
 
       {/* Header Banner */}
-      <div className="preview-europe-hero preview-surface relative overflow-hidden rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 p-5 sm:p-6 shadow-xs">
+      <div className="glass-panel relative overflow-hidden rounded-2xl border border-white/[0.09] p-5 sm:p-6 shadow-xl">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 efl-theme-blue dark:text-blue-400 text-[10px] font-black uppercase tracking-wider mb-2">
-              <Sparkles className="w-3 h-3" />
-              <span>{t.uefaClubCompetitions}</span>
+              <CompetitionMark competition={selectedTournament||undefined} className="h-4 w-4"/>
+              <span>EFLUZ · {t.uefaClubCompetitions}</span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 efl-theme-text dark:text-white tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               {selectedTournament?.name || t.uefaChampionsLeague}
             </h1>
             <p className="text-xs text-slate-500 efl-theme-text-2 dark:text-slate-400 mt-1 max-w-xl">
@@ -372,10 +373,10 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 min-h-[36px] ${
                     isSelected
                       ? 'bg-blue-600 text-white font-black shadow-xs'
-                      : 'bg-slate-100 efl-theme-surface-2 dark:bg-[#171e2c] border border-slate-200/80 efl-theme-border dark:border-white/10 text-slate-700 efl-theme-text-2 dark:text-slate-300 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
+                      : 'glass-card border border-white/[0.08] text-slate-300 hover:text-white'
                   }`}
                 >
-                  <Trophy className={`w-3.5 h-3.5 ${isSelected ? 'text-white efl-theme-text' : 'text-blue-500 efl-theme-blue'}`} />
+                  <CompetitionMark competition={comp} className="h-4 w-4"/>
                   <span>{comp.name}</span>
                 </button>
               );
@@ -411,13 +412,13 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       ) : (
         <>
           {/* Segmented Sub-navigation Tabs */}
-          <div className="p-1 rounded-2xl bg-[#eef1f5] efl-theme-surface-2 dark:bg-[#171e2c] border border-[#e2e6ec] efl-theme-border dark:border-white/10 flex items-center gap-1 overflow-x-auto scrollbar-none shadow-xs">
+          <div className="glass-panel p-1 rounded-2xl border border-white/[0.08] flex items-center gap-1 overflow-x-auto scrollbar-none">
             <button
               onClick={() => handleTabChange('STANDINGS')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'STANDINGS'
-                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] efl-theme-blue dark:text-[#3b82f6] shadow-xs font-black'
-                  : 'text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
+                  ? 'bg-slate-800 text-white shadow-sm font-black'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               {t.leaguePhase} (32)
@@ -426,8 +427,8 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               onClick={() => handleTabChange('BRACKET')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'BRACKET'
-                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] efl-theme-blue dark:text-[#3b82f6] shadow-xs font-black'
-                  : 'text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
+                  ? 'bg-slate-800 text-white shadow-sm font-black'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               {t.knockoutBracket} {fixtures.length > 0 ? `(${fixtures.length})` : ''}
@@ -436,8 +437,8 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               onClick={() => setActiveTab('QUALIFICATION')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                 activeTab === 'QUALIFICATION'
-                  ? 'bg-white efl-theme-surface dark:bg-[#111722] text-[#2563eb] efl-theme-blue dark:text-[#3b82f6] shadow-xs font-black'
-                  : 'text-slate-600 efl-theme-text-2 dark:text-slate-400 hover:text-slate-900 efl-theme-hover-text dark:hover:text-white'
+                  ? 'bg-slate-800 text-white shadow-sm font-black'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               {t.qualificationRules}
@@ -446,19 +447,19 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
 
           {/* League phase contains both the standings and the actual fixtures. */}
           {activeTab==='STANDINGS'&&<div className="space-y-3">
-            <div className="flex gap-1 rounded-2xl p-1 preview-surface bg-[#eef1f5] dark:bg-[#171e2c] border border-[#e2e6ec] dark:border-white/10" role="group" aria-label="Liga bosqichi">
+            <div className="flex gap-1 rounded-2xl p-1 glass-panel border border-white/[0.08]" role="group" aria-label="Liga bosqichi">
               <button type="button" aria-pressed={leaguePhaseView==='TABLE'}
                 onClick={()=>setLeaguePhaseView('TABLE')}
-                className={`flex-1 min-h-[40px] rounded-xl text-xs font-black transition-colors ${leaguePhaseView==='TABLE'?'bg-white dark:bg-[#111722] text-blue-600 dark:text-blue-400 shadow-sm':'text-slate-600 dark:text-slate-400'}`}>Jadval</button>
+                className={`flex-1 min-h-[40px] rounded-xl text-xs font-black transition-colors ${leaguePhaseView==='TABLE'?'bg-slate-800 text-white shadow-sm':'text-slate-400'}`}>Jadval</button>
               <button type="button" aria-pressed={leaguePhaseView==='MATCHES'}
                 onClick={()=>{setLeaguePhaseView('MATCHES');if(!fixtures.length&&selectedTournament)void loadTournamentDetails(selectedTournament.id,true);}}
-                className={`flex-1 min-h-[40px] rounded-xl text-xs font-black transition-colors ${leaguePhaseView==='MATCHES'?'bg-white dark:bg-[#111722] text-blue-600 dark:text-blue-400 shadow-sm':'text-slate-600 dark:text-slate-400'}`}>O‘yinlar</button>
+                className={`flex-1 min-h-[40px] rounded-xl text-xs font-black transition-colors ${leaguePhaseView==='MATCHES'?'bg-slate-800 text-white shadow-sm':'text-slate-400'}`}>O‘yinlar</button>
             </div>
           </div>}
           {/* TAB 1: League Phase Table & Participants */}
           {activeTab === 'STANDINGS' && leaguePhaseView==='TABLE' && (
             <div className="space-y-4">
-              <div className="preview-surface rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 overflow-hidden shadow-xs">
+              <div className="glass-panel rounded-2xl border border-white/[0.08] overflow-hidden shadow-sm">
                 <div className="p-4 sm:p-5 border-b border-slate-200/80 efl-theme-border dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="text-xs sm:text-sm font-black text-slate-900 efl-theme-text dark:text-white uppercase tracking-wider flex items-center gap-2">
@@ -695,7 +696,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {fixtures.filter(f=>selectedMatchday===null||f.matchday===selectedMatchday).sort((a,b)=>a.matchday-b.matchday||a.id.localeCompare(b.id)).map(f=>{
          const participant=!!user&&(f.homeOwnerId===user.id||f.awayOwnerId===user.id||ownedClubs.some(club=>club.id===f.homeClubId||club.id===f.awayClubId));
-         return <article key={f.id} className="preview-surface rounded-2xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-white efl-theme-surface dark:bg-[#141c2a] p-4 space-y-3 shadow-sm">
+         return <article key={f.id} className="glass-panel rounded-2xl border border-white/[0.08] p-4 space-y-3 shadow-sm">
           <div className="flex justify-between text-xs text-slate-500"><b>{f.roundName||f.matchday+'-tur'}</b><span>{f.status==='CONFIRMED'?'Tasdiqlangan':f.status==='PENDING_CONFIRMATION'?'Tasdiq kutilmoqda':f.status==='DISPUTED'?'Nizo':'O‘ynalmagan'}</span></div>
           <div className="flex justify-between items-center gap-2 text-center text-sm font-bold text-slate-900 dark:text-white">
            <span className="flex-1 truncate">{f.homeClub?.name||f.homeClubId}</span>
