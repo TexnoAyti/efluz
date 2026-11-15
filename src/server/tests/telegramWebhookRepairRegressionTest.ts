@@ -27,6 +27,7 @@ try {
   assert.equal(set.url, 'https://efluz.vercel.app/api/telegram/webhook');
   assert.equal(set.drop_pending_updates, false);
   assert.ok(set.allowed_updates.includes('callback_query'));
+  assert.ok(set.allowed_updates.includes('chat_member'),'Club departure events must reach webhook');
   assert.ok(!JSON.stringify(result).includes(process.env.TELEGRAM_BOT_TOKEN));
   assert.ok(!JSON.stringify(result).includes(process.env.TELEGRAM_WEBHOOK_SECRET));
   console.log('PASS production webhook repair is fixed-target, preserves pending updates and returns no credentials');
