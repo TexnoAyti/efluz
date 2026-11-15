@@ -14,7 +14,8 @@ const member=(m:any)=>Boolean(m&&(['creator','administrator','member'].includes(
 const departing=(m:any)=>m?.status==='left'||m?.status==='kicked'||(m?.status==='restricted'&&m?.is_member===false);
 const expectedGroup=()=>String(process.env.TELEGRAM_GROUP_USERNAME||'@efleagueuz').replace(/^@/,'').toLowerCase();
 function eventData(update:any){
- const change=update?.chat_member, service=update?.message?.left_chat_member ? update.message : null;
+ const change=update?.chat_member;
+ const service=update?.message?.left_chat_member||update?.message?.new_chat_members?.length ? update.message : null;
  const chat=change?.chat||service?.chat;
  if(!chat||String(chat.username||'').toLowerCase()!==expectedGroup() || !['group','supergroup'].includes(chat.type))return null;
  if(change){
@@ -25,9 +26,9 @@ function eventData(update:any){
   if(!member(old)&&member(next))return {user,state:'returned' as const,at:change.date};
   return null;
  }
- const user=service?.left_chat_member;
+ const user=service?.left_chat_member||service?.new_chat_members?.[0];
  if(!Number.isSafeInteger(user?.id)||user.is_bot)return null;
- return {user,state:'left' as const,at:service.date};
+ return {user,state:service?.left_chat_member?'left' as const:'returned' as const,at:service.date};
 }
 
 export async function handleClubOwnerGroupExit(update:any):Promise<'ignored'|'recorded'|'returned'|'not_owner'>{
