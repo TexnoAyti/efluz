@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
 import {initialUState} from '../services/uzeflifeService';
-import {listMatchChatReports,readMatchChat,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
+import {listMatchChatReports,listMatchChatRoomsForOwner,readMatchChatForOwnerByMatch,readMatchChat,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
 import type {User} from '../../types';
 
 await initDatabase();
@@ -28,6 +28,19 @@ let reports=await listMatchChatReports(admin);assert.equal(reports.length,1);ass
 await setMatchChatAdminBlock(admin,reports[0].roomId,true);reports=await listMatchChatReports(admin);assert.equal(reports[0].blocked,true);await assert.rejects(sendMatchChatMessage('fixture',fixtureId,first,'admin blocked'),(error:any)=>error.code==='CHAT_BLOCKED');
 await setMatchChatAdminBlock(admin,reports[0].roomId,false);await resolveMatchChatReport(admin,reports[0].roomId,reports[0].reportId);assert.equal((await listMatchChatReports(admin)).length,0);
 
+// The primary owner can inspect any active match chat from its fixture card,
+ // but reading must not acknowledge participant messages or mutate the room.
+const primary=account('user-5209126900',true);
+await db.collection('users').doc(primary.id).set(primary);
+const spectator=await readMatchChatForOwnerByMatch(primary,'fixture',fixtureId);
+assert.equal(spectator?.messages.length,3);
+assert.ok((await listMatchChatRoomsForOwner(primary)).some(room=>room.matchId===fixtureId));
+await assert.rejects(readMatchChatForOwnerByMatch(admin,'fixture',fixtureId),(error:any)=>error.code==='PRIMARY_OWNER_REQUIRED');
+await assert.rejects(readMatchChatForOwnerByMatch(outsider,'fixture',fixtureId),(error:any)=>error.code==='PRIMARY_OWNER_REQUIRED');
+const before=await db.collection('match_chat_rooms').doc(spectator!.roomId).get();
+await readMatchChatForOwnerByMatch(primary,'fixture',fixtureId);
+const after=await db.collection('match_chat_rooms').doc(spectator!.roomId).get();
+assert.deepEqual(after.data(),before.data(),'Owner reading chat cannot mutate participant state');
 await db.collection('club_occupancies').doc(`${seasonId}_chat-home`).update({userId:replacement.id});
 await assert.rejects(readMatchChat('fixture',fixtureId,first),(error:any)=>error.code==='NOT_MATCH_PARTICIPANT');
 const replacementView=await readMatchChat('fixture',fixtureId,replacement);assert.equal(replacementView.messages.length,0,'A transferred club never exposes the former owner chat');
