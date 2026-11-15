@@ -416,10 +416,11 @@ export async function inspectTelegramConnection(chatId: number | null, threadId:
     const member = me.ok && chatId ? await read('getChatMember', { chat_id: chatId, user_id: me.result.id }) : null;
     const channelMember = me.ok ? await read('getChatMember', { chat_id: '@efl_uz', user_id: me.result.id }) : null;
     const allowed = webhook.result?.allowed_updates;
+    const membershipUpdatesEnabled = webhook.ok === true ? Array.isArray(allowed) && allowed.includes('chat_member') : null;
     const channelSource = { accessible: channel.ok === true, memberStatus: channelMember?.result?.status || null,
       receivesPosts: webhook.ok ? !allowed?.length || allowed.includes('channel_post') : null,
       receivesEdits: webhook.ok ? !allowed?.length || allowed.includes('edited_channel_post') : null };
-    const result = { botUsername: me.result?.username || null, readsAllGroupMessages: me.result?.can_read_all_group_messages === true, bound: Boolean(chatId && threadId), groupAccessible: chat?.ok === true, forum: chat?.result?.is_forum === true, memberStatus: member?.result?.status || null, canSendMessages: member?.result?.status === 'restricted' ? member.result.can_send_messages === true : ['creator','administrator','member'].includes(member?.result?.status), pendingUpdates: webhook.result?.pending_update_count ?? null, webhookError: webhook.result?.last_error_message || null, chatError: chat && !chat.ok ? chat.description : null };
+    const result = { membershipUpdatesEnabled, botUsername: me.result?.username || null, readsAllGroupMessages: me.result?.can_read_all_group_messages === true, bound: Boolean(chatId && threadId), groupAccessible: chat?.ok === true, forum: chat?.result?.is_forum === true, memberStatus: member?.result?.status || null, canSendMessages: member?.result?.status === 'restricted' ? member.result.can_send_messages === true : ['creator','administrator','member'].includes(member?.result?.status), pendingUpdates: webhook.result?.pending_update_count ?? null, webhookError: webhook.result?.last_error_message || null, chatError: chat && !chat.ok ? chat.description : null };
     console.info('[TELEGRAM_CONNECTION]', JSON.stringify({ ...result, chatId, threadId, webhookUrl: webhook.result?.url || null }));
     connectionCheck = { value: { ...result, channelSource }, expiresAt: Date.now() + 60000 };
     return connectionCheck.value;
