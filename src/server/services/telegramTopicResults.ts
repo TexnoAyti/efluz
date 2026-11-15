@@ -25,7 +25,11 @@ import { getAuthoritativeUserForAuthorization } from '../firebase/firestoreStore
 import type { Competition } from '../../types';
 import type { AdminPlan } from './telegramAiAdminCatalog';
 
-const season = 'season-2026-27', ttl = 86400, prefix = 'efluz:v1:telegram:topic-result:';
+const ttl = 86400, prefix = 'efluz:v1:telegram:topic-result:';
+/** Season 2 domestic leagues are live while Season 1 UEFA/Super Cups continue. */
+export function topicResultSeason(thread:number):string {
+  return [2,3,4,5,6].includes(thread)?'season-2027-28':'season-2026-27';
+}
 const proposalKey = (token: string) => prefix + 'proposal:' + token;
 const sourceKey = (chat: number, thread: number, message: number) => `${prefix}source:${chat}:${thread}:${message}`;
 export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; kind?:'uzeflife'; summary?: string; originalSourceMessage?:number; originalSourceUpdateId?:number };
@@ -76,7 +80,7 @@ return 1`;
 export function competitionResultTopic(c: Competition): number | null {
   const name = `${c.id} ${c.name}`.toLowerCase();
   if (name.includes('super')) return 2335;
-  if (/champions|ucl/.test(name)) return 7;
+  if (/champions|ucl|europa|uel/.test(name)) return 7;
   if (/cup|pokal|copa|coppa|coupe/.test(name)) return 8;
   return c.type === 'LEAGUE' ? ({ 'league-premier-league': 2, 'league-la-liga': 3, 'league-serie-a': 4, 'league-bundesliga': 5, 'league-ligue-1': 6 } as Record<string, number>)[c.leagueId!] || null : null;
 }
@@ -133,12 +137,28 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   const bare = /^\s*(?:(?:hisob|natija)\s*:?\s*)?\d{1,2}\s*[:–—−-]\s*\d{1,2}(?:\s+\d{1,3}\s*-?\s*tur)?[.! ]*$/i.test(text);
 
   assertSingleNaturalAdminRequest(text);
-  const reader = testDependencies.reader || createAiTournamentReader(signal);
-  const catalog: any = await reader.read({ dataset: 'competitions', limit: 30 });
-  if (!catalog.complete || catalog.stale) throw Error('CLARIFY:Turnir ma’lumoti hozir tasdiqlanmadi. Keyinroq qayta yuboring.');
-  const allowed = (catalog.data as Competition[]).filter(c => competitionResultTopic(c) === thread);
+  // Match and ownership must use the SAME season. Do not mix a Season 2
+  // domestic fixture with a Season 1 club owner (or vice versa).
+  const season = testDependencies.reader?'season-2026-27':topicResultSeason(thread);
+  const reader = testDependencies.reader || createAiTournamentReader(signal,season);
+  const first: any = await reader.read({ dataset: 'competitions', limit: 30 });
+  if (!first.complete || first.stale || first.error) throw Error('CLARIFY:Turnir ma’lumoti hozir tasdiqlanmadi. Keyinroq qayta yuboring.');
+  const allCompetitions:Competition[]=[...(first.data||[])];
+  // The read API intentionally limits each page to 30. Fetch remaining
+  // competition pages so the cutoff never silently hides a result topic.
+  let next=first.nextOffset;
+  for(let page=0;next!=null&&page<20;page++){
+    if(!Number.isInteger(next)||next<=0||next>600)throw Error('CLARIFY:Musobaqalar ro‘yxatini to‘liq tekshirib bo‘lmadi.');
+    const response:any=await reader.read({dataset:'competitions',limit:30,offset:next});
+    if(!response.complete||response.stale||response.error)throw Error('CLARIFY:Musobaqalar ma’lumoti to‘liq o‘qilmadi. Hisobni hozir tasdiqlamayman.');
+    allCompetitions.push(...(response.data||[]));
+    if(response.nextOffset===next)throw Error('CLARIFY:Musobaqalar ro‘yxati sahifalanmadi.');
+    next=response.nextOffset;
+  }
+  if(next!=null)throw Error('CLARIFY:Musobaqalar juda ko‘p, ro‘yxat to‘liq tekshirilmagan.');
+  const allowed = allCompetitions.filter(c => competitionResultTopic(c) === thread);
   if (!allowed.length) return null;
-  const named = findConversationCompetitions(text, catalog.data);
+  const named = findConversationCompetitions(text, allCompetitions);
   if (named.some(c => !allowed.some(a => a.id === c.id))) throw Error('CLARIFY:Bu natija boshqa turnirga tegishli. Uni o‘sha turnir mavzusiga yuboring.');
   let competitions = named.length ? allowed.filter(c => named.some(n => n.id === c.id)) : allowed;
   const ownership = testDependencies.ownership ? await testDependencies.ownership() : await createAiSnapshotReader(signal).read<OwnerNeutralClub>(ReadModelKeys.clubsWithOwners(season));
@@ -326,6 +346,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
         resolution={fixtureId:choices[0].id}; text=context.text;
       } else {
         if (text.length>100 || isAiHypotheticalQuestion(text)) return {handled:false};
+        const season=testDependencies.reader?'season-2026-27':topicResultSeason(m.message_thread_id);
         const ownership=testDependencies.ownership ? await testDependencies.ownership() : await createAiSnapshotReader(signal).read<OwnerNeutralClub>(ReadModelKeys.clubsWithOwners(season));
         if (!ownership.available || ownership.stale || resolveAiClubs(text,ownership.data as any).clubs.length!==1) return {handled:false};
         text=context.text+' '+text;
