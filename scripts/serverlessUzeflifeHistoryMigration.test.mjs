@@ -47,6 +47,16 @@ test('large queue messages never inflate normalized import rows past packet limi
  assert.ok(validateImportBatch({table:'uzeflifeNoticeHistory',
   batchId:'uzeflifeNoticeHistory:00000000',rows:rows.uzeflifeNoticeHistory}));
 });
+test('never-leased historical batch may omit optional lease and retry metadata',()=>{
+ const source=fixture();
+ const data=source.uzeflife_notifications[0].data;
+ data.cursor=0;data.leaseUntil=0;
+ delete data.lease;delete data.retryIndices;
+ const result=convertUzeflifeHistory(source);
+ assert.equal(result.rows.uzeflifeNoticeHistory[0].replay_policy,'HISTORICAL_ONLY');
+ data.leaseUntil=1;
+ assert.throws(()=>convertUzeflifeHistory(source),/INVALID_UZEFLIFE_NOTICE_HISTORY/);
+});
 test('unknown or malformed source notification state is blocked',()=>{
  for(const change of [
   s=>s.uzeflife_audit[0].data.revision='1',
