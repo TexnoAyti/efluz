@@ -23,16 +23,31 @@ assert.equal(competitionResultTopic(competitions[0]), 3); assert.equal(competiti
 assert.equal(topicResultSeason(2),'season-2027-28','current domestic league must use Season 2');
 assert.equal(topicResultSeason(7),'season-2026-27','existing UEFA fixtures remain in Season 1');
 assert.equal(topicResultSeason(2335),'season-2026-27','Season 1 Super Cup stays open');
+assert.equal(topicResultSeason(11429),'season-2026-27','Verified UEL thread uses Season 1');
+assert.equal(topicResultSeason(11972),'season-2027-28','Verified Asian thread uses Season 2');
+assert.equal(topicResultSeason(6),'season-2027-28','Ligue 1 topic keeps Season 2');
 const europaComp={id:'comp-europa-league-2026',name:'UEFA Europa League',type:'EUROPEAN_LEAGUE_PHASE',seasonId,leagueId:null};
-assert.equal(competitionResultTopic(europaComp as any),7,'Europa League and Champions League share verified Euro topic');
+assert.equal(competitionResultTopic(europaComp as any),11429,'Europa League uses its separately verified topic');
+assert.equal(competitionResultTopic({id:'comp-champions-league-2026',name:'UEFA Champions League'} as any),7,'UCL stays separate from UEL');
+assert.equal(competitionResultTopic({id:'comp-japan-2027',name:'Japan J1 League',leagueId:'league-japan'} as any),11972,'Asia uses its verified topic');
 const fillers=Array.from({length:32},(_,i)=>({id:'comp-dummy-'+i,name:'Other League '+i,type:'LEAGUE',seasonId,leagueId:'other-'+i}));
 competitions.push(...fillers,europaComp as any);
 games.push({...fixture('europa-game',europaComp.id),competition:'UEFA Europa League'});
-assert.equal((await planTopicResult('Real Madrid 2-1 Barca',1001,7,signal))?.plan.targetId,'europa-game','Must paginate beyond the first 30 competitions and resolve Europa fixture');
-assert.equal((await planTopicResult('Real Madrid 1-1 Barca',1001,7,signal))?.plan.body.homeScore,1,'Draws are legal in UEFA league phase');
-await assert.rejects(planTopicResult('Real Madrid 1-1 Barca penalti 4-3',1001,7,signal),/penaltilar bo‘lmaydi/);
+assert.equal((await planTopicResult('Real Madrid 2-1 Barca',1001,11429,signal))?.plan.targetId,'europa-game','Must paginate beyond the first 30 competitions and resolve Europa fixture');
+assert.equal((await planTopicResult('Real Madrid 1-1 Barca',1001,11429,signal))?.plan.body.homeScore,1,'Draws are legal in UEFA league phase');
+await assert.rejects(planTopicResult('Real Madrid 1-1 Barca penalti 4-3',1001,11429,signal),/penaltilar bo‘lmaydi/);
 competitions.splice(competitions.length-fillers.length-1);
 games.pop();
+// Asia is routable as soon as a real league and match exist in the verified
+// season catalog. No synthetic fixture is created in production.
+await assert.rejects(planTopicResult('Kashima 2-1 Urawa',1001,11972,signal),/Osiyo ligalari.*hali topilmadi/);
+const asia={id:'comp-japan-2027',name:'Japan J1 League',type:'LEAGUE',seasonId:'season-2027-28',leagueId:'league-japan',currentMatchday:1};
+const kashima={id:'club-kashima',name:'Kashima Antlers',leagueId:'league-japan',ownerUserId:'user-1001'};
+const urawa={id:'club-urawa',name:'Urawa Reds',leagueId:'league-japan',ownerUserId:'user-1002'};
+competitions.push(asia);clubs.push(kashima,urawa);
+games.push({...fixture('japan-match',asia.id),seasonId:asia.seasonId,home:'Kashima Antlers',away:'Urawa Reds',homeClubId:kashima.id,awayClubId:urawa.id,competition:'Japan J1 League',matchday:1});
+assert.equal((await planTopicResult('Kashima Antlers 2-1 Urawa Reds',1001,11972,signal))?.plan.targetId,'japan-match','Verified Asia league match must resolve in topic 11972');
+competitions.pop();clubs.splice(-2);games.pop();
 
 assert.equal((await planTopicResult('Real Madrid 1-2 Barca',1001,3,signal))?.plan.targetId, 'league-game');
 assert.equal((await planTopicResult('Barca 2-1 Real Madrid',1002,8,signal))?.plan.targetId, 'cup-game');
