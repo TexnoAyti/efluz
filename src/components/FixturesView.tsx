@@ -1,4 +1,5 @@
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
+import {AdminFixtureQuickActions} from './AdminFixtureQuickActions';
 import { canUseDangerZone } from '../lib/adminPermissions';
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -46,6 +47,7 @@ export const FixturesView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<'ALL' | 'MY_MATCHES' | 'PENDING' | 'DISPUTED' | 'CONFIRMED'>('ALL');
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
+  const [selectedAdminFixture, setSelectedAdminFixture] = useState<Fixture | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lockStates, setLockStates] = useState<Record<string, Record<number, { isOpen: boolean; isLocked: boolean; overrideStatus: string }>>>({});
 
@@ -469,6 +471,11 @@ export const FixturesView: React.FC = () => {
             return (
               <div
                 key={fixture.id}
+                role={canUseDangerZone(user)?'button':undefined}
+                tabIndex={canUseDangerZone(user)?0:undefined}
+                aria-label={canUseDangerZone(user)?'O‘yin: chatni ko‘rish yoki hisob kiritish':undefined}
+                onClick={e=>{if(canUseDangerZone(user)&&!(e.target as HTMLElement).closest('button,a,input,textarea,select'))setSelectedAdminFixture(fixture);}}
+                onKeyDown={e=>{if(canUseDangerZone(user)&&(e.key==='Enter'||e.key===' ')&&e.target===e.currentTarget){e.preventDefault();setSelectedAdminFixture(fixture);}}}
                 className={`glass-panel p-3.5 sm:p-4 flex flex-col justify-between shadow-lg transition-all ${
                   isUserParticipant
                     ? 'border-emerald-500/50 bg-emerald-950/20 shadow-emerald-500/10'
@@ -693,7 +700,12 @@ export const FixturesView: React.FC = () => {
 
       <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />
 
-      {/* Result Submission Modal */}
+      {selectedAdminFixture&&canUseDangerZone(user)&&<AdminFixtureQuickActions
+        fixture={selectedAdminFixture}
+        onClose={()=>setSelectedAdminFixture(null)}
+        onScoreSaved={()=>{invalidateClientCache('/api/fixtures');invalidateClientCache('/api/standings');void loadFixtures(true);}}
+      />}
+            {/* Result Submission Modal */}
       {selectedFixtureForSubmit && (
         <ResultSubmissionModal
           fixture={selectedFixtureForSubmit}
