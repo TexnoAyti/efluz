@@ -411,7 +411,8 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
               followUp = `\n\nYangilangan jadval:\n${table.text}`;
             } catch { followUp = '\n\nNatija saqlandi, lekin yangilangan jadvalni hozir yuborib bo‘lmadi.'; }
           }
-          return `${outcome.message} ${record.description || describeAiAdminPlan(record.plan)}${followUp}`;
+          const webAppNote=result.data?.webAppRefreshPending && ['result_edit','result_approve'].includes(record.plan.action) ? '\nWeb Appda natija hali yangilangani tasdiqlanmadi; jadvalni yangilab tekshiring.' : '';
+          return `${outcome.message} ${record.description || describeAiAdminPlan(record.plan)}${webAppNote}${followUp}`;
         }
         return `Bajarish tasdiqlanmadi (HTTP ${result.status}): ${String(result.data?.message || result.data?.error || result.data?.code || 'server rad etdi').slice(0, 400)}. Holatni admin panelda tekshiring.`;
       } catch (error: any) {
