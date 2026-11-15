@@ -1,4 +1,6 @@
 import {getFirestoreDb} from '../firebase/admin';
+import {randomBytes} from 'node:crypto';
+import {isPrimaryOwner} from './telegramAiConfigService';
 import {sendTelegramMessage} from './telegramBotService';
 import {PRIMARY_OWNER_TELEGRAM_ID} from './telegramAiConfigService';
 
@@ -10,6 +12,7 @@ type ExitEntry={
  clubs:OwnerClub[];lastUpdateId:number;notifiedAt?:string;personalNotifiedAt?:string;
 };
 const COLLECTION='club_owner_group_exits';
+const CONTROLS='club_owner_group_exit_release_controls';
 const member=(m:any)=>Boolean(m&&(['creator','administrator','member'].includes(m.status)||(m.status==='restricted'&&m.is_member===true)));
 const departing=(m:any)=>m?.status==='left'||m?.status==='kicked'||(m?.status==='restricted'&&m?.is_member===false);
 const expectedGroup=()=>String(process.env.TELEGRAM_GROUP_USERNAME||'@efleagueuz').replace(/^@/,'').toLowerCase();
@@ -65,10 +68,27 @@ export async function handleClubOwnerGroupExit(update:any):Promise<'ignored'|'re
   (record.username?' (@'+record.username+')':'')+'\nKlub: '+detail+
   '\nVaqt: '+now+'\nGuruh: @'+expectedGroup()+
   '\n\nKlub egaligi avtomatik bekor qilinmadi.';
+ // Buttons are bound to a specific departure and a specific club.
+ const buttons=clubs.map(club=>({club,token:randomBytes(16).toString('hex')}));
+ for(const {club,token} of buttons){
+  await db.collection(CONTROLS).doc(token).set({
+   telegramId,userId,seasonId:club.seasonId,clubId:club.clubId,
+   exitedAt:now,expiresAt:Date.now()+7*86400000,
+   consumed:false,deliveredMessageId:null,
+  });
+ }
+ const inlineKeyboard=buttons.map(({club,token})=>[{
+  text:'Bo‘shatish · '+club.clubName.slice(0,38),
+  callback_data:'grouprelease:ask:'+token,
+ }]);
  // Record first. If delivery fails, it remains available in the admin endpoint.
  if(PRIMARY_OWNER_TELEGRAM_ID&&process.env.FIREBASE_FORCE_LOCAL_FALLBACK!=='true'){
-  const sent=await sendTelegramMessage(PRIMARY_OWNER_TELEGRAM_ID,message,{parse_mode:null});
-  if(sent.ok)await ref.set({notifiedAt:new Date().toISOString()},{merge:true});
+  const sent=await sendTelegramMessage(PRIMARY_OWNER_TELEGRAM_ID,message,{parse_mode:null,reply_markup:{inline_keyboard:inlineKeyboard}});
+  if(sent.ok){
+   await ref.set({notifiedAt:new Date().toISOString()},{merge:true});
+   if(Number.isSafeInteger(sent.result?.message_id))
+    await Promise.all(buttons.map(({token})=>db.collection(CONTROLS).doc(token).set({deliveredMessageId:sent.result.message_id},{merge:true})));
+  }
   else console.warn('[CLUB_OWNER_EXIT_ALERT_UNDELIVERED]',{userId});
  }
  // Direct messages are initiated only for known club owners. Telegram may
@@ -94,4 +114,77 @@ export async function listClubOwnerGroupExits(){
   .sort((a,b)=>b.exitedAt.localeCompare(a.exitedAt))
   .slice(0,150).map(x=>({name:x.name,username:x.username,telegramId:x.telegramId,
    userId:x.userId,clubs:x.clubs,state:x.state,exitedAt:x.exitedAt,group:x.group,notified:!!x.notifiedAt})));
+}
+
+/** Two-step, admin-only callback: releasing is irreversible, but never issues a ban. */
+export async function handleGroupLeaverRelease(callback:any){
+ const fail=(message:string)=>{throw Object.assign(new Error(message),{statusCode:403});};
+ if(!isPrimaryOwner(callback.from?.id)||callback.from?.is_bot||
+  callback.message?.chat?.type!=='private'||callback.message?.chat?.id!==callback.from?.id)
+  fail('Bu tugma faqat asosiy admin uchun.');
+ const match=/^grouprelease:(ask|confirm|cancel):([a-f0-9]{32})$/.exec(String(callback.data||''));
+ if(!match)fail('Tugma noto‘g‘ri.');
+ const [,action,token]=match,db=getFirestoreDb(),controlRef=db.collection(CONTROLS).doc(token);
+ const control=(await controlRef.get()).data() as any;
+ if(!control||control.deliveredMessageId!==callback.message.message_id||
+   control.expiresAt<Date.now()||control.consumed)fail('Bu tugma eskirgan yoki ishlatilgan.');
+ if(action==='cancel')return {status:'cancelled' as const};
+ const exitRef=db.collection(COLLECTION).doc(control.telegramId);
+ const exit=(await exitRef.get()).data() as ExitEntry|undefined;
+ if(!exit||exit.exitedAt!==control.exitedAt||exit.state==='returned')
+  fail('Klub egasi guruhga qaytgan yoki xabar eskirgan.');
+ const club=exit.clubs.find(c=>c.seasonId===control.seasonId&&c.clubId===control.clubId);
+ if(!club)fail('Klub xabari mos kelmadi.');
+ if(action==='ask')return {status:'confirm' as const,token,clubName:club.clubName};
+ const actorId='user-'+String(callback.from.id),at=new Date().toISOString();
+ const released=await db.runTransaction(async tx=>{
+  const controlDoc=(await tx.get(controlRef)).data() as any;
+  const exitDoc=(await tx.get(exitRef)).data() as ExitEntry|undefined;
+  const user=(await tx.get(db.collection('users').doc(actorId))).data() as any;
+  if(!user||!isPrimaryOwner(user.telegramId)||!user.isAdmin||user.isSuspended)
+   fail('Asosiy admin tekshiruvi bajarilmadi.');
+  if(!controlDoc||controlDoc.consumed||controlDoc.expiresAt<Date.now()||
+    controlDoc.deliveredMessageId!==callback.message.message_id||
+    !exitDoc||exitDoc.state==='returned'||exitDoc.exitedAt!==controlDoc.exitedAt)
+   fail('Holat o‘zgargan, qayta tekshiring.');
+  const occRef=db.collection('club_occupancies').doc(control.seasonId+'_'+control.clubId);
+  const occupancy=(await tx.get(occRef)).data() as any;
+  if(!occupancy||occupancy.userId!==control.userId||occupancy.status!=='active')
+   fail('Klub egasi o‘zgargan yoki klub allaqachon bo‘sh.');
+  const clubRef=db.collection('clubs').doc(control.clubId),clubData=(await tx.get(clubRef)).data() as any;
+  const memberRef=db.collection('club_memberships').doc(control.seasonId+'_'+control.clubId);
+  const member=(await tx.get(memberRef)).data() as any;
+  const userMemberRef=db.collection('user_memberships').doc(control.seasonId+'_'+control.userId);
+  const userMember=(await tx.get(userMemberRef)).data() as any;
+  if((clubData?.claimedByUserId&&clubData.claimedByUserId!==control.userId)||
+    (member?.status==='active'&&member.userId&&member.userId!==control.userId))
+   fail('Klubning amaldagi egasi mos kelmadi.');
+  // A member with other active clubs must not lose their entire season membership.
+  const others=await tx.get(db.collection('club_occupancies')
+   .where('userId','==',control.userId).where('status','==','active'));
+  const hasOther=others.docs.some((x:any)=>x.id!==occRef.id&&x.data().seasonId===control.seasonId);
+  tx.set(occRef,{userId:null,status:'released',releasedAt:at,releasedByUserId:actorId,updatedAt:at},{merge:true});
+  if(member)tx.set(memberRef,{status:'released',releasedAt:at,updatedAt:at},{merge:true});
+  if(clubData)tx.update(clubRef,{isTaken:false,claimedByUserId:null,updatedAt:at});
+  if(userMember?.status==='active'&&!hasOther)
+   tx.set(userMemberRef,{status:'released',secondaryClubId:null,secondaryLeagueId:null,releasedAt:at,updatedAt:at},{merge:true});
+  tx.set(controlRef,{consumed:true,consumedAt:at},{merge:true});
+  tx.set(db.collection('club_owner_group_exit_release_audit').doc(token),
+   {actorId,targetId:control.userId,clubId:control.clubId,seasonId:control.seasonId,at,reason:'group_exit_admin_confirmation'});
+  return {clubId:control.clubId,seasonId:control.seasonId,userId:control.userId,clubName:club.clubName};
+ });
+ // Do not roll back the committed release when cache invalidation fails.
+ try{
+  const [{invalidateClubReadModels,invalidateUserMembershipReadModel},{invalidateFirestoreCache},
+   {removeOccupancyRecord,getClubOccupantUserIdLocally}]=await Promise.all([
+    import('../readModel/readModelStore'),import('../firebase/firestoreStore'),
+    import('../firebase/occupancySnapshot'),
+   ]);
+  invalidateFirestoreCache();
+  if(getClubOccupantUserIdLocally(released.seasonId,released.clubId)===released.userId)
+   removeOccupancyRecord(released.seasonId,released.clubId);
+  await Promise.allSettled([invalidateClubReadModels(released.seasonId),
+    invalidateUserMembershipReadModel(released.userId,released.seasonId)]);
+ }catch(error){console.warn('[GROUP_RELEASE_CACHE_INVALIDATION_FAILED]',error);}
+ return {status:'released' as const,clubName:released.clubName};
 }
