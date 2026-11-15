@@ -79,11 +79,13 @@ return 1`;
 /** The same verified group/topic links used by the app's result notifications. */
 export function competitionResultTopic(c: Competition): number | null {
   const name = `${c.id} ${c.name}`.toLowerCase();
+  // Asian league/superleague competitions belong to the dedicated Asia topic;
+  // do not accidentally route "Uzbekistan Superliga" to Super Cup.
+  if (/uzbek|uzbekiston|uzbekistan|saudi|arabia|japan|japanese|turkey|turkish|asia|osiyo|j1.?league|superliga/.test(name)
+      || /(?:uzbek|saudi|japan|turk|asia)/.test(String(c.leagueId||'').toLowerCase())) return 11972;
   if (name.includes('super')) return 2335;
   if (/champions|ucl/.test(name)) return 7;
   if (/europa|uel/.test(name)) return 11429;
-  if (/uzbek|uzbekiston|uzbekistan|saudi|arabia|japan|japanese|turkey|turkish|asia|osiyo|j1.?league|superliga/.test(name)
-      || /(?:uzbek|saudi|japan|turk|asia)/.test(String(c.leagueId||'').toLowerCase())) return 11972;
   if (/cup|pokal|copa|coppa|coupe/.test(name)) return 8;
   return c.type === 'LEAGUE' ? ({ 'league-premier-league': 2, 'league-la-liga': 3, 'league-serie-a': 4, 'league-bundesliga': 5, 'league-ligue-1': 6 } as Record<string, number>)[c.leagueId!] || null : null;
 }
