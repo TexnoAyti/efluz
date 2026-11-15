@@ -2,6 +2,35 @@
 // The legacy leagues/clubs are global: create season-scoped copies so ownership
 // remains valid without claiming an older club belongs to the new season.
 // Raw source archive is an independent prerequisite for lossless retention.
+import {SEASON_TWO_ROSTERS} from '../../src/content/season2Rosters.ts';
+
+const SECOND_SEASON_ID='season-2027-28';
+const SECOND_SEASON_LEAGUES=[
+ ['league-premier-league','Premier League','England'],
+ ['league-la-liga','La Liga','Spain'],
+ ['league-serie-a','Serie A','Italy'],
+ ['league-bundesliga','Bundesliga','Germany'],
+ ['league-ligue-1','Ligue 1','France'],
+ ['league-uzbekistan-superliga','O‘zbekiston Superligasi','Uzbekistan'],
+ ['league-saudi-pro-league','Saudi Pro League','Saudi Arabia'],
+ ['league-j1','J1 League','Japan'],
+ ['league-turkey-super-lig','Süper Lig','Turkey'],
+];
+function secondSeasonCatalog(){
+ const leagues=new Map(),clubs=new Map();
+ for(const [id,name,country] of SECOND_SEASON_LEAGUES){
+  const roster=SEASON_TWO_ROSTERS[id];
+  if(!roster||roster.clubs.length!==roster.expectedClubCount)
+   fail('INVALID_SECOND_SEASON_CATALOG');
+  leagues.set(id,{name,country,tier:1,createdAt:0,updatedAt:0});
+  for(const club of roster.clubs){
+   if(clubs.has(club.id))fail('DUPLICATE_SECOND_SEASON_CLUB');
+   clubs.set(club.id,{name:club.name,shortName:club.name,country,
+    leagueId:id,createdAt:0,updatedAt:0});
+  }
+ }
+ return {leagues,clubs};
+}
 const nonempty=x=>typeof x==='string'&&x.trim()?x.trim():null;
 const str=(x,fallback='')=>x==null?fallback:String(x);
 const bool=x=>x===true||x===1;
@@ -51,6 +80,9 @@ export function convertEflCore(collections,options={}){
  const disputes=source(collections,'disputes');
  const notifications=source(collections,'notifications');
  const auditLogs=source(collections,'audit_logs');
+ const prepared=secondSeasonCatalog();
+ const seasonLeagues=seasonId=>seasonId===SECOND_SEASON_ID?prepared.leagues:leagues;
+ const seasonClubs=seasonId=>seasonId===SECOND_SEASON_ID?prepared.clubs:clubs;
  // The base fixture is not safe to migrate if a durable correction diverges.
  // Production currently contains matching overrides, but verify every export
  // independently because source rows can change before the cutover snapshot.
@@ -103,7 +135,7 @@ export function convertEflCore(collections,options={}){
  // Source leagues and clubs are global; each season receives its own identity.
  // Keep a reversible deterministic mapping for all cross-domain references.
  for(const [seasonId] of seasons){
-  for(const [id,d] of leagues){
+  for(const [id,d] of seasonLeagues(seasonId)){
    output.leagues.push({id:relationId(seasonId,id),season_id:seasonId,
     name:required(d.name,'LEAGUE_WITHOUT_NAME'),country:str(d.country),
     continent:'EUROPE',logo_url:d.logoUrl??d.logo??null,
@@ -111,9 +143,9 @@ export function convertEflCore(collections,options={}){
     status:'CLOSED',current_round:0,
     created_at:time(d.createdAt),updated_at:time(d.updatedAt,time(d.createdAt))});
   }
-  for(const [id,d] of clubs){
+  for(const [id,d] of seasonClubs(seasonId)){
    const leagueId=required(d.leagueId,'CLUB_WITHOUT_LEAGUE');
-   if(!leagues.has(leagueId))fail('CLUB_LEAGUE_MISSING');
+   if(!seasonLeagues(seasonId).has(leagueId))fail('CLUB_LEAGUE_MISSING');
    output.clubs.push({id:relationId(seasonId,id),
     league_id:relationId(seasonId,leagueId),
     name:required(d.name,'CLUB_WITHOUT_NAME'),short_name:str(d.shortName),
@@ -127,7 +159,7 @@ export function convertEflCore(collections,options={}){
   const seasonId=required(d.seasonId,'COMPETITION_WITHOUT_SEASON');
   if(!seasons.has(seasonId))fail('COMPETITION_SEASON_MISSING');
   competitionSeason.set(id,seasonId);
-  if(d.leagueId!=null&&!leagues.has(d.leagueId))fail('COMPETITION_LEAGUE_MISSING');
+  if(d.leagueId!=null&&!seasonLeagues(seasonId).has(d.leagueId))fail('COMPETITION_LEAGUE_MISSING');
   output.competitions.push({id,season_id:seasonId,
    league_id:d.leagueId==null?null:relationId(seasonId,d.leagueId),
    name:required(d.name,'COMPETITION_WITHOUT_NAME'),
@@ -146,7 +178,7 @@ export function convertEflCore(collections,options={}){
   const clubId=d.clubId==null?null:String(d.clubId);
   const userId=d.userId==null?null:String(d.userId);
   const status=str(d.status,'RELEASED').toUpperCase();
-  if(!seasonId||!clubId||!seasons.has(seasonId)||!clubs.has(clubId)||!userId||!users.has(userId)){
+  if(!seasonId||!clubId||!seasons.has(seasonId)||!seasonClubs(seasonId).has(clubId)||!userId||!users.has(userId)){
     // Only inactive historical rows may be archived. An ACTIVE orphan could
     // otherwise silently remove a live club owner during staging migration.
     if(quarantine&&status!=='ACTIVE'){
@@ -154,7 +186,7 @@ export function convertEflCore(collections,options={}){
     }
     fail('OCCUPANCY_REFERENCE_MISSING');
   }
-  const leagueId=required(clubs.get(clubId).leagueId,'CLUB_WITHOUT_LEAGUE');
+  const leagueId=required(seasonClubs(seasonId).get(clubId).leagueId,'CLUB_WITHOUT_LEAGUE');
   const telegram_id=userById.get(userId);
   const canonicalUserId=canonicalUserIdById.get(userId)??userId;
   if(status==='ACTIVE'){
@@ -185,7 +217,7 @@ export function convertEflCore(collections,options={}){
   }
   const comp=competitions.get(compId);
   const home=d.homeClubId??null,away=d.awayClubId??null;
-  for(const club of [home,away])if(club!==null&&!clubs.has(club)){
+  for(const club of [home,away])if(club!==null&&!seasonClubs(seasonId).has(club)){
    if(quarantine)continue;
    fail('FIXTURE_CLUB_MISSING');
   }
@@ -214,7 +246,7 @@ export function convertEflCore(collections,options={}){
  for(const [id,d] of participants){
   const seasonId=required(d.seasonId,'PARTICIPANT_WITHOUT_SEASON');
   const compId=required(d.competitionId,'PARTICIPANT_WITHOUT_COMPETITION');
-  if(!clubs.has(d.clubId)||!seasons.has(seasonId))
+  if(!seasonClubs(seasonId).has(d.clubId)||!seasons.has(seasonId))
     fail('PARTICIPANT_REFERENCE_MISSING');
   if(!competitionSeason.has(compId)){
     if(quarantine){quarantined.participants++;continue;}
@@ -232,7 +264,7 @@ export function convertEflCore(collections,options={}){
  for(const [id,d] of submissions){
   const fid=d.fixtureId==null?null:String(d.fixtureId);
   const f=fid?fixtures.get(fid):null;
-  if(!fid||!f||!clubs.has(d.clubId)||!users.has(d.submittedByUserId)){
+  if(!fid||!f||!seasonClubs(f?.seasonId).has(d.clubId)||!users.has(d.submittedByUserId)){
     if(quarantine)continue;
     if(!fid)fail('SUBMISSION_WITHOUT_FIXTURE');
     if(!f)fail('SUBMISSION_FIXTURE_MISSING');
