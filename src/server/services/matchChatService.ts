@@ -7,6 +7,7 @@ import {readUState} from './uzeflifeService';
 import {createNotification} from './notificationService';
 import {enqueueSmartTelegramNotification} from './smartNotificationService';
 import {telegramMiniAppButton} from './telegramMiniAppButton';
+import {isPrimaryOwner} from './telegramAiConfigService';
 
 const MAX_MESSAGES=200;
 const QUICK_MESSAGES=['Assalomu alaykum, qachon o‘ynaymiz?','Xona ID yuboring.','Hozir o‘ynay olaman.','Hisobni tasdiqlang.'];
@@ -145,4 +146,40 @@ export async function readMatchChatAvatar(kind:MatchChatKind,matchId:string,user
       return await limitedImage(parsed.toString());
  }catch{/* Render the existing initials fallback when the image is unavailable. */}
  return null;
+}
+
+
+/** Server-side primary-owner-only overview: a room list contains metadata,
+ * not messages. Message text is fetched separately when a room is opened.
+ * This is a disclosed moderation surface, not participant impersonation.
+ */
+export async function listMatchChatRoomsForOwner(user:User){
+ const account=await currentAccount(user);
+ if(!account.isAdmin||!isPrimaryOwner(account.telegramId))
+  throw new MatchChatError('Faqat asosiy admin chatlar ro‘yxatini ko‘ra oladi.',403,'PRIMARY_OWNER_REQUIRED');
+ const db=getFirestoreDb();
+ const snap=await db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).orderBy('updatedAt','desc').limit(50).get();
+ return snap.docs.map(doc=>{
+  const room=doc.data() as ChatRoom;
+  return {roomId:doc.id,kind:room.kind,matchId:room.matchId,title:room.title,
+   subtitle:room.subtitle,participantNames:(room.participants||[]).map(p=>p.name),
+   messageCount:(room.messages||[]).length,lastMessageAt:room.lastMessageAt,
+   updatedAt:room.updatedAt,openReports:(room.reports||[]).filter(r=>r.status==='OPEN').length,
+   blocked:(room.blockedBy||[]).length>0};
+ });
+}
+export async function readMatchChatRoomForOwner(user:User,roomIdValue:string){
+ const account=await currentAccount(user);
+ if(!account.isAdmin||!isPrimaryOwner(account.telegramId))
+  throw new MatchChatError('Faqat asosiy admin chatlarni ko‘ra oladi.',403,'PRIMARY_OWNER_REQUIRED');
+ cleanId(roomIdValue);
+ const doc=await getFirestoreDb().collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(roomIdValue).get();
+ if(!doc.exists)throw new MatchChatError('Chat topilmadi.',404,'ROOM_NOT_FOUND');
+ const room=doc.data() as ChatRoom;
+ console.info('[MATCH_CHAT_OWNER_AUDIT]',JSON.stringify({actorId:account.id,roomId:roomIdValue,action:'read'}));
+ return {roomId:doc.id,kind:room.kind,matchId:room.matchId,title:room.title,
+  subtitle:room.subtitle,participants:(room.participants||[]).map(p=>({name:p.name,username:p.username||null})),
+  messages:(room.messages||[]).slice(-200),pinnedMessageId:room.pinnedMessageId||null,
+  updatedAt:room.updatedAt,blocked:(room.blockedBy||[]).length>0,
+  reports:(room.reports||[]).filter(r=>r.status==='OPEN').map(r=>({id:r.id,reason:r.reason,createdAt:r.createdAt}))};
 }
