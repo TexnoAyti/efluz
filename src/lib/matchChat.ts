@@ -1,5 +1,5 @@
 import {getAuthHeaders} from './customTournamentApi';
-import type {MatchChatAdminReport,MatchChatKind,MatchChatView} from '../types/matchChat';
+import type {MatchChatAdminReport,MatchChatAdminRoomSummary,MatchChatAdminRoomDetail,MatchChatKind,MatchChatView} from '../types/matchChat';
 
 export interface MatchChatTarget {kind:MatchChatKind;matchId:string;title?:string;opponentName?:string}
 const eventName='efluz:open-match-chat';
@@ -19,6 +19,8 @@ export const matchChatApi={
  block:async(target:MatchChatTarget,blocked:boolean):Promise<MatchChatView>=>(await call(`${path(target)}/block`,{method:'POST',body:JSON.stringify({blocked})})).chat,
  report:async(target:MatchChatTarget,reason:string):Promise<MatchChatView>=>(await call(`${path(target)}/report`,{method:'POST',body:JSON.stringify({reason})})).chat,
  reports:async():Promise<MatchChatAdminReport[]> => (await call('/reports')).reports,
+ adminRooms:async():Promise<MatchChatAdminRoomSummary[]> => (await call('/admin/rooms')).rooms,
+ adminRoom:async(roomId:string):Promise<MatchChatAdminRoomDetail> => (await call('/admin/rooms/'+encodeURIComponent(roomId))).room,
  resolveReport:async(roomId:string,reportId:string)=>call(`/reports/${encodeURIComponent(roomId)}/${encodeURIComponent(reportId)}/resolve`,{method:'POST',body:'{}'}),
  adminBlock:async(roomId:string,blocked:boolean)=>call(`/reports/${encodeURIComponent(roomId)}/block`,{method:'POST',body:JSON.stringify({blocked})}),
 };
