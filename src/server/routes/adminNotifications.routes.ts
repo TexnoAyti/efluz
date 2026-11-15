@@ -27,7 +27,8 @@ adminNotificationsRouter.get('/league-reminder-health', async (_req, res) => {
     if (!store) throw new Error('NOTIFICATION_HEALTH_UNAVAILABLE');
     // The history helper has a memory fallback; health must report source failure instead of false zeroes.
     const receipts = state ? await store.hgetall<Record<string, import('../services/telegramNotificationQueue').TelegramBroadcastRecord>>('efluz:v1:telegram:broadcasts') : {};
-    const records = Object.values(receipts || {}).filter(r => r.leagueReminder?.day === state?.day && r.leagueReminder?.seasonId === CURRENT_SEASON_ID);
+    const {unplayedReminderCompetitionAllowed}=await import('../services/seasonReminderPolicy');
+    const records = Object.values(receipts || {}).filter(r => r.leagueReminder?.day === state?.day && unplayedReminderCompetitionAllowed(r.leagueReminder?.seasonId,r.leagueReminder?.competitionId));
     const delivery = {sent:0,failed:0,pending:0,skipped:0,uncertain:0};
     for (const r of records) for (const recipient of r.recipients) {
       if (recipient.status === 'SENT') delivery.sent++;
