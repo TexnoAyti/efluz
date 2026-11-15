@@ -27,6 +27,15 @@ export function getAiRedisClient(signal?: AbortSignal): Redis | null {
   });
 }
 
+/** Keep previously issued match-result confirmation tokens on their original
+ * durable transport during the AI-state migration. A Redis switch must not
+ * invalidate an in-flight score confirmation or change the working result flow.
+ */
+export function getTopicResultStateClient(signal?: AbortSignal): Redis | null {
+  if (process.env.DATABASE_PROVIDER === 'supabase') return new PostgresAiStore(signal) as unknown as Redis;
+  return getAiRedisClient(signal);
+}
+
 /** Bounds SDK/test promises even when a transport ignores AbortSignal. */
 export function withinAiDeadline<T>(signal: AbortSignal | undefined, operation: () => Promise<T>): Promise<T> {
   if (!signal) return operation();
