@@ -75,8 +75,8 @@ export function verifyTelegramWebAppData(
   }
 }
 
-export async function getOrCreateTelegramUser(tgUser: TelegramUserParsed): Promise<User> {
-  return await getOrCreateTelegramUserFirestore(tgUser);
+export async function getOrCreateTelegramUser(tgUser: TelegramUserParsed, recordWebAppVisit = false): Promise<User> {
+  return await getOrCreateTelegramUserFirestore(tgUser,recordWebAppVisit);
 }
 
 export const DEV_PROFILES = [
