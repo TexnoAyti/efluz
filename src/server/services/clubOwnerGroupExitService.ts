@@ -119,6 +119,45 @@ export async function listClubOwnerGroupExits(){
    discoveredBy:x.discoveredBy,verifiedAt:x.verifiedAt})));
 }
 
+/**
+ * Read-only owner report. Current and former seasons are grouped from the
+ * club snapshots taken when a Telegram member left. These snapshots are
+ * historic associations, not claims that a club is still assigned today.
+ * We only report actual signed Web App identity visits; profile.updatedAt
+ * is never a valid substitute for the last login.
+ */
+export async function listSeasonGroupedClubOwnerExits(){
+ const owners=await listClubOwnerGroupExits();
+ const db=getFirestoreDb();
+ // A bounded admin-only request; no query over all users or match history.
+ const enriched=await Promise.all(owners.map(async owner=>{
+   let lastWebAppOpenedAt:string|null=null;
+   try{
+     const user=(await db.collection('users').doc(owner.userId).get()).data() as any;
+     const raw=user?.lastWebAppOpenedAt;
+     if(typeof raw==='string'&&Number.isFinite(Date.parse(raw)))
+       lastWebAppOpenedAt=new Date(raw).toISOString();
+   }catch(error){
+     console.warn('[GROUP_LEAVER_LAST_OPEN_UNAVAILABLE]',{userId:owner.userId});
+   }
+   return {...owner,lastWebAppOpenedAt};
+ }));
+ const bySeason:{
+  seasonId:string;label:string;total:number;owners:typeof enriched
+ }[]=[
+   {seasonId:'season-2027-28',label:'2-mavsum',total:0,owners:[]},
+   {seasonId:'season-2026-27',label:'1-mavsum',total:0,owners:[]},
+ ];
+ for(const bucket of bySeason){
+   bucket.owners=enriched.filter(x=>x.clubs.some(club=>club.seasonId===bucket.seasonId))
+     .map(x=>({...x,clubs:x.clubs.filter(club=>club.seasonId===bucket.seasonId)}));
+   bucket.total=bucket.owners.length;
+ }
+ const other=enriched.filter(x=>!x.clubs.some(club=>bySeason.some(s=>s.seasonId===club.seasonId)));
+ if(other.length)bySeason.push({seasonId:'other',label:'Boshqa mavsumlar',owners:other,total:other.length});
+ return {total:enriched.length,bySeason,owners:enriched,activityNote:'lastWebAppOpenedAt = oxirgi tasdiqlangan Telegram Web App autentifikatsiyasi; 30 daqiqada bir yangilanadi. Oldingi sessiyalar uchun vaqt noma’lum.'};
+}
+
 /** Two-step, admin-only callback: releasing is irreversible, but never issues a ban. */
 export async function handleGroupLeaverRelease(callback:any){
  const fail=(message:string)=>{throw Object.assign(new Error(message),{statusCode:403});};
