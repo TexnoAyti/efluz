@@ -4,6 +4,7 @@ import {getFirestoreDb} from '../firebase/admin';
 import {getRuntimeStateStore} from '../readModel/runtimeStateStore';
 import {filterRetiredFixtures} from './retiredFixtureService';
 import {CURRENT_SEASON_ID, isSeasonCompetitionEnabled} from '../../lib/seasonParticipationPolicy';
+import {CURRENT_LEAGUE_SEASON_ID, unplayedReminderCompetitionAllowed} from './seasonReminderPolicy';
 import {enqueueSmartTelegramNotification} from './smartNotificationService';
 import {telegramMiniAppButton} from './telegramMiniAppButton';
 import {SEED_CLUBS} from '../db/seed';
@@ -11,7 +12,7 @@ import {filterPublishedEuropeanFixtures} from './europeanFixtureGate';
 import {backlogResultAllowed} from './backlogResultEntry';
 
 export const BACKLOG_STATE_COLLECTION = 'league_reminder_workers';
-export const BACKLOG_SCAN_VERSION = 3;
+export const BACKLOG_SCAN_VERSION = 4;
 export interface LeagueReminderGuard {competitionId: string; seasonId: string; day: string}
 const html = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export const reminderDay = (now = Date.now()) => new Date(now + 5 * 3600000).toISOString().slice(0,10);
@@ -85,7 +86,7 @@ export function leagueBacklogMessage(data: NonNullable<Awaited<ReturnType<typeof
 
 /** Rebuild immediately before dispatch: scores, transfers, suspensions and withdrawn leagues can change while queued. */
 export async function freshLeagueReminder(guard: LeagueReminderGuard,userId: string){
-  if(guard.day!==reminderDay())return null;
+  if(guard.day!==reminderDay() || !unplayedReminderCompetitionAllowed(guard.seasonId,guard.competitionId))return null;
   const data=await loadLeagueBacklog(guard.competitionId,guard.seasonId);
   return data?leagueBacklogMessage(data,userId):null;
 }
@@ -107,11 +108,14 @@ export async function processLeagueBacklogReminders(options: {now?:number; deadl
     const day=reminderDay(options.now),saved=(await ref.get()).data();
     state=saved?.day===day && saved.scanVersion===BACKLOG_SCAN_VERSION?saved:{day,scanVersion:BACKLOG_SCAN_VERSION,completed:[],cursors:{},queued:0,skipped:0,status:'PENDING'};
     if(state.status==='DONE')return false;
-    const rows=await db.collection('competitions').where('seasonId','==',CURRENT_SEASON_ID).get();
-    const competitions=rows.docs.map(d=>({...d.data(),id:d.id}) as any).filter(enabled).filter(c=>!options.scope || (!options.scope.competitionId || c.id===options.scope.competitionId) && (options.scope.category==='ALL'||options.scope.category==='LEAGUES'&&['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(c.type)||options.scope.category==='CUPS'&&!['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(c.type))).sort((a,b)=>a.id.localeCompare(b.id));
+    const rows=await Promise.all([CURRENT_SEASON_ID,CURRENT_LEAGUE_SEASON_ID].map(seasonId=>db.collection('competitions').where('seasonId','==',seasonId).get()));
+    const competitions=rows.flatMap(page=>page.docs.map(d=>({...d.data(),id:d.id}) as any))
+      .filter(enabled)
+      .filter(c=>unplayedReminderCompetitionAllowed(c.seasonId,c.id))
+      .filter(c=>!options.scope || (!options.scope.competitionId || c.id===options.scope.competitionId) && (options.scope.category==='ALL'||options.scope.category==='LEAGUES'&&['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(c.type)||options.scope.category==='CUPS'&&!['LEAGUE','EUROPEAN_LEAGUE_PHASE'].includes(c.type))).sort((a,b)=>a.id.localeCompare(b.id));
     const competition=competitions.find(c=>!state.completed.includes(c.id));
     if(!competition){await ref.set({...state,status:'DONE',finishedAt:new Date().toISOString(),lastError:null});return false;}
-    const data=await loadLeagueBacklog(competition.id,CURRENT_SEASON_ID);
+    const data=await loadLeagueBacklog(competition.id,competition.seasonId);
     if(data){
       const ids=[...new Set(data.owners.values())].sort().filter(id=>id>(state.cursors[competition.id]||''));
       let processed=0;
@@ -119,7 +123,7 @@ export async function processLeagueBacklogReminders(options: {now?:number; deadl
         if(processed>=4 || processed>0 && Date.now()>(options.deadline??started+7000))return true;
         const message=leagueBacklogMessage(data,userId);
         if(message){
-          const queued=await (options.enqueue||enqueueSmartTelegramNotification)({userId,seasonId:CURRENT_SEASON_ID,eventId:`matchday-open:backlog:${competition.id}:${day}`, ...message,deferDrain:true,leagueReminder:{competitionId:competition.id,seasonId:CURRENT_SEASON_ID,day}});
+          const queued=await (options.enqueue||enqueueSmartTelegramNotification)({userId,seasonId:competition.seasonId,eventId:`matchday-open:backlog:${competition.id}:${day}`, ...message,deferDrain:true,leagueReminder:{competitionId:competition.id,seasonId:competition.seasonId,day}});
           if(queued)state.queued++;else state.skipped++;
         }
         state.cursors[competition.id]=userId;state.status='PENDING';state.lastError=null;state.updatedAt=new Date().toISOString();state.lastSliceMs=Date.now()-started;
