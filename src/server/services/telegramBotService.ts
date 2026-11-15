@@ -343,7 +343,7 @@ let connectionInFlight: Promise<Record<string, unknown>> | undefined;
 const PRODUCTION_TELEGRAM_WEBHOOK = 'https://efluz.vercel.app/api/telegram/webhook';
 const PRODUCTION_ALLOWED_UPDATES = [
   'message', 'edited_message', 'channel_post', 'edited_channel_post',
-  'callback_query', 'pre_checkout_query',
+  'callback_query', 'pre_checkout_query', 'chat_member',
 ];
 
 /**
