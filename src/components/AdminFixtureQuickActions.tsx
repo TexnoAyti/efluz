@@ -24,7 +24,20 @@ export function AdminFixtureQuickActions({fixture,onClose,onScoreSaved}:{fixture
  const openChat=()=>{
   // Open the real user-facing chat component with a read-only owner transport.
   onClose();
-  openMatchChat({kind:'fixture',matchId:fixture.id,title:fixture.homeClub?.name+' — '+fixture.awayClub?.name,adminSpectator:true});
+  openMatchChat({kind:'fixture',matchId:fixture.id,
+   title:(fixture.homeClub?.name||fixture.homeClubId)+' — '+(fixture.awayClub?.name||fixture.awayClubId),
+   adminSpectator:true,
+   matchInfo:{
+    homeName:fixture.homeClub?.name||fixture.homeClubId,
+    awayName:fixture.awayClub?.name||fixture.awayClubId,
+    homeLogoUrl:fixture.homeClub?.logoUrl||null,
+    awayLogoUrl:fixture.awayClub?.logoUrl||null,
+    homeScore:fixture.status==='CONFIRMED'?fixture.homeScore??null:null,
+    awayScore:fixture.status==='CONFIRMED'?fixture.awayScore??null:null,
+    matchday:fixture.matchday,
+    status:fixture.status,
+   },
+  });
  };
  const submit=async()=>{
   const h=Number(home),a=Number(away);
