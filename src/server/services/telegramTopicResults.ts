@@ -253,7 +253,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
           const result = await withinAiDeadline(signal, () => isUzeflife?executeUzeflifeTopicResult(p.plan,actor,p.submitter,{chat:p.chat,thread:p.thread,message:p.sourceMessage}):(testDependencies.execute || executeAiAdminRoute)(p.plan,actor,'topic-result-'+token,signal));
           if (result.status >= 200 && result.status < 300 && result.data?.success !== false && !result.data?.error) {
             const outcome = inspectAiAdminOutcome(p.plan,result.data);
-            reply = outcome.state === 'verified' ? `Natija saqlandi:\n${p.summary || 'O‘yin: '+p.plan.targetId}\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.${p.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${p.plan.body.homePenaltyScore}:${p.plan.body.awayPenaltyScore}.`:''}${result.data?.derivedPending ? '\nTurnir jadvali yangilanish navbatiga qo‘yildi.' : ''}` : outcome.message;
+            reply = outcome.state === 'verified' ? `Natija saqlandi:\n${p.summary || 'O‘yin: '+p.plan.targetId}\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.${p.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${p.plan.body.homePenaltyScore}:${p.plan.body.awayPenaltyScore}.`:''}${result.data?.webAppRefreshPending ? '\nWeb App hisobni ko‘rsatish uchun qayta yuklanmoqda; hozircha ekranda tasdiqlanmagan.' : ''}${result.data?.derivedPending ? '\nTurnir jadvali yangilanish navbatiga qo‘yildi.' : ''}` : outcome.message;
           } else reply = 'Natija saqlanmadi: ' + String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,250);
           await client.set(proposalKey(token), { ...p, state: 'done', receipt: {status:result.status} }, {ex:ttl});
         } catch(error:any) {
