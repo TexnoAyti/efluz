@@ -85,9 +85,9 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
     const raw = await client.get<string | TelegramAiConfig>(getAiConfigRedisKey());
     if (!raw) {
       // In explicitly opted-in Redis deployments, migrate only the durable
-      // configuration from the legacy PostgreSQL store. Do not carry an enabled
-      // flag across transport changes: the owner must intentionally run /ai_on.
-      // Pending confirmations/conversations are intentionally NOT migrated.
+      // configuration from the legacy PostgreSQL store. Preserve an already
+      // enabled and bound production AI; never auto-enable a staging AI.
+      // Pending AI confirmations/conversations are intentionally NOT migrated.
       if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.EFL_AI_STATE_BACKEND === 'redis') {
         const legacy = await new PostgresAiStore(options?.signal).get<string | TelegramAiConfig>(getAiConfigRedisKey());
         const parsed = typeof legacy === 'string' ? JSON.parse(legacy) : legacy;
