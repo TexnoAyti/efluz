@@ -21,6 +21,7 @@ export const matchChatApi={
  reports:async():Promise<MatchChatAdminReport[]> => (await call('/reports')).reports,
  adminRooms:async():Promise<MatchChatAdminRoomSummary[]> => (await call('/admin/rooms')).rooms,
  adminRoom:async(roomId:string):Promise<MatchChatAdminRoomDetail> => (await call('/admin/rooms/'+encodeURIComponent(roomId))).room,
+ adminFixtureRoom:async(kind:MatchChatKind,matchId:string):Promise<MatchChatAdminRoomDetail|null> => (await call('/admin/fixture/'+kind+'/'+encodeURIComponent(matchId))).room,
  resolveReport:async(roomId:string,reportId:string)=>call(`/reports/${encodeURIComponent(roomId)}/${encodeURIComponent(reportId)}/resolve`,{method:'POST',body:'{}'}),
  adminBlock:async(roomId:string,blocked:boolean)=>call(`/reports/${encodeURIComponent(roomId)}/block`,{method:'POST',body:JSON.stringify({blocked})}),
 };
