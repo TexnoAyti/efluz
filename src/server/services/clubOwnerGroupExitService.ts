@@ -73,10 +73,10 @@ export async function handleClubOwnerGroupExit(update:any):Promise<'ignored'|'re
  }
  // Direct messages are initiated only for known club owners. Telegram may
  // reject users who have not started the bot or have blocked it.
- const personalText='EFLUZ · Guruhga qaytish eslatmasi\\n\\n'+
-  'Siz EFLUZ klub egasi sifatida @'+expectedGroup()+' guruhida hozir a’zo emassiz.\\n'+
-  'Klubingiz: '+detail+'\\n\\n'+
-  'Uchrashuvlar, joriy tur va muhim e’lonlarni o‘tkazib yubormaslik uchun guruhga qayting.\\n'+
+ const personalText='EFLUZ · Guruhga qaytish eslatmasi\n\n'+
+  'Siz EFLUZ klub egasi sifatida @'+expectedGroup()+' guruhida hozir a’zo emassiz.\n'+
+  'Klubingiz: '+detail+'\n\n'+
+  'Uchrashuvlar, joriy tur va muhim e’lonlarni o‘tkazib yubormaslik uchun guruhga qayting.\n'+
   'Klubingiz avtomatik olib qo‘yilmadi.';
  const personal=await sendTelegramMessage(telegramId,personalText,{
   parse_mode:null,
