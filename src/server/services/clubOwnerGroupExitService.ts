@@ -66,7 +66,7 @@ export async function handleClubOwnerGroupExit(update:any):Promise<'ignored'|'re
   '\nVaqt: '+now+'\nGuruh: @'+expectedGroup()+
   '\n\nKlub egaligi avtomatik bekor qilinmadi.';
  // Record first. If delivery fails, it remains available in the admin endpoint.
- if(PRIMARY_OWNER_TELEGRAM_ID){
+ if(PRIMARY_OWNER_TELEGRAM_ID&&process.env.FIREBASE_FORCE_LOCAL_FALLBACK!=='true'){
   const sent=await sendTelegramMessage(PRIMARY_OWNER_TELEGRAM_ID,message,{parse_mode:null});
   if(sent.ok)await ref.set({...record,notifiedAt:new Date().toISOString()});
   else console.warn('[CLUB_OWNER_EXIT_ALERT_UNDELIVERED]',{userId});
