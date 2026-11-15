@@ -3,8 +3,10 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 
 // Explicit AI delegation only; this does not grant an application admin role or league permissions.
 const DELEGATED_AI_ADMIN_IDS = new Set(['7573478198']);
+// Narrow delegation: AI assistance + individual score confirmation/rejection only.
+const SCORE_APPROVAL_ASSISTANTS = new Set(['8574301555']);
 export function isAiAdminActor(id: string | number | undefined | null): boolean {
-  return isPrimaryOwner(id) || DELEGATED_AI_ADMIN_IDS.has(String(id));
+  return isPrimaryOwner(id) || DELEGATED_AI_ADMIN_IDS.has(String(id)) || SCORE_APPROVAL_ASSISTANTS.has(String(id));
 }
 const LEAGUE_OPERATIONS = new Set([
   'results_bulk_preview','results_bulk_apply','result_edit','result_clear','result_approve','result_reject',
@@ -16,6 +18,8 @@ const LEAGUE_OPERATIONS = new Set([
 ]);
 export function assertAiAdminActionAllowed(id: number, plan: AdminPlan): void {
   if (!isAiAdminActor(id) || !Number.isSafeInteger(id)) throw new Error('OWNER_ONLY');
+  if (SCORE_APPROVAL_ASSISTANTS.has(String(id)) && !['result_approve','result_reject'].includes(plan.action))
+    throw new Error('CLARIFY:Sizga AI yordamchisi va alohida hisoblarni tasdiqlash yoki rad etish ruxsati berilgan. Boshqa admin amallari yopiq.');
   if (!isPrimaryOwner(id) && !LEAGUE_OPERATIONS.has(plan.action))
     throw new Error('CLARIFY:Bu amal faqat asosiy admin uchun. Siz liga va kubok bo‘yicha mavjud admin ruxsatlaringiz doirasida AI buyruqlarini bera olasiz.');
 }
