@@ -172,6 +172,14 @@ async function runDeploymentSelfCheck() {
       throw new Error(`FAILED [CHECK 3.6]: POST /api/auth/telegram returned HTTP ${authTest.status} (expected JSON 400, got text="${authTest.text.slice(0, 80)}")`);
     }
     console.log('✅ PASS [CHECK 3.6]: POST /api/auth/telegram returned HTTP 400 JSON (Clean JSON error, NOT HTML)');
+    // 3.7 A malformed season must be handled by the real awards router, not
+    // masked by the global 404 wildcard. This guards against future unmounts.
+    const invalidAwards = await testEndpoint('/api/awards/not-a-season');
+    if (invalidAwards.status !== 400 || !invalidAwards.isJson || invalidAwards.json?.message !== 'Mavsum noto‘g‘ri.') {
+      throw new Error(`FAILED [CHECK 3.7]: awards route missing: HTTP ${invalidAwards.status} text="${invalidAwards.text.slice(0,100)}"`);
+    }
+    console.log('✅ PASS [CHECK 3.7]: GET /api/awards/not-a-season is handled by awards router (400 JSON).');
+
   } finally {
     server.close();
   }

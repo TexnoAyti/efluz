@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
-import {getPenaltyRace,submitPenaltyShot,importLocalPenaltyGoals} from '../services/penaltyRaceService';
+import {getPenaltyRace,getPenaltyRaceAdminStats,submitPenaltyShot,importLocalPenaltyGoals} from '../services/penaltyRaceService';
 import type {User} from '../../types';
 
 await initDatabase();
@@ -48,4 +48,15 @@ await assert.rejects(submitPenaltyShot(fixtureId,outsider,'shot_test_id_000004',
 const fixture=(await db.collection('fixtures').doc(fixtureId).get()).data();
 assert.equal(fixture?.status,'SCHEDULED','Exhibition never confirms a league match');
 assert.equal(fixture?.homeScore,undefined,'Exhibition never modifies official goals');
+const mainAdmin=makeUser('user-5209126900');mainAdmin.isAdmin=true;
+await db.collection('users').doc(mainAdmin.id).set(mainAdmin);
+const stats=await getPenaltyRaceAdminStats(mainAdmin);
+assert.equal(stats.official,false);
+assert.equal(stats.totalGoals,7);
+assert.equal(stats.totalShots,2);
+assert.ok(stats.players.some(x=>x.userId===home.id&&x.goals===5));
+await assert.rejects(getPenaltyRaceAdminStats(home),(e:any)=>e.statusCode===403);
+const otherAdmin=makeUser('user-61004');otherAdmin.isAdmin=true;
+await db.collection('users').doc(otherAdmin.id).set(otherAdmin);
+await assert.rejects(getPenaltyRaceAdminStats(otherAdmin),(e:any)=>e.statusCode===403);
 console.log('PASS serverless penalty race: shared scoreboard, participant authentication, atomic retry dedupe, throttling, zero official match writes');

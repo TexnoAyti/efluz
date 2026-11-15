@@ -1,13 +1,14 @@
 import {Router} from 'express';
 import {z} from 'zod';
 import {requireAuth} from '../middleware/authMiddleware';
-import {getPenaltyRace,submitPenaltyShot,importLocalPenaltyGoals,PenaltyRaceError} from '../services/penaltyRaceService';
+import {getPenaltyRace,getPenaltyRaceAdminStats,submitPenaltyShot,importLocalPenaltyGoals,PenaltyRaceError} from '../services/penaltyRaceService';
 
 export const penaltyRaceRouter=Router();
 penaltyRaceRouter.use(requireAuth);
 penaltyRaceRouter.use((_req,res,next)=>{res.setHeader('Cache-Control','private, no-store');next();});
 const valid=z.string().regex(/^[A-Za-z0-9:_-]{1,180}$/);
 const fail=(res:any,err:any)=>{const status=err instanceof PenaltyRaceError?err.statusCode:503;res.status(status).json({ok:false,error:err instanceof PenaltyRaceError?err.message:'PENALTY_SCORE_UNAVAILABLE'});};
+penaltyRaceRouter.get('/admin/stats',async(req,res)=>{try{res.json({ok:true,stats:await getPenaltyRaceAdminStats(req.user!)});}catch(err){fail(res,err);}});
 penaltyRaceRouter.get('/:fixtureId',async(req,res)=>{
  try{const id=valid.parse(req.params.fixtureId);res.json({ok:true,race:await getPenaltyRace(id,req.user!)});}
  catch(err){fail(res,err);}

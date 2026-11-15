@@ -1,4 +1,5 @@
 import {getFirestoreDb} from '../firebase/admin';
+import {isPrimaryOwner} from './telegramAiConfigService';
 import {authorizePenaltyFixture} from './matchChatService';
 import type {User} from '../../types';
 
@@ -104,4 +105,37 @@ export async function importLocalPenaltyGoals(fixtureId:string,user:User,localGo
   return next;
  });
  return show(result,user);
+}
+
+/** Read-only exhibit statistics, initial visibility limited to the primary owner.
+ * Snapshot is bounded to avoid adding a costly global worker/query to Supabase.
+ */
+export async function getPenaltyRaceAdminStats(user:User){
+ const db=getFirestoreDb();
+ const account=(await db.collection('users').doc(user.id).get()).data() as User|undefined;
+ if(!account||account.isSuspended||!account.isAdmin||
+  String(account.telegramId)!==String(user.telegramId)||
+  !isPrimaryOwner(account.telegramId)||
+  account.id!=='user-'+String(account.telegramId))
+  throw new PenaltyRaceError('ONLY_PRIMARY_OWNER',403);
+ const snap=await db.collection('penalty_exhibition_races').limit(120).get();
+ const races=snap.docs.map(d=>d.data() as Race)
+  .filter(r=>r?.fixtureId&&r.goals&&r.shots&&Array.isArray(r.participants))
+  .sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+ const aggregated=new Map<string,{userId:string;goals:number;shots:number;fixtures:number}>();
+ for(const race of races)for(const [index,side] of (['home','away'] as Side[]).entries()){
+  const userId=race.participants[index];if(!userId)continue;
+  const item=aggregated.get(userId)||{userId,goals:0,shots:0,fixtures:0};
+  item.goals+=Math.max(0,Number(race.goals[side]||0));
+  item.shots+=Math.max(0,Number(race.shots[side]||0));
+  item.fixtures++;aggregated.set(userId,item);
+ }
+ return {sampledRaces:races.length,capped:snap.size>=120,
+  totalGoals:races.reduce((n,r)=>n+(r.goals.home||0)+(r.goals.away||0),0),
+  totalShots:races.reduce((n,r)=>n+(r.shots.home||0)+(r.shots.away||0),0),
+  players:[...aggregated.values()].sort((a,b)=>b.goals-a.goals||b.shots-a.shots||a.userId.localeCompare(b.userId)).slice(0,30),
+  matches:races.slice(0,20).map(r=>({fixtureId:r.fixtureId,updatedAt:r.updatedAt,
+   homeUserId:r.participants[0],awayUserId:r.participants[1],
+   homeGoals:r.goals.home,awayGoals:r.goals.away,homeShots:r.shots.home,awayShots:r.shots.away})),
+  official:false};
 }

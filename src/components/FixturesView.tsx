@@ -640,6 +640,11 @@ export const FixturesView: React.FC = () => {
                       : 'Pending Score'}
                   </div>
 
+                  {canUseDangerZone(user)&&<button type="button"
+                    onClick={()=>setSelectedAdminFixture(fixture)}
+                    className="px-3 py-2 rounded-xl border border-sky-400/40 bg-sky-500/10 text-sky-200 text-xs font-black min-h-[38px]">
+                    Uchrashuvni ochish
+                  </button>}
                   <div className="flex items-center gap-1.5 shrink-0">
                     {(() => {
                       if (!isUserParticipant) return null;

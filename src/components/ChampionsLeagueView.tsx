@@ -10,6 +10,8 @@ import { Competition, StandingsRow, Fixture } from '../types';
 import { ClubCrest } from './ClubCrest';
 import { TournamentBracket } from './TournamentBracket';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
+import {AdminFixtureQuickActions} from './AdminFixtureQuickActions';
+import {openMatchChat} from '../lib/matchChat';
 import { getClubOwnerDisplay } from '../lib/ownerUtils';
 import {
   Globe2,
@@ -41,7 +43,10 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const [standings, setStandings] = useState<StandingsRow[]>([]);
   const [participants, setParticipants] = useState<any[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  const [activeTab, setActiveTab] = useState<'STANDINGS' | 'BRACKET' | 'QUALIFICATION'>('STANDINGS');
+  const [activeTab, setActiveTab] = useState<'STANDINGS' | 'BRACKET' | 'QUALIFICATION' | 'MATCHES'>('MATCHES');
+  const [fixturesLoading,setFixturesLoading]=useState(false);
+  const [selectedMatchday,setSelectedMatchday]=useState<number|null>(null);
+  const [selectedAdminFixture,setSelectedAdminFixture]=useState<Fixture|null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFixtureForSubmit, setSelectedFixtureForSubmit] = useState<Fixture | null>(null);
@@ -82,7 +87,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
       if (uefaComps.length > 0) {
         const defaultComp = uefaComps.find((c) => c.id.includes('champions')) || uefaComps[0];
         setSelectedTournament(defaultComp);
-        loadTournamentDetails(defaultComp.id);
+        loadTournamentDetails(defaultComp.id,true);
       }
     } catch (err: any) {
       console.error('Failed to load European tournament data:', err);
@@ -102,7 +107,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
         api.getCompetitionStandings(compId, false, europeanSeasonId).catch(() => ({ standings: [] })),
         api.getCompetitionParticipants(compId).catch(() => ({ participants: [] })),
       ];
-      if (loadFix || activeTab === 'BRACKET') {
+      if (loadFix || activeTab === 'BRACKET' || activeTab === 'MATCHES') {
         promises.push(api.getCompetitionFixtures(compId, undefined, undefined, false, europeanSeasonId).catch(() => ({ fixtures: [] })));
       }
 
@@ -120,15 +125,18 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const handleSelectTournament = (comp: Competition) => {
     setFixtures([]); setStandings([]); setParticipants([]);
     setSelectedTournament(comp);
-    loadTournamentDetails(comp.id, activeTab === 'BRACKET');
+    setSelectedMatchday(null);
+    loadTournamentDetails(comp.id, true);
   };
 
-  const handleTabChange = (tab: 'STANDINGS' | 'BRACKET') => {
+  const handleTabChange = (tab: 'STANDINGS' | 'BRACKET' | 'MATCHES') => {
     setActiveTab(tab);
-    if (tab === 'BRACKET' && selectedTournament && fixtures.length === 0) {
+    if ((tab === 'BRACKET' || tab === 'MATCHES') && selectedTournament && fixtures.length === 0) {
+      setFixturesLoading(true);
       api.getCompetitionFixtures(selectedTournament.id, undefined, undefined, false, europeanSeasonId)
         .then((res) => setFixtures(res.fixtures || []))
-        .catch((err) => console.error('Error loading bracket fixtures:', err));
+        .catch((err) => setError(err.message||'Uchrashuvlar yuklanmadi.'))
+        .finally(()=>setFixturesLoading(false));
     }
   };
 
@@ -423,6 +431,10 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             >
               {t.knockoutBracket} {fixtures.length > 0 ? `(${fixtures.length})` : ''}
             </button>
+            <button type="button" onClick={()=>handleTabChange('MATCHES')}
+              className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap ${activeTab==='MATCHES'?'bg-white dark:bg-[#111722] text-blue-600 dark:text-blue-400 shadow-sm':'text-slate-600 dark:text-slate-400'}`}>
+              O‘yinlar {fixtures.length?('('+fixtures.length+')'):''}
+            </button>
             <button
               onClick={() => setActiveTab('QUALIFICATION')}
               className={`flex-1 min-w-[110px] py-1.5 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
@@ -657,6 +669,42 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
               )}
             </div>
           )}
+
+      {/* UEFA League Phase: actual server fixtures, not projected knockout matches */}
+      {activeTab==='MATCHES'&&<section className="space-y-4" aria-label="Yevrokubok uchrashuvlari">
+       <header className="flex justify-between items-start gap-3">
+        <div><h3 className="text-base font-black text-slate-900 dark:text-white">Uchrashuvlar · {selectedTournament?.name}</h3>
+         <p className="text-xs text-slate-500 dark:text-slate-400">Joriy va avvalgi turlar. Hisob, raqib va tasdiqlash holati.</p></div>
+        <button type="button" disabled={fixturesLoading||!selectedTournament} onClick={()=>{if(!selectedTournament)return;setFixturesLoading(true);api.getCompetitionFixtures(selectedTournament.id,undefined,undefined,true,europeanSeasonId).then(res=>setFixtures(res.fixtures||[])).catch(e=>setError(e.message||'O‘yinlar yuklanmadi.')).finally(()=>setFixturesLoading(false));}}
+          className="rounded-xl px-3 py-2 text-xs font-bold border border-blue-400/30 text-blue-500 dark:text-blue-300">Yangilash</button>
+       </header>
+       {fixturesLoading&&<p role="status" className="text-xs text-slate-400">O‘yinlar yuklanmoqda…</p>}
+       {error&&<p role="alert" className="text-xs text-rose-400">{error}</p>}
+       {fixtures.length>0&&<div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button type="button" onClick={()=>setSelectedMatchday(null)} className={`shrink-0 rounded-xl px-3 py-2 text-xs font-bold ${selectedMatchday===null?'bg-blue-600 text-white':'glass-card text-slate-400'}`}>Barcha turlar</button>
+        {[...new Set(fixtures.map(f=>f.matchday))].sort((a,b)=>a-b).map(md=><button key={md} type="button" onClick={()=>setSelectedMatchday(md)} className={`shrink-0 rounded-xl px-3 py-2 text-xs font-bold ${selectedMatchday===md?'bg-blue-600 text-white':'glass-card text-slate-400'}`}>{md}-tur</button>)}
+       </div>}
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {fixtures.filter(f=>selectedMatchday===null||f.matchday===selectedMatchday).sort((a,b)=>a.matchday-b.matchday||a.id.localeCompare(b.id)).map(f=>{
+         const participant=!!user&&(f.homeOwnerId===user.id||f.awayOwnerId===user.id||ownedClubs.some(club=>club.id===f.homeClubId||club.id===f.awayClubId));
+         return <article key={f.id} className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#141c2a] p-4 space-y-3">
+          <div className="flex justify-between text-xs text-slate-500"><b>{f.roundName||f.matchday+'-tur'}</b><span>{f.status==='CONFIRMED'?'Tasdiqlangan':f.status==='PENDING_CONFIRMATION'?'Tasdiq kutilmoqda':f.status==='DISPUTED'?'Nizo':'O‘ynalmagan'}</span></div>
+          <div className="flex justify-between items-center gap-2 text-center text-sm font-bold text-slate-900 dark:text-white">
+           <span className="flex-1 truncate">{f.homeClub?.name||f.homeClubId}</span>
+           <strong className="font-black tabular-nums">{f.status==='CONFIRMED'?f.homeScore+' : '+f.awayScore:'VS'}</strong>
+           <span className="flex-1 truncate">{f.awayClub?.name||f.awayClubId}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+           {canUseDangerZone(user)&&<button type="button" onClick={()=>setSelectedAdminFixture(f)} className="px-3 py-2 text-xs rounded-xl bg-blue-600 text-white font-bold">Uchrashuvni ochish</button>}
+           {participant&&<><button type="button" onClick={()=>openMatchChat({kind:'fixture',matchId:f.id})} className="px-3 py-2 text-xs rounded-xl glass-card text-slate-300 font-bold">Chat</button>
+            {f.status!=='CONFIRMED'&&<button type="button" onClick={()=>setSelectedFixtureForSubmit(f)} className="px-3 py-2 text-xs rounded-xl bg-emerald-600 text-white font-bold">Hisob kiritish</button>}</>}
+          </div>
+         </article>;
+        })}
+       </div>
+       {!fixturesLoading&&!fixtures.length&&<p className="rounded-xl glass-card p-5 text-sm text-slate-400">Hozircha bu musobaqa uchun rasmiy uchrashuvlar topilmadi.</p>}
+      </section>}
+      {selectedAdminFixture&&canUseDangerZone(user)&&<AdminFixtureQuickActions fixture={selectedAdminFixture} onClose={()=>setSelectedAdminFixture(null)} onScoreSaved={()=>{if(selectedTournament)void loadTournamentDetails(selectedTournament.id,true);}}/>}
 
       {/* TAB 2: Knockout Bracket & Matches */}
       {activeTab === 'BRACKET' && (
