@@ -381,6 +381,7 @@ telegramRouter.get('/status', async (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     aiEnabled: config.enabled,
+    aiStateBackend: process.env.DATABASE_PROVIDER === 'supabase' && process.env.EFL_AI_STATE_BACKEND !== 'redis' ? 'postgres' : 'redis',
     redisAvailable,
     connection,
     configured: hasToken,
