@@ -28,7 +28,7 @@ import type { AdminPlan } from './telegramAiAdminCatalog';
 const ttl = 86400, prefix = 'efluz:v1:telegram:topic-result:';
 /** Season 2 domestic leagues are live while Season 1 UEFA/Super Cups continue. */
 export function topicResultSeason(thread:number):string {
-  return [2,3,4,5,6].includes(thread)?'season-2027-28':'season-2026-27';
+  return [2,3,4,5,6,11972].includes(thread)?'season-2027-28':'season-2026-27';
 }
 const proposalKey = (token: string) => prefix + 'proposal:' + token;
 const sourceKey = (chat: number, thread: number, message: number) => `${prefix}source:${chat}:${thread}:${message}`;
@@ -80,7 +80,10 @@ return 1`;
 export function competitionResultTopic(c: Competition): number | null {
   const name = `${c.id} ${c.name}`.toLowerCase();
   if (name.includes('super')) return 2335;
-  if (/champions|ucl|europa|uel/.test(name)) return 7;
+  if (/champions|ucl/.test(name)) return 7;
+  if (/europa|uel/.test(name)) return 11429;
+  if (/uzbek|uzbekiston|uzbekistan|saudi|arabia|japan|japanese|turkey|turkish|asia|osiyo|j1.?league|superliga/.test(name)
+      || /(?:uzbek|saudi|japan|turk|asia)/.test(String(c.leagueId||'').toLowerCase())) return 11972;
   if (/cup|pokal|copa|coppa|coupe/.test(name)) return 8;
   return c.type === 'LEAGUE' ? ({ 'league-premier-league': 2, 'league-la-liga': 3, 'league-serie-a': 4, 'league-bundesliga': 5, 'league-ligue-1': 6 } as Record<string, number>)[c.leagueId!] || null : null;
 }
@@ -157,7 +160,10 @@ export async function planTopicResult(text: string, sender: number, thread: numb
   }
   if(next!=null)throw Error('CLARIFY:Musobaqalar juda ko‘p, ro‘yxat to‘liq tekshirilmagan.');
   const allowed = allCompetitions.filter(c => competitionResultTopic(c) === thread);
-  if (!allowed.length) return null;
+  if (!allowed.length) {
+    if(thread===11972)throw Error('CLARIFY:Osiyo ligalari mavzusi ulangan, ammo 2-mavsum bazasida Osiyo musobaqalari hali topilmadi. Mavjud bo‘lmagan o‘yinga hisob yozmayman.');
+    return null;
+  }
   const named = findConversationCompetitions(text, allCompetitions);
   if (named.some(c => !allowed.some(a => a.id === c.id))) throw Error('CLARIFY:Bu natija boshqa turnirga tegishli. Uni o‘sha turnir mavzusiga yuboring.');
   let competitions = named.length ? allowed.filter(c => named.some(n => n.id === c.id)) : allowed;
@@ -289,7 +295,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       return {handled:true,result:state};
     }
     const m = update.edited_message || update.message;
-    if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335,UZEFLIFE_RESULT_TOPIC].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.is_automatic_forward) return {handled:false};
+    if (!m || m.chat?.username?.toLowerCase() !== 'efleagueuz' || ![2,3,4,5,6,7,8,2335,11429,11972,UZEFLIFE_RESULT_TOPIC].includes(m.message_thread_id) || !Number.isSafeInteger(m.from?.id) || m.from.id <= 0 || m.from.is_bot || m.sender_chat || m.is_automatic_forward) return {handled:false};
     // A manual screenshot forward is evidence supplied by the current sender, never authorization from its original author.
     const forwarded=Boolean(m.forward_origin||m.forward_from||m.forward_from_chat);
     let text = normalizeResultText(String(m.text || m.caption || '').trim());
