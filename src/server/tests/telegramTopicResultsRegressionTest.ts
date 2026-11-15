@@ -90,6 +90,20 @@ for (const [leagueId,name,thread] of [['league-premier-league','Premier League',
   competitions.pop(); clubs.splice(-2);
 }
 games=originalGames;
+// A user's match can be outside the first 30 fixture rows; a page limit
+// cannot make the AI silently miss an otherwise verified current game.
+const pagingComp={id:'page-fixtures-league',name:'La Liga',type:'LEAGUE',seasonId,leagueId:'league-la-liga',currentMatchday:31};
+competitions.push(pagingComp);
+const savedGames=games;
+games=Array.from({length:31},(_,i)=>({...fixture('paged-fixture-'+i,pagingComp.id),matchday:i+1,status:i===30?'SCHEDULED':'CONFIRMED'}));
+const paged=await planTopicResult('2-1 31-tur',1001,3,signal);
+assert.equal(paged?.plan.targetId,'paged-fixture-30','A valid fixture beyond page one must be recognized');
+assert.equal((paged?.plan.body.expectedFixture as any)?.seasonId,seasonId,'Proposal must bind exact season');
+assert.throws(()=>assertTopicResultCurrent(
+ {...games[30],seasonId:'season-2027-28'},
+ paged!.plan.body.expectedFixture as any
+),/o‘zgargan/,'A mismatched season cannot be confirmed');
+games=savedGames;competitions.pop();
 const reported=games[0];
 Object.assign(reported,{status:'CONFIRMED',homeScore:3,awayScore:2});
 await assert.rejects(planTopicResult('Real Madrid 4-1 Barca',1001,3,signal),/allaqachon tasdiqlangan.*Real Madrid 3:2 Barcelona/s);
