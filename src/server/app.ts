@@ -270,6 +270,7 @@ export function createApp() {
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/match-chat', matchChatRouter);
   app.use('/api/penalty-race', penaltyRaceRouter);
+  app.use('/api/awards', seasonAwardsRouter);
   app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);
