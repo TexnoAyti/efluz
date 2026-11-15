@@ -8,6 +8,7 @@ import type {Fixture} from '../../types';
 
 await initDatabase();
 process.env.DATABASE_PROVIDER='supabase';
+process.env.SUPABASE_DATA_NAMESPACE='production';
 const db=getFirestoreDb();
 const seasonId='season-2027-28',competitionId='comp-premier-league-2027';
 const fixture={id:'visible-commit-one',seasonId,competitionId,matchday:3,
