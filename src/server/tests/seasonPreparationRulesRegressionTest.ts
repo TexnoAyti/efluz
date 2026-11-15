@@ -33,7 +33,7 @@ const fullSaudi=previewPreparedLeagueSchedule('league-saudi-pro-league')!.fixtur
   homeScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.homeScore||0,
   awayScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.awayScore||0,
 }));
-assert.deepEqual(rankPreparedLeagueResults('league-saudi-pro-league',fullSaudi,{final:true}).standings.slice(0,3).map(row=>row.id),saudi.slice(0,3),'Saudi mini-table criteria must finish before reapplying to a reduced tie');
+assert.deepEqual(rankPreparedLeagueResults('league-saudi-pro-league',fullSaudi,{final:true}).standings.slice(0,3).map(row=>row.id),['club-al-ettifaq','club-abha','club-al-fateh'],'Saudi ranking follows the actual single-round fixture orientation, not duplicate reverse matches');
 const pl=ids('league-premier-league');
 const first=result(pl,0,1,1,0);
 assert.throws(()=>rankPreparedLeagueResults('league-premier-league',[first,{...first,id:'duplicate'}]),/DUPLICATE/);
@@ -88,9 +88,17 @@ assert.ok(rankPreparedLeagueResults('league-uzbekistan-superliga',uzFixtures.map
 uzFixtures[0].technicalLossClubId=uz[1];
 assert.deepEqual(rankPreparedLeagueResults('league-uzbekistan-superliga',uzFixtures).standings.slice(0,2).map(row=>row.id),uz.slice(0,2),'Uzbek technical-loss exception takes precedence over head-to-head goal difference');
 const it=ids('league-serie-a');
+// Single-leg Serie A: two leaders defeat everyone else, then draw their sole
+// head-to-head. Equal points with differing goal difference resolves the ranking before the title-playoff rule.
 const fullItaly=previewPreparedLeagueSchedule('league-serie-a')!.fixtures.map((f,index)=>{
-  const h=it.indexOf(f.homeClubId),a=it.indexOf(f.awayClubId),titlePair=h>=18&&a>=18;
-  return {...f,id:'italy-full-'+index,seasonId,status:'CONFIRMED' as const,homeScore:titlePair?2:h>a?h-a:0,awayScore:titlePair?0:a>h?a-h:0};
+  const leaderHome=[it[18],it[19]].includes(f.homeClubId);
+  const leaderAway=[it[18],it[19]].includes(f.awayClubId);
+  // Lower-table teams have distinct results, preventing unrelated draws
+  // from blocking finalization after the title tiebreak is resolved.
+  const nonLeaderMatch=!leaderHome&&!leaderAway;
+  return {...f,id:'italy-full-'+index,seasonId,status:'CONFIRMED' as const,
+    homeScore:leaderHome&&!leaderAway?(f.homeClubId===it[18]?3:2):nonLeaderMatch&&it.indexOf(f.homeClubId)<it.indexOf(f.awayClubId)?1:0,
+    awayScore:leaderAway&&!leaderHome?(f.awayClubId===it[18]?3:2):nonLeaderMatch&&it.indexOf(f.awayClubId)<it.indexOf(f.homeClubId)?1:0};
 });
 assert.ok(rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true}).blockers.includes('SERIE_A_FINALIST_STATUS_REQUIRED'));
 const italianPlayoff=rankPreparedLeagueResults('league-serie-a',fullItaly,{final:true,europeanFinalistClubIds:[]});

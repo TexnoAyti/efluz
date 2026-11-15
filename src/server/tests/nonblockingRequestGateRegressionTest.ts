@@ -17,8 +17,13 @@ try {
   const response=await fetch(base+path);assert.equal(response.status,status,path);
   const timing=response.headers.get('server-timing')||'';assert.match(timing,/rate_limit;dur=/);
   const ms=Number(timing.match(/rate_limit;dur=([\d.]+)/)?.[1]);assert.ok(ms<100,'Broad request gate cannot wait for storage');
+  if(path==='/api/seasons') {
+    const catalog=await response.json();
+    assert.equal(catalog.degraded,true,'Offline live Season 2 status must not be fabricated');
+    assert.ok(catalog.seasons.some((season:any)=>season.id==='season-2026-27'));
+  }
  }
- assert.equal(accesses,0,'Static reads and unauthenticated identity checks must not touch the database');
+ assert.equal(accesses,1,'Only the optional live Season 2 metadata probe may reach the offline database');
 }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));(db as any).collection=collection;(db as any).runTransaction=transaction;}
 const guards=express();
 guards.get('/local',rateLimit('local-gate-regression',2,60,{distributed:false}),(_req,res)=>res.json({ok:true}));
@@ -35,8 +40,8 @@ try {
  assert.equal((await request('/shared-a','198.51.100.1')).status,200);
  assert.equal((await request('/shared-b','198.51.100.2')).status,200);
  assert.equal((await request('/shared-a','198.51.100.3')).status,429);
- assert.equal(sharedTransactions,0,'Supabase deployment uses bounded per-instance counters without database transactions');
+ assert.equal(sharedTransactions,0,'Supabase-mode request guards must not access the shared PostgreSQL generation counter');
  (db as any).runTransaction=()=>{throw Error('DATABASE_OFFLINE');};
  for(const status of [200,200,429])assert.equal((await request('/outage','198.51.100.4')).status,status,'Outage fallback is bounded rather than fail-open');
 }finally{(db as any).runTransaction=transaction;await new Promise<void>(resolve=>guarded.close(()=>resolve()));}
-console.log('PASS database-independent global gate: real health/seasons/bootstrap/matches HTTP during outage, fast bounded local budget, untrusted header resistance, bounded default/action guards without database pressure and bounded outage fallback');
+console.log('PASS database-independent global gate: real health/seasons/bootstrap/matches HTTP during outage, fast bounded local budget, untrusted header resistance, bounded Supabase-mode local guards and bounded outage fallback');

@@ -29,7 +29,9 @@ interface ChampionsLeagueViewProps {
 }
 
 export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavigateTab }) => {
-  const { user, currentClub, ownedClubs = [], activeSeasonId } = useAuth();
+  const { user, currentClub, ownedClubs = [] } = useAuth();
+  // Season 1 UEFA tournaments remain live while Season 2 only accepts club registrations.
+  const europeanSeasonId = 'season-2026-27';
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
@@ -62,7 +64,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
     setIsLoading(true);
     setError(null);
     try {
-      const compsRes = await api.getCompetitions(activeSeasonId);
+      const compsRes = await api.getCompetitions(europeanSeasonId);
       setQualificationLeagues((compsRes.competitions || []).filter(c=>c.type === 'LEAGUE'));
       const uefaComps = (compsRes.competitions || []).filter(
         (c) =>
@@ -92,16 +94,16 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
 
   useEffect(() => {
     loadEuropeanData();
-  }, [activeSeasonId]);
+  }, [europeanSeasonId]);
 
   const loadTournamentDetails = async (compId: string, loadFix = false) => {
     try {
       const promises: Promise<any>[] = [
-        api.getCompetitionStandings(compId, false, activeSeasonId).catch(() => ({ standings: [] })),
+        api.getCompetitionStandings(compId, false, europeanSeasonId).catch(() => ({ standings: [] })),
         api.getCompetitionParticipants(compId).catch(() => ({ participants: [] })),
       ];
       if (loadFix || activeTab === 'BRACKET') {
-        promises.push(api.getCompetitionFixtures(compId, undefined, undefined, false, activeSeasonId).catch(() => ({ fixtures: [] })));
+        promises.push(api.getCompetitionFixtures(compId, undefined, undefined, false, europeanSeasonId).catch(() => ({ fixtures: [] })));
       }
 
       const results = await Promise.all(promises);
@@ -124,7 +126,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
   const handleTabChange = (tab: 'STANDINGS' | 'BRACKET') => {
     setActiveTab(tab);
     if (tab === 'BRACKET' && selectedTournament && fixtures.length === 0) {
-      api.getCompetitionFixtures(selectedTournament.id, undefined, undefined, false, activeSeasonId)
+      api.getCompetitionFixtures(selectedTournament.id, undefined, undefined, false, europeanSeasonId)
         .then((res) => setFixtures(res.fixtures || []))
         .catch((err) => console.error('Error loading bracket fixtures:', err));
     }
@@ -728,7 +730,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
               <div className="font-black text-blue-600 efl-theme-blue dark:text-blue-400 text-sm">UEFA Champions League (32 jamoa)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
-                {qualificationLeagues.map(league => { const {uclEnd} = seasonQualificationRanges(league,activeSeasonId); return <li key={league.id}>• {league.name}: {uclEnd} ta joy (1–{uclEnd}-o‘rinlar)</li>; })}
+                {qualificationLeagues.map(league => { const {uclEnd} = seasonQualificationRanges(league,europeanSeasonId); return <li key={league.id}>• {league.name}: {uclEnd} ta joy (1–{uclEnd}-o‘rinlar)</li>; })}
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
                 <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>
@@ -737,7 +739,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
             <div className="p-4 rounded-xl border border-slate-200/80 efl-theme-border dark:border-white/10 bg-slate-50 efl-theme-surface-2 dark:bg-white/[0.03] space-y-2">
               <div className="font-black text-indigo-600 efl-theme-indigo dark:text-indigo-400 text-sm">UEFA Europa League (32 jamoa)</div>
               <ul className="space-y-1.5 text-slate-600 efl-theme-text-2 dark:text-slate-400 text-xs">
-                {qualificationLeagues.map(league => { const {uclEnd,uelEnd} = seasonQualificationRanges(league,activeSeasonId); return <li key={league.id}>• {league.name}: {uelEnd - uclEnd} ta joy ({uclEnd + 1}–{uelEnd}-o‘rinlar)</li>; })}
+                {qualificationLeagues.map(league => { const {uclEnd,uelEnd} = seasonQualificationRanges(league,europeanSeasonId); return <li key={league.id}>• {league.name}: {uelEnd - uclEnd} ta joy ({uclEnd + 1}–{uelEnd}-o‘rinlar)</li>; })}
                 <li>• Format: 32-Team Single League Phase, 8 Matchdays (4H / 4A)</li>
                 <li>• Top 8: Direct to Round of 16 | 9th–24th: Knockout Play-offs | 25th–32nd: Eliminated</li>
               </ul>

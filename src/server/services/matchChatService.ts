@@ -56,12 +56,17 @@ async function context(kind:MatchChatKind,rawId:string,user:User){
  return value;
 }
 
+/** Read-only authorization for the exhibition penalty scoreboard; does not create chat rooms. */
+export async function authorizePenaltyFixture(matchId:string,user:User){
+ const match=await context('fixture',matchId,user);
+ return {seasonId:match.seasonId,participants:match.participants.map(p=>p.id),side:match.participants[0].id===user.id?'home' as const:'away' as const,closed:match.closed};
+}
 function initialRoom(value:MatchContext):ChatRoom{const now=new Date().toISOString();return {id:roomId(value.kind,value.matchId,value.participants.map(p=>p.id)),kind:value.kind,matchId:value.matchId,seasonId:value.seasonId,title:value.title,subtitle:value.subtitle,participants:value.participants,messages:[],unread:Object.fromEntries(value.participants.map(p=>[p.id,0])),blockedBy:[],reports:[],createdAt:now,updatedAt:now,lastMessageAt:null,closed:value.closed,pinnedMessageId:null};}
-function view(room:ChatRoom,userId:string):MatchChatView{const opponent=room.participants.find(p=>p.id!==userId)!;const messages=room.messages||[];return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,messages,pinnedMessage:messages.find(m=>m.id===room.pinnedMessageId)||null,unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
+function view(room:ChatRoom,userId:string):MatchChatView{const opponent=room.participants.find(p=>p.id!==userId)!;const messages=(room.messages||[]).map(m=>({...m,avatarUrl:m.avatarUrl||room.participants.find(p=>p.id===m.senderId)?.avatarUrl||null}));return {roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,subtitle:room.subtitle,opponentId:opponent.id,opponentName:opponent.name,opponentUsername:opponent.username||null,opponentPhotoUrl:opponent.avatarUrl||null,viewerSide:room.kind==='fixture'?(room.participants[0]?.id===userId?'home':'away'):undefined,messages,pinnedMessage:messages.find(m=>m.id===room.pinnedMessageId)||null,unreadCount:Number(room.unread?.[userId]||0),blocked:(room.blockedBy||[]).length>0,blockedByMe:(room.blockedBy||[]).includes(userId),closed:!!room.closed,reportedByMe:(room.reports||[]).some(r=>r.reporterId===userId&&r.status==='OPEN'),canSend:!room.closed&&!(room.blockedBy||[]).length,quickMessages:QUICK_MESSAGES,updatedAt:room.updatedAt};}
 
 export async function readMatchChat(kind:MatchChatKind,matchId:string,user:User):Promise<MatchChatView>{
  const value=await context(kind,matchId,user),db=getFirestoreDb(),base=initialRoom(value),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(base.id);
- return db.runTransaction(async tx=>{const snap=await tx.get(ref);let room=(snap.exists?snap.data():base) as ChatRoom;room={...room,title:value.title,subtitle:value.subtitle,closed:value.closed,unread:{...(room.unread||{}),[user.id]:0},updatedAt:new Date().toISOString()};tx.set(ref,room);return view(room,user.id);});
+ return db.runTransaction(async tx=>{const snap=await tx.get(ref);let room=(snap.exists?snap.data():base) as ChatRoom;room={...room,title:value.title,subtitle:value.subtitle,participants:value.participants,closed:value.closed,unread:{...(room.unread||{}),[user.id]:0},updatedAt:new Date().toISOString()};tx.set(ref,room);return view(room,user.id);});
 }
 
 export async function sendMatchChatMessage(kind:MatchChatKind,matchId:string,user:User,rawText:unknown,rawReplyToId?:unknown):Promise<MatchChatView>{
@@ -87,3 +92,57 @@ export async function reportMatchChat(kind:MatchChatKind,matchId:string,user:Use
 export async function listMatchChatReports(user:User):Promise<MatchChatAdminReport[]>{const account=await currentAccount(user);if(!account.isAdmin)throw new MatchChatError('Faqat administrator ko‘ra oladi.',403,'ADMIN_REQUIRED');const snap=await getFirestoreDb().collection(COLLECTIONS.MATCH_CHAT_ROOMS).limit(500).get(),rows:MatchChatAdminReport[]=[];for(const doc of snap.docs){const room=doc.data() as ChatRoom;for(const report of room.reports||[])if(report.status==='OPEN')rows.push({roomId:room.id,kind:room.kind,matchId:room.matchId,title:room.title,participantNames:(room.participants||[]).map(p=>p.name),reportId:report.id,reporterId:report.reporterId,reason:report.reason,createdAt:report.createdAt,status:report.status,lastMessageAt:room.lastMessageAt,blocked:(room.blockedBy||[]).length>0,messages:(room.messages||[]).slice(-30)});}return rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,100);}
 export async function resolveMatchChatReport(user:User,roomIdValue:string,reportId:string){const account=await currentAccount(user);if(!account.isAdmin)throw new MatchChatError('Faqat administrator bajara oladi.',403,'ADMIN_REQUIRED');cleanId(roomIdValue);cleanId(reportId);const db=getFirestoreDb(),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(roomIdValue);await db.runTransaction(async tx=>{const snap=await tx.get(ref),room=snap.data() as ChatRoom|undefined;if(!room)throw new MatchChatError('Chat topilmadi.',404);const reports=(room.reports||[]).map(r=>r.id===reportId?{...r,status:'RESOLVED' as const}:r);if(!reports.some(r=>r.id===reportId))throw new MatchChatError('Shikoyat topilmadi.',404);tx.set(ref,{...room,reports,updatedAt:new Date().toISOString()});});}
 export async function setMatchChatAdminBlock(user:User,roomIdValue:string,blocked:boolean){const account=await currentAccount(user);if(!account.isAdmin)throw new MatchChatError('Faqat administrator bajara oladi.',403,'ADMIN_REQUIRED');cleanId(roomIdValue);const db=getFirestoreDb(),ref=db.collection(COLLECTIONS.MATCH_CHAT_ROOMS).doc(roomIdValue);await db.runTransaction(async tx=>{const snap=await tx.get(ref),room=snap.data() as ChatRoom|undefined;if(!room)throw new MatchChatError('Chat topilmadi.',404);const set=new Set(room.blockedBy||[]);blocked?set.add('admin'):set.delete('admin');tx.set(ref,{...room,blockedBy:[...set],updatedAt:new Date().toISOString()});});}
+
+/** Deliver profile pictures from the server rather than hotlinking Telegram's
+ * externally hosted /i/userpic URLs in an Android Mini App WebView.
+ * Only a participant can request the other participant's picture. */
+export async function readMatchChatAvatar(kind:MatchChatKind,matchId:string,user:User,side:'me'|'opponent'):Promise<{bytes:Buffer;contentType:string}|null>{
+ const match=await context(kind,matchId,user);
+ const person=side==='me'?match.participants.find(p=>p.id===user.id):match.participants.find(p=>p.id!==user.id);
+ if(!person)return null;
+ const db=getFirestoreDb(),personDoc=await db.collection(COLLECTIONS.USERS).doc(person.id).get(),account=personDoc.data()||{};
+ const tgId=String(account.telegramId||'');
+ const token=process.env.TELEGRAM_BOT_TOKEN?.trim();
+ const limitedImage=async(url:string):Promise<{bytes:Buffer;contentType:string}|null>=>{
+   const response=await fetch(url,{signal:AbortSignal.timeout(5500),headers:{Accept:'image/*'}});
+   if(!response.ok)return null;
+   const mime=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+   if(!['image/jpeg','image/png','image/webp'].includes(mime))return null;
+   if(Number(response.headers.get('content-length')||0)>2000000)return null;
+   const bytes=Buffer.from(await response.arrayBuffer());
+   return bytes.length>0&&bytes.length<=2000000?{bytes,contentType:mime}:null;
+ };
+ if(token&&/^\d{4,20}$/.test(tgId)){
+   try{
+     const reply=await fetch(`https://api.telegram.org/bot${token}/getUserProfilePhotos`,{
+       method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({user_id:Number(tgId),limit:1}),signal:AbortSignal.timeout(5000)
+     });
+     if(reply.ok){
+       const profile=await reply.json() as any;
+       const first=profile?.result?.photos?.[0]?.[0];
+       if(first?.file_id){
+         const info=await fetch(`https://api.telegram.org/bot${token}/getFile`,{
+           method:'POST',headers:{'Content-Type':'application/json'},
+           body:JSON.stringify({file_id:first.file_id}),signal:AbortSignal.timeout(5000)
+         });
+         const file=info.ok?await info.json() as any:null;
+         const path=String(file?.result?.file_path||'');
+         if(/^photos\/[A-Za-z0-9_.\/-]{1,200}$/.test(path)&&!path.includes('..')){
+           const downloaded=await limitedImage(`https://api.telegram.org/file/bot${token}/${path}`);
+           if(downloaded)return downloaded;
+         }
+       }
+     }
+   }catch{/* Photo may be private or Telegram temporarily unavailable. */}
+ }
+ // Historical profile URLs are allowed as fallback, but only from Telegram's
+ // fixed userpic location; never fetch a caller-supplied arbitrary host.
+ try{
+   const photoUrl=String(account.photoUrl||person.avatarUrl||'');
+   const parsed=new URL(photoUrl);
+   if(parsed.protocol==='https:'&&parsed.hostname==='t.me'&&/^\/i\/userpic\/[A-Za-z0-9_.\/%-]{1,260}$/.test(parsed.pathname))
+      return await limitedImage(parsed.toString());
+ }catch{/* Render the existing initials fallback when the image is unavailable. */}
+ return null;
+}

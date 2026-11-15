@@ -31,10 +31,10 @@ export const EFL_SECOND_SEASON = {
       rankingRule: PREPARED_TIE_RULES[league.id],
       format: {
         type: 'ROUND_ROBIN' as const,
-        homeAndAway: true,
+        homeAndAway: false,
         totalTeams: roster.clubs.length,
-        totalMatchdays: (roster.clubs.length - 1) * 2,
-        totalFixtures: roster.clubs.length * (roster.clubs.length - 1),
+        totalMatchdays: roster.clubs.length - 1,
+        totalFixtures: roster.clubs.length * (roster.clubs.length - 1) / 2,
         points: { win: 3, draw: 1, loss: 0 },
       },
     };

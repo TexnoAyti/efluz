@@ -66,7 +66,7 @@ interface ClubsViewProps {
 }
 
 export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub }) => {
-  const { user, currentClub, ownedClubs, activeSeasonId, refreshUserData, showToast } = useAuth();
+  const { user, currentClub, ownedClubs, activeSeasonId, setActiveSeasonId, refreshUserData, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
   const fixtureStatusText: Record<string, string> = {
@@ -287,32 +287,41 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
     } finally {
       setIsLoadingFixtures(false);
     }
-  }, [leagueCompetitions, selectedMatchday]);
+  }, [leagueCompetitions, selectedMatchday, activeSeasonId]);
 
   // 3. Load the selected season’s active domestic leagues and competitions
   const loadLeaguesAndComps = useCallback(async () => {
     setError(null);
     try {
+      // Bundled league metadata remains available if the live catalog fails. A temporary 503
+      // from its read model must never make the League picker unopenable.
+      // Only league metadata is bundled: availability and owners still come
+      // exclusively from the live, season-scoped server endpoint.
+      const preparedSeason = activeSeasonId === EFL_SECOND_SEASON.id;
       const [leaguesRes, compsRes] = await Promise.all([
-        api.getLeagues(activeSeasonId),
-        api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] })),
+        api.getLeagues(activeSeasonId).catch((error) => {
+          if (!preparedSeason) throw error;
+          return { leagues: EFL_SECOND_SEASON.leagues.map(({ id, name, country, flag }) =>
+            ({ id, name, country, flag, tier: 1, logoUrl: secondSeasonLeagueLogos[id] || '', createdAt: '' } as League)) };
+        }),
+        api.getCompetitions(activeSeasonId).catch(() => ({ competitions: [] as Competition[] })),
       ]);
 
       const domesticLeagues = leaguesRes.leagues || [];
       if (domesticLeagues.length > 0) {
         setLeagues(domesticLeagues);
       }
-      if (compsRes.competitions && compsRes.competitions.length > 0) {
-        setLeagueCompetitions(compsRes.competitions);
-      }
+      setLeagueCompetitions(compsRes.competitions || []);
 
       if (domesticLeagues.length > 0) {
-        setSelectedLeagueId((prev) => {
-          const exists = domesticLeagues.some((l) => l.id === prev);
-          const target = exists ? prev : domesticLeagues[0].id;
-          if (activeSeasonId !== EFL_SECOND_SEASON.id) void loadClubsForLeague(target);
-          return target;
-        });
+        // State updater functions must stay pure. Starting another state
+        // update/request from inside an updater can crash React rendering
+        // on Telegram WebView (the entire Leagues page appears blank).
+        const target = domesticLeagues.some((league) => league.id === selectedLeagueId)
+          ? selectedLeagueId
+          : domesticLeagues[0].id;
+        if (target !== selectedLeagueId) setSelectedLeagueId(target);
+        if (activeSeasonId !== EFL_SECOND_SEASON.id) void loadClubsForLeague(target);
       }
     } catch (err: any) {
       console.error('Failed to load leagues:', err);
@@ -328,7 +337,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
         isQuota,
       });
     }
-  }, [activeSeasonId, currentClub?.leagueId, loadClubsForLeague]);
+  }, [activeSeasonId, selectedLeagueId, loadClubsForLeague]);
 
   useEffect(() => {
     if (activeSeasonId === EFL_SECOND_SEASON.id) {
@@ -536,6 +545,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
 
   return (
     <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${activeSeasonId === EFL_SECOND_SEASON.id ? 'efl-season-two-page' : ''} ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
+      {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3.5 text-[var(--efl-text)] shadow-sm dark:shadow-black/20"><div className="min-w-0"><strong className="text-sm font-black text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="mt-1 text-xs text-[var(--efl-text-2)]">Klub tanlovi ochiq. Yevropa ligalarida 2-mavsum o‘yinlari boshlandi.</p></div></div>}
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!EFL_2_DESIGN_ENABLED && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -697,7 +707,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
                   {currentLeague.country} • {EFL_2_DESIGN_ENABLED ? previewText.tier : 'Tier'} {currentLeague.tier}
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] border border-[var(--efl-primary)]/20">
-                  {isSecondSeason ? '2027/28 · QABUL' : '2026/27'} {EFL_2_DESIGN_ENABLED && !isSecondSeason ? previewText.active : !isSecondSeason ? 'Active' : ''}
+                  {isSecondSeason ? (leagueCompetitions.some(c => c.leagueId === selectedLeagueId && c.status === 'active') ? '2027/28 · FAOL' : '2027/28 · QABUL') : '2026/27'} {EFL_2_DESIGN_ENABLED && !isSecondSeason ? previewText.active : !isSecondSeason ? 'Active' : ''}
                 </span>
               </>}
               title={currentLeague.name}
@@ -1300,5 +1310,4 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
     </div>
   );
 };
-
 

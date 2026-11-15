@@ -49,8 +49,8 @@ async function render({ id = 'player-1', admin = false, route = '/', completed =
     seasons: [], activeSeasonId: seasonId, devProfiles: [], currentClub: { id: 'club-test', name: 'Test club' }, isDevMode: false };
   context.window.location.pathname = route;
   storage.set('efluz-theme-mode', theme);
-  if (completed !== 'stored') storage.delete(`efluz-welcome-v2:${id}`);
-  if (completed === true) storage.set(`efluz-welcome-v2:${id}`, 'done');
+  if (completed !== 'stored') storage.delete(`efluz-welcome-v3:${id}`);
+  if (completed === true) storage.set(`efluz-welcome-v3:${id}`, 'done');
   // Lazy sections suspend during the first render; verify their completed output.
   const stream = await renderToReadableStream(React.createElement(App));
   await stream.allReady;
@@ -58,8 +58,9 @@ async function render({ id = 'player-1', admin = false, route = '/', completed =
 }
 for (const admin of [false, true]) {
   storage.set('efluz-welcome-v1:player-1', 'done');
+  storage.set('efluz-welcome-v2:player-1', 'done');
   const welcome = await render({ admin, completed: false });
-  assert.match(welcome, />Boshlash</, 'every role must see the version 2 welcome despite a version 1 completion');
+  assert.match(welcome, />Davom etish</, 'every role must see the first of two welcome pages despite prior completion');
   assert.doesNotMatch(welcome, /data-test-view="MatchdayHomeView"/);
   const home = await render({ admin });
   assert.match(home, /data-test-view="MatchdayHomeView"/);
@@ -95,57 +96,158 @@ assert.doesNotMatch(await render({ anonymous: true }), /efl-welcome|data-test-vi
 assert.doesNotMatch(await render({ anonymous: true }), /id="btn-first-visit-guide"/);
 console.log('PASS EFL 2.0: every role gets versioned welcome, public design/themes/navigation/routes; administrator routes remain restricted; anonymous auth remains intact.');
 
+// The approved 10 Nov onboarding is a TWO-page flow. SSR renders page one;
+// the second page remains behind its real React state transition.
 for (const admin of [false, true]) {
   const current = await render({admin,completed:false,seasonId:'season-2026-27'});
-  const icons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
-  assert.equal((icons.match(/<li/g) || []).length,4,'Current season has four active league icons');
-  assert.doesNotMatch(icons,/ligue-1/);
-  assert.match(current,/EFL · 2-mavsum/);
-  assert.match(current,/Tayyorgarlik|Qabul va reja/);
-  assert.match(current,/1-mavsum davom etmoqda/);
-  assert.match(current,/klub tanlash hali ochilmagan|klub qabuli holati/);
-  const preparation = current.match(/<section class="season-preparation"([\s\S]*?)<\/section>/)?.[1] || '';
-  assert.equal((preparation.match(/season-preparation-name/g) || []).length,9,'The preparation catalog includes five European and four Asian leagues');
-  for (const name of ['Ligue 1','O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(preparation.includes(name),name);
-  assert.match(preparation,/Osiyo Chempionlar ligasi/,'Asian Champions League is visible in the same preparation plan');
-  assert.match(preparation,/32 klub/);
-  assert.match(preparation,/Har bir ligadan 8 tadan klub/);
-  assert.match(preparation,/Yevropa UCL kabi/);
-  assert.match(preparation,/har klubga 8 ta o‘yin/);
-  assert.match(preparation,/9–24: o‘tish pley-offi/);
-  const aclSources = preparation.match(/<ul class="season-preparation-sources">([\s\S]*?)<\/ul>/)?.[1] || '';
-  assert.equal((aclSources.match(/<li/g) || []).length,4);
-  for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Süper Lig']) assert.ok(aclSources.includes(name));
-  assert.doesNotMatch(aclSources,/Premier League|La Liga|Serie A|Bundesliga|Ligue 1/);
-  assert.match(preparation,/<details><summary>/,'Long league list is expandable on onboarding');
-  assert.doesNotMatch(preparation,/<button|href="\/|data-munfiz-control="claim/,'The preparation list cannot claim a club or switch seasons');
-  assert.equal((preparation.match(/class="season-preparation-roster"/g)||[]).length,9);
-  assert.match(preparation,/168|16 klub/);
-  assert.match(preparation,/30 tur · 240 o‘yin/);
-  assert.match(preparation,/38 tur · 380 o‘yin/);
-  assert.match(preparation,/2026-11-05/);
-  assert.match(preparation,/Elche CF/);
-  assert.doesNotMatch(preparation,/Girona FC|VfL Wolfsburg|Hellas Verona|Montpellier HSC/);
-  assert.equal((preparation.match(/rel="noopener noreferrer"/g)||[]).length,20);
-  assert.ok(preparation.includes('Superkuboklar'),'Super cup plans are visible');
-  assert.ok(preparation.includes('EFL formati'),'Cups show the custom EFL policy');
-  assert.ok(preparation.includes('Barcha 16 klub 1/8 finaldan'),'16-team leagues skip play-ins');
-  assert.ok(preparation.includes('13–20')&&preparation.includes('15–18'),'Seeded play-in positions remain visible');
-  assert.doesNotMatch(preparation,/743|quyi liga klublari/,'Real-world lower divisions are not required by EFL cups');
-
-
-  const next = await render({admin,completed:false,seasonId:'season-2027-28'});
-  const nextIcons = next.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
-  assert.equal((nextIcons.match(/<li/g) || []).length,5,'Next season restores all five league icons');
-  assert.match(nextIcons,/ligue-1/);
-  assert.doesNotMatch(next,/class="season-preparation"/);
+  const leagueIcons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
+  assert.equal((leagueIcons.match(/<li/g) || []).length,5,'Europe includes five leagues');
+  for (const name of ['Premier League','La Liga','Serie A','Bundesliga','Ligue 1']) assert.match(current,new RegExp(name));
+  for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Turkiya Superligasi']) assert.match(current,new RegExp(name));
+  assert.match(current,/>Davom etish</,'The first page advances instead of entering EFLUZ');
+  assert.doesNotMatch(current,/>Boshlash</,'The completion button must only exist on page two');
+  assert.match(current,/aria-label="1 \/ 2"/,'Display two-stage navigation');
 }
-console.log('PASS real welcome render: four active leagues, separate closed season-two preparation with nine leagues, both roles');
-
-for (const [language, title] of [['uz','Osiyo Chempionlar ligasi'],['ru','Лига чемпионов Азии'],['en','Asian Champions League']]) {
-  const html = await render({ completed:false, seasonId:'season-2026-27', language });
-  assert.ok(html.includes(title), `ACL description is translated into ${language}`);
-  assert.match(html,/32/);
-  assert.match(html,/9–24/);
+const fs = await import('node:fs');
+const source = fs.readFileSync('src/components/WelcomeScreen.tsx','utf8');
+assert.match(source,/useState<1 \| 2>\(1\)/,'Two real React steps');
+assert.match(source,/step === 1 \? \(\) => setStep\(2\) : onStart/,'Finish only on second step');
+assert.match(source,/setStep\(1\)/,'Back goes to first step');
+for (const image of ['golden-ball-photo.png','golden-boot-photo.png','weekly-motm-photo.png']) {
+  assert.ok(fs.existsSync('public/welcome-awards/'+image),'Original preview artwork exists: '+image);
+  assert.ok(source.includes('/welcome-awards/'+image),'Second page uses original artwork: '+image);
 }
-console.log('PASS ACL preparation: approved 32-team format and eight places per Asian league, localized into three languages');
+for (const [language, intro] of [['uz','Yangi mavsum. Yangi imkoniyatlar.'],['ru','Новый сезон. Новые возможности.'],['en','New season. New possibilities.']]) {
+  assert.ok(source.includes(intro),language+' original two-step copy');
+}
+console.log('PASS season 2 two-step welcome: Europe/Asia first step, next/back/finish transitions, three original PNGs, UZ/RU/EN');
+
+
+// Season 1 cup ownership must survive visits to the Season 2 league section.
+// Do not combine the club lists: that would break the Season 2 one-club rule.
+const ownershipFs = await import('node:fs');
+const authOwnerSource = ownershipFs.readFileSync('src/context/AuthContext.tsx','utf8');
+const clubHubSource = ownershipFs.readFileSync('src/components/ClubHubView.tsx','utf8');
+const competitionHubSource = ownershipFs.readFileSync('src/components/CompetitionHubView.tsx','utf8');
+const retainedSource = ownershipFs.readFileSync('src/components/RetainedSeasonOneClubs.tsx','utf8');
+assert.match(authOwnerSource, /api\.getMyClubState\('season-2026-27'\)/,
+  'Retained Season 1 club list is independently verified by the server');
+assert.match(authOwnerSource, /retainedSeasonOneState !== null && user !== null &&\s*retainedSeasonOneState\.userId === user\.id/,
+  'Never read null ownership or display clubs from another authenticated user');
+assert.match(authOwnerSource, /retainedSeasonOneClubs,\s*premiumClubIds/,
+  'Separate season-one clubs must be exposed without counting toward Season 2 claims');
+assert.ok(clubHubSource.includes('<RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />'),
+  'Club profile displays retained European and Super Cup clubs');
+assert.ok(competitionHubSource.includes("<RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />"),
+  'League selection displays the retained Season 1 cup clubs');
+assert.match(retainedSource, /activeSeasonId !== 'season-2027-28'/,
+  'The retained ownership panel appears only while browsing Season 2');
+assert.ok(retainedSource.includes("onNavigateTab('champions-league')") &&
+  retainedSource.includes("onNavigateTab('cups')"),
+  'Retained owners can navigate to both ongoing competition categories');
+console.log('PASS Season 1 cup ownership preserved independently of Season 2 registration and league navigation');
+
+
+/** Telegram WebView League navigation must never trigger nested React state updates
+ * in a setState updater or erase verified club ownership ahead of the response. */
+const leagueSource = (await import('node:fs')).readFileSync('src/components/ClubsView.tsx', 'utf8');
+const authSource = (await import('node:fs')).readFileSync('src/context/AuthContext.tsx', 'utf8');
+assert.doesNotMatch(leagueSource, /setSelectedLeagueId\(\(prev\)\s*=>[\s\S]{0,350}loadClubsForLeague\(/,
+  'League selection updater must be pure (no requests/state updates inside updater)');
+assert.match(leagueSource, /if \(activeSeasonId !== EFL_SECOND_SEASON\.id\) void loadClubsForLeague\(target\)/,
+  'Season-one league cards still fetch after selection');
+assert.doesNotMatch(authSource, /useEffect\(\(\) => \{\s*if \(authStatus !== 'AUTHENTICATED'[^}]*setOwnedClubs\(\[\]\)/,
+  'League navigation must preserve last verified ownership during fetch');
+
+assert.match(leagueSource, /api\.getLeagues\(activeSeasonId\)\.catch\(/,
+  'The prepared Season 2 league catalog has a 503 fallback');
+assert.match(leagueSource, /EFL_SECOND_SEASON\.leagues\.map\(/,
+  'Prepared league metadata is bundled to render the picker when its API is down');
+assert.match(leagueSource, /api\.getLeagueClubs\(leagueId, activeSeasonId, forceRefresh\)/,
+  'Club owners and availability are never inferred from bundled metadata');
+console.log('PASS leagues navigation state purity and verified club ownership preservation');
+
+
+const crashBoundary = (await import('node:fs')).readFileSync('src/components/AppCrashBoundary.tsx','utf8');
+const appSafeShell = (await import('node:fs')).readFileSync('src/App.tsx','utf8');
+const authSeasonGuard = (await import('node:fs')).readFileSync('src/context/AuthContext.tsx','utf8');
+assert.match(appSafeShell, /<AppCrashBoundary><I18nProvider><AuthProvider>/,
+  'A provider crash must not leave the whole Telegram WebView blank');
+assert.match(crashBoundary, /getDerivedStateFromError/);
+assert.ok(crashBoundary.includes('window.location.reload()'),
+  'Crash recovery allows the user to reload without losing persisted ownership');
+assert.ok(authSeasonGuard.includes('requestVersion !== ownershipRequestVersion.current'),
+  'Late season-one reads never replace newer season-two ownership');
+assert.ok(authSeasonGuard.includes("if (meRes.currentClubStatus !== 'unavailable')"),
+  'Temporary backend failures must not masquerade as a verified absence of clubs');
+console.log('PASS Telegram WebView last-resort crash shell and out-of-order season ownership guard');
+
+
+/** Regression: a brand-new Telegram WebView starts with both user and
+ * retained ownership null. Their optional IDs must not compare as proof
+ * of ownership and the render must never attempt to access null.clubs. */
+const retainedGuard = (await import('node:fs')).readFileSync('src/context/AuthContext.tsx', 'utf8');
+assert.match(retainedGuard, /retainedSeasonOneState !== null && user !== null &&/,
+  'Cold-start ownership must guard both nullable objects before reading clubs');
+assert.doesNotMatch(retainedGuard, /retainedSeasonOneState\?\.userId === user\?\.id/,
+  'Undefined IDs on cold start must not match and dereference null.clubs');
+const retainedFor = (state, person) =>
+  state !== null && person !== null && state.userId === person.id ? state.clubs : [];
+assert.deepEqual(retainedFor(null, null), []);
+assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, null), []);
+assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, {id:'two'}), []);
+assert.deepEqual(retainedFor({userId:'one',clubs:[{id:'safe'}]}, {id:'one'}), [{id:'safe'}]);
+console.log('PASS cold Telegram start: null ownership never crashes or leaks other users clubs');
+
+
+/** Enforce the competition's actual EFL rules during every UI release.
+ * One leg only: a 20-club league has 19 matchdays / 190 fixtures;
+ * an 18-club league has 17 matchdays / 153 fixtures. */
+const seasonTwoFormatSource = (await import('node:fs')).readFileSync('src/lib/seasonPreparation.ts', 'utf8');
+assert.ok(seasonTwoFormatSource.includes('homeAndAway: false,'));
+assert.ok(seasonTwoFormatSource.includes('totalMatchdays: roster.clubs.length - 1,'));
+assert.ok(seasonTwoFormatSource.includes('totalFixtures: roster.clubs.length * (roster.clubs.length - 1) / 2,'));
+const oneRoundFixtures = (n) => n*(n-1)/2;
+assert.equal(oneRoundFixtures(20),190);
+assert.equal(oneRoundFixtures(18),153);
+assert.equal(oneRoundFixtures(16),120);
+const seasonTwoUi = (await import('node:fs')).readFileSync('src/components/SeasonPreparationCard.tsx','utf8');
+assert.ok(seasonTwoUi.includes('Bir davra · har juftlik bir marta'));
+assert.ok(!seasonTwoUi.includes('Ikki davra · uy va safar'));
+console.log('PASS Season 2 one-round league format, 19/17/15 turns and unique pair counts');
+
+
+/** Serverless penalty is an exhibition: never update official match scores.
+ * The browser only posts one outcome per shot, with no frame-by-frame traffic. */
+const penaltyService = (await import('node:fs')).readFileSync('src/server/services/penaltyRaceService.ts','utf8');
+const penaltyGame = (await import('node:fs')).readFileSync('public/games/efl-penalty.html','utf8');
+const penaltyRoutes = (await import('node:fs')).readFileSync('src/server/routes/penaltyRace.routes.ts','utf8');
+assert.match(penaltyService,/authorizePenaltyFixture\(fixtureId,user\)/);
+assert.match(penaltyService,/runTransaction\(async tx=>/);
+assert.match(penaltyService,/current\.recentShotIds\.includes\(shotId\)/);
+assert.match(penaltyService,/official:false/);
+assert.match(penaltyService,/SHOT_TOO_FAST/);
+assert.match(penaltyGame,/lastIdleRacePoll>=20000/);
+assert.match(penaltyGame,/},5000\);/);
+assert.match(penaltyGame,/activeRunOnline/);
+assert.match(penaltyGame,/void sendExhibitionShot\(shot\.success\)/);
+assert.match(penaltyGame,/ONLAYN MASHG‘ULOT · RASMIY HISOB EMAS/);
+assert.match(penaltyRoutes,/penaltyRaceRouter\.use\(requireAuth\)/);
+assert.doesNotMatch(penaltyService,/updateFixture|submitResult|confirmResult|setScore/);
+console.log('PASS penalty serverless: authorized atomic exhibition score, no official results or animation traffic');
+
+
+/** Penalty goalkeeper speeds should advance beyond the former 2.5× ceiling
+ * without jumps and keep the same value for visual motion and collision math. */
+const penaltySpeedSource = (await import('node:fs')).readFileSync('public/games/efl-penalty.html','utf8');
+assert.match(penaltySpeedSource,/MAX_KEEPER_MULTIPLIER=5;/);
+assert.match(penaltySpeedSource,/keeperMultiplierForGoals=goals=>1\+Math\.min\(MAX_KEEPER_MULTIPLIER-1,Math\.max\(0,goals\)\*\.045\)/);
+assert.match(penaltySpeedSource,/shot=\{elapsed:[^\n]*?/, 'Shot simulation must remain local');
+const keeperMultiplierForGoals = (goals) => 1 + Math.min(4,Math.max(0,goals)*.045);
+assert.equal(keeperMultiplierForGoals(0),1);
+assert.ok(keeperMultiplierForGoals(40)>2.5,'Goals must progress past the previous 2.5× cap');
+assert.ok(keeperMultiplierForGoals(67)<=5);
+assert.equal(keeperMultiplierForGoals(100),5);
+assert.equal(keeperMultiplierForGoals(-3),1);
+assert.ok(penaltySpeedSource.includes('travelSpeed:goalieSpeed'),'Shot collision follows the displayed keeper speed');
+console.log('PASS penalty keeper speed: progressive 1× to 5×, no old 2.5× ceiling');

@@ -291,7 +291,10 @@ async function runTestSuite() {
   const circuitStatus = firestoreCircuitBreaker.getStatus();
   assert(circuitStatus.state === 'OPEN', 'Firestore circuit breaker is OPEN');
 
-  // 3. Read through should serve stale snapshot without calling failing fetcher
+  // 3. Force a cache miss while circuit is OPEN; fresh cached data can be
+  // legitimately served without stale flags, so invalidate to exercise LKG.
+  await invalidateDataset(mockKey);
+  // Read through should now serve the preserved stale snapshot without fetching.
   let fetcherCalled = false;
   const staleResult = await readThroughReadModel<string[]>({
     key: mockKey,

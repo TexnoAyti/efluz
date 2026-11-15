@@ -3,6 +3,7 @@ import { nextSeasonFixture, sortSeasonFixtures } from '../lib/fixtureOrder';
 import { PlayerTrophyCabinet } from './PlayerTrophyCabinet';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { RetainedSeasonOneClubs } from './RetainedSeasonOneClubs';
 import { useI18n, Language } from '../i18n';
 import { fixturesForClub } from '../lib/activeClub';
 import { useActiveClubStanding } from '../lib/useActiveClubStanding';
@@ -472,6 +473,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
             {copy.selectClubCta}
           </p>
         </div>
+        <RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />
         <button
           type="button"
           onClick={() => onNavigateTab('leagues')}
@@ -488,6 +490,7 @@ export const ClubHubView: React.FC<ClubHubViewProps> = ({
 
   return (
     <div className="space-y-4 pb-24 animate-in fade-in duration-200">
+      <RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />
       {/* ==============================================================
           1. ACTIVE CLUB IDENTITY & 2. OWNED CLUB SWITCHER
           ============================================================== */}

@@ -11,6 +11,9 @@ import express from 'express';
 import { readCostMiddleware } from './services/durableReadCosts';
 import { timingSafeEqual } from 'node:crypto';
 import { drainNotificationQueue, scheduleNotificationQueueDrain } from './services/telegramNotificationQueue';
+import {notificationDeliveryMode} from './services/notificationDeliveryGate';
+import {scheduleEssentialNotifications} from './services/essentialNotificationPreparation';
+import {repairProductionTelegramWebhook} from './services/telegramBotService';
 import { initDatabase, queryGet, getDbFilePath } from './db';
 import { seedMissingStaticCatalog } from './db/seed';
 import { authMiddleware } from './middleware/authMiddleware';
@@ -52,6 +55,8 @@ import {uzeflifeRouter} from './routes/uzeflife.routes';
 import { customTournamentsRouter } from './routes/customTournaments.routes';
 import { customTournamentTicketsRouter } from './routes/customTournamentTickets.routes';
 import { matchChatRouter } from './routes/matchChat.routes';
+import { penaltyRaceRouter } from './routes/penaltyRace.routes';
+import { seasonTwoAdmissionRouter } from './routes/seasonTwoAdmission.routes';
 
 let dbInitPromise: Promise<void> | null = null;
 let dbReady = false;
@@ -185,10 +190,37 @@ export function createApp() {
     if (!Number.isInteger(hop) || hop < 0 || hop > 256) { res.sendStatus(400); return; }
     try {
       await ensureDbReady();
-      if (hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
-      if (process.env.VERCEL === '1') { scheduleMutationReconciliation(); scheduleUNotices(hop); scheduleNotificationQueueDrain(hop); res.status(202).json({ accepted: true }); }
-      else { await reconcileDurableMutations(); await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]')); await processTeamInvitationNotices().catch(()=>console.warn('[TEAM_INVITATION_OUTBOX_DEFERRED]')); await drainNotificationQueue({ hop }); res.json({ drained: true }); }
+      const deliveryMode = notificationDeliveryMode();
+      if (deliveryMode === 'disabled') { res.status(202).json({ accepted: false, paused: true }); return; }
+      if (deliveryMode === 'full' && hop === 0) { if (process.env.VERCEL === '1') scheduleAiDailyReport(); else await scheduleAiDailyReport(); }
+      if (process.env.VERCEL === '1') {
+        if (deliveryMode === 'full') { scheduleMutationReconciliation(); scheduleUNotices(hop); }
+        else scheduleEssentialNotifications(hop);
+        if (deliveryMode === 'full') scheduleNotificationQueueDrain(hop);
+        res.status(202).json({ accepted: true, mode: deliveryMode });
+      }
+      else {
+        if (deliveryMode === 'full') {
+          await reconcileDurableMutations();
+          await prepareUNotifications().catch(()=>console.warn('[UZEFLIFE_OUTBOX_DEFERRED]'));
+          await processTeamInvitationNotices().catch(()=>console.warn('[TEAM_INVITATION_OUTBOX_DEFERRED]'));
+        }
+        await drainNotificationQueue({ hop });
+        res.json({ drained: true, mode: deliveryMode });
+      }
     } catch { res.status(503).json({ error: 'NOTIFICATION_WORKER_UNAVAILABLE' }); }
+  });
+
+  // Fixed-target, opt-in production recovery. It cannot accept a caller URL
+  // and never exposes Telegram credentials.
+  app.get('/api/internal/telegram-webhook-repair', async (_req, res) => {
+    try {
+      const result = await repairProductionTelegramWebhook();
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(result.ok ? 200 : 503).json(result);
+    } catch (error: any) {
+      res.status(error?.statusCode || 503).json({ error: error?.message || 'WEBHOOK_REPAIR_UNAVAILABLE' });
+    }
   });
 
   app.use(async (req, res, next) => {
@@ -218,6 +250,7 @@ export function createApp() {
   app.use('/api/telegram/webhook', rateLimit('telegram-webhook', 120, 60));
   app.use('/api/fixtures', rateLimit('fixture-write', 60, 60));
   app.use('/api/match-chat', rateLimit('match-chat', 45, 60, { distributed: false }));
+  app.use('/api/penalty-race', rateLimit('penalty-race', 30, 60, { distributed: false }));
   app.use('/api/clubs', rateLimit('club-action', 120, 60));
   app.use('/api/season-ops/no-show', rateLimit('season-no-show', 8, 600));
 
@@ -225,6 +258,7 @@ export function createApp() {
   app.use('/api/auth/android',androidAuthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/seasons', seasonsRouter);
+  app.use('/api/season-two-admission', seasonTwoAdmissionRouter);
   app.use('/api/season-lifecycle', seasonLifecycleRouter);
   app.use('/api/season-ops', seasonOperationsConsistencyRouter);
   app.use('/api/season-ops', seasonOperationsRouter);
@@ -234,6 +268,7 @@ export function createApp() {
   app.use('/api/competitions', competitionsRouter);
   app.use('/api/fixtures', fixturesRouter);
   app.use('/api/match-chat', matchChatRouter);
+  app.use('/api/penalty-race', penaltyRaceRouter);
   app.use('/api/me', notificationsReadResilientRouter);
   app.use('/api/me', meRouter);
   app.use('/api/users', usersRouter);

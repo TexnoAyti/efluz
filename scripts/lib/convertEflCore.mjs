@@ -147,7 +147,9 @@ export function convertEflCore(collections,options={}){
   const userId=d.userId==null?null:String(d.userId);
   const status=str(d.status,'RELEASED').toUpperCase();
   if(!seasonId||!clubId||!seasons.has(seasonId)||!clubs.has(clubId)||!userId||!users.has(userId)){
-    if(quarantine){
+    // Only inactive historical rows may be archived. An ACTIVE orphan could
+    // otherwise silently remove a live club owner during staging migration.
+    if(quarantine&&status!=='ACTIVE'){
       quarantined.releasedOccupancies++;continue;
     }
     fail('OCCUPANCY_REFERENCE_MISSING');

@@ -31,7 +31,7 @@ export function rankPreparedLeagueResults(leagueId: string, fixtures: PreparedRe
   const reasons=new Set<string>();
   const specialCases:Array<{type:string;clubIds:string[];legs:number;extraTime:boolean}>=[];
   if(options.europeanFinalistClubIds?.some(id=>!byId.has(id)))throw new Error('INVALID_FINALIST_CLUB');
-  const h2hComplete=(ids:string[])=>ids.every(a=>ids.every(b=>a===b||seenPairs.has(a+'|'+b)));
+  const h2hComplete=(ids:string[])=>ids.every((a,index)=>ids.slice(index+1).every(b=>seenPairs.has(a+'|'+b)||seenPairs.has(b+'|'+a)));
   const metric=(row:typeof rows[number],key:TieMetric,base:string[]):number|null=>{
     if(key==='discipline'||key==='forfeits'||key==='previousPosition'){
       const v=options.extra?.[row.id]?.[key];return Number.isInteger(v)&&(v as number)>=0?(key==='forfeits'?Number(v!>0):v!):null;

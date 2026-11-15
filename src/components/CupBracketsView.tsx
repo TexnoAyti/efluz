@@ -34,7 +34,8 @@ function expectedTeamsForCup(cup?: Competition | null): number {
 
 export const CupBracketsView: React.FC<CupBracketsViewProps> = ({ onNavigateTab }) => {
   const { user, currentClub, ownedClubs = [] } = useAuth();
-  // Ongoing season one cup fixtures must not inherit season two registration.
+  // Season two is registration-only; all live domestic cup brackets remain
+  // bound to the ongoing season regardless of the global league picker.
   const cupSeasonId = 'season-2026-27';
   const { t } = useI18n();
 
