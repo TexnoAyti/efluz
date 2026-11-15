@@ -150,7 +150,19 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       const message = update.message;
       const emojiText = message?.text || message?.caption || '';
       const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
-      if (archivedCommunityPost && message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) && message.forward_origin?.type === 'channel' && !message.photo?.length && !['image/jpeg','image/png'].includes(message.document?.mime_type)) {
+      if (message?.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
+        /^\\/group_leavers(?:@[A-Za-z0-9_]+)?(?:\\s|$)/i.test(String(message.text||''))) {
+        const owners=await listClubOwnerGroupExits();
+        const lines=owners.slice(0,25).map((o,index)=>(index+1)+'. '+o.name+
+          (o.username?' (@'+o.username+')':'')+' — '+o.clubs.map(c=>c.clubName).join(', ')+
+          ' — '+o.exitedAt.slice(0,16).replace('T',' '));
+        const text='EFLUZ guruhdan chiqqan klub egalari: '+owners.length+'\\n\\n'+
+          (lines.length?lines.join('\\n'):'Hozircha kuzatuvda qayd etilgan klub egasi yo‘q.')+
+          '\\n\\nBu ro‘yxat Telegram bot olgan chiqish hodisalariga asoslangan.';
+        const sent=await sendTelegramMessage(message.chat.id,text,{parse_mode:null});
+        if(!sent.ok)throw new Error('GROUP_LEAVERS_REPORT_NOT_DELIVERED');
+        response={ok:true,handled:'group_club_owner_leavers_report'};
+      } else if (archivedCommunityPost && message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) && message.forward_origin?.type === 'channel' && !message.photo?.length && !['image/jpeg','image/png'].includes(message.document?.mime_type)) {
         await sendTelegramMessage(message.chat.id, `Kanal posti AI manbasiga saqlandi:\n${archivedCommunityPost.url}\nMatn yoki rasm ostidagi yozuv o‘qildi. Rasm ichidagi matn avtomatik o‘qilmaydi.`, { parse_mode: null, reply_to_message_id: message.message_id });
         response = { ok: true, handled: 'ai_channel_post_imported' };
       } else if (message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) &&
