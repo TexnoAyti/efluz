@@ -668,6 +668,10 @@ export const FixturesView: React.FC = () => {
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Details</span>
                       </button>
+                    ) : !isUserParticipant ? (
+                      <span className="px-3 py-1.5 rounded-xl text-xs text-slate-500 border border-white/10" title="Hisobni faqat o‘yin ishtirokchilari yubora oladi">
+                        Faqat ishtirokchilar
+                      </span>
                     ) : scoreEntryLocked ? (
                       <button
                         disabled={true}
