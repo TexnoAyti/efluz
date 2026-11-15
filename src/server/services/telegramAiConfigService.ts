@@ -1,4 +1,5 @@
 import { getAiRedisClient, withinAiDeadline } from './telegramAiDeadline';
+import { PostgresAiStore } from './postgresAiStore';
 /**
  * Telegram AI Assistant Configuration Service
  *
@@ -83,6 +84,30 @@ export async function getTelegramAiConfig(options?: { signal?: AbortSignal }): P
   try {
     const raw = await client.get<string | TelegramAiConfig>(getAiConfigRedisKey());
     if (!raw) {
+      // In explicitly opted-in Redis deployments, migrate only the durable
+      // configuration from the legacy PostgreSQL store. Preserve an already
+      // enabled and bound production AI; never auto-enable a staging AI.
+      // Pending AI confirmations/conversations are intentionally NOT migrated.
+      if (process.env.DATABASE_PROVIDER === 'supabase' && process.env.EFL_AI_STATE_BACKEND === 'redis') {
+        const legacy = await new PostgresAiStore(options?.signal).get<string | TelegramAiConfig>(getAiConfigRedisKey());
+        const parsed = typeof legacy === 'string' ? JSON.parse(legacy) : legacy;
+        const migrated = {
+          ...DEFAULT_AI_CONFIG,
+          ...(parsed && typeof parsed === 'object' ? parsed : {}),
+          // Preserve an already enabled, correctly bound production AI.
+          // Preview environments always start disabled after migration.
+          enabled: process.env.VERCEL_ENV === 'production'
+            && parsed?.enabled === true
+            && parsed.allowedChatId != null
+            && parsed.allowedThreadId != null
+            && Number.isSafeInteger(Number(parsed.allowedChatId))
+            && Number.isSafeInteger(Number(parsed.allowedThreadId)),
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'ai_redis_migration',
+        };
+        await client.set(getAiConfigRedisKey(), JSON.stringify(migrated), { nx: true });
+        return getTelegramAiConfig(options);
+      }
       // A new PostgreSQL installation stays disabled until the owner configures
       // it. Do not invent a topic or enable sending while importing old state.
       if (process.env.DATABASE_PROVIDER === 'supabase') return {config:{...DEFAULT_AI_CONFIG},redisAvailable:true};
