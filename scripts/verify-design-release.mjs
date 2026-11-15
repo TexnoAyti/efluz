@@ -240,14 +240,14 @@ console.log('PASS penalty serverless: authorized atomic exhibition score, no off
 /** Penalty goalkeeper speeds should advance beyond the former 2.5× ceiling
  * without jumps and keep the same value for visual motion and collision math. */
 const penaltySpeedSource = (await import('node:fs')).readFileSync('public/games/efl-penalty.html','utf8');
-assert.match(penaltySpeedSource,/MAX_KEEPER_MULTIPLIER=4;/);
+assert.match(penaltySpeedSource,/MAX_KEEPER_MULTIPLIER=5;/);
 assert.match(penaltySpeedSource,/keeperMultiplierForGoals=goals=>1\+Math\.min\(MAX_KEEPER_MULTIPLIER-1,Math\.max\(0,goals\)\*\.045\)/);
 assert.match(penaltySpeedSource,/shot=\{elapsed:[^\n]*?/, 'Shot simulation must remain local');
-const keeperMultiplierForGoals = (goals) => 1 + Math.min(3,Math.max(0,goals)*.045);
+const keeperMultiplierForGoals = (goals) => 1 + Math.min(4,Math.max(0,goals)*.045);
 assert.equal(keeperMultiplierForGoals(0),1);
 assert.ok(keeperMultiplierForGoals(40)>2.5,'Goals must progress past the previous 2.5× cap');
-assert.ok(keeperMultiplierForGoals(67)<=4);
-assert.equal(keeperMultiplierForGoals(100),4);
+assert.ok(keeperMultiplierForGoals(67)<=5);
+assert.equal(keeperMultiplierForGoals(100),5);
 assert.equal(keeperMultiplierForGoals(-3),1);
 assert.ok(penaltySpeedSource.includes('travelSpeed:goalieSpeed'),'Shot collision follows the displayed keeper speed');
-console.log('PASS penalty keeper speed: progressive 1× to 4×, no old 2.5× ceiling');
+console.log('PASS penalty keeper speed: progressive 1× to 5×, no old 2.5× ceiling');
