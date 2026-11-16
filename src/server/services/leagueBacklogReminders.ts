@@ -76,7 +76,7 @@ export function leagueBacklogMessage(data: NonNullable<Awaited<ReturnType<typeof
     const validUsername=/^[A-Za-z0-9_]{5,32}$/.test(username)?username:'';
     const name=SEED_CLUBS.find(c=>c.id===opponentClub)?.name || opponentClub;
     const who=validUsername?`@${validUsername}`:opponent?[opponent.firstName,opponent.lastName].filter(Boolean).join(' ').slice(0,45)||'Guruhda admin orqali bog‘laning':'Klub egasi hali yo‘q';
-    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)!==data.competition.currentMatchday?' · eski tur: admin yordami':''}`;
+    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)!==data.competition.currentMatchday?' · boshqa tur':''}`;
     if(lines.join('\n').length+line.length>3000)break;
     lines.push(line);
     if(validUsername&&!contacts.has(validUsername)){contacts.add(validUsername);buttons.push([{text:`${Number(f.matchday)}-tur · @${validUsername}`,url:`https://t.me/${validUsername}`}]);}
@@ -139,4 +139,23 @@ export async function processLeagueBacklogReminders(options: {now?:number; deadl
     if(state)await ref.set({...state,status:'RETRY_PENDING',lastError:'LEAGUE_REMINDER_PREPARATION_FAILED',updatedAt:new Date().toISOString(),lastSliceMs:Date.now()-started}).catch(()=>{});
     console.warn('[LEAGUE_REMINDER_PREPARATION_FAILED]');throw error;
   }finally{await store.eval('EFL_STATE_RELEASE_V1',[lock],[token]).catch(()=>{});}
+}
+
+/** One deduplicated announcement per owner when their domestic cup opens the remaining league phase. */
+export async function announceSeasonTwoCupPhase(competitionId:string, seasonId:string):Promise<number>{
+  const data=await loadLeagueBacklog(competitionId,seasonId);
+  if(!data || !data.competition.seasonTwoCupStartedAt)return 0;
+  const last=secondSeasonLeagueResultLimit(competitionId,data.competition);
+  if(last===null || last<=9)return 0;
+  let queued=0;
+  for(const userId of [...new Set(data.owners.values())].sort()){
+    if(!data.users.get(userId)?.telegramId)continue;
+    if(await enqueueSmartTelegramNotification({
+      userId,seasonId,eventId:`matchday-open:season2-cup-phase:${competitionId}`,
+      title:'🏆 Kubok boshlandi — liga turlari ochildi',
+      body:`<b>${html(data.competition.name||competitionId)}</b> — 10–${last}-turlarga hisob kiritish ochildi. 1–9-turlardagi yakunlanmagan o‘yinlar ham ochiq qoladi. O‘yinlar va natijalar uchun ilovaga kiring.`,
+      replyMarkup:{inline_keyboard:[[telegramMiniAppButton('⚽ O‘yinlarim')]]},
+    }))queued++;
+  }
+  return queued;
 }
