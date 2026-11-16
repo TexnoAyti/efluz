@@ -38,6 +38,8 @@ import {
   Clock,
 } from 'lucide-react';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { AdminFixtureQuickActions } from './AdminFixtureQuickActions';
+import { canManageFixture } from '../lib/adminPermissions';
 
 const welcomeLeagueIcons: Record<string, string> = {
   'league-premier-league': 'premier-league',
@@ -210,6 +212,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
   const [leagueStandings, setLeagueStandings] = useState<StandingsRow[]>([]);
   const [selectedMatchday, setSelectedMatchday] = useState<number>(1);
   const [selectedFixtureForModal, setSelectedFixtureForModal] = useState<Fixture | null>(null);
+  const [selectedAdminFixture, setSelectedAdminFixture] = useState<Fixture | null>(null);
   const [isLoadingFixtures, setIsLoadingFixtures] = useState(false);
   const [isLoadingStandings, setIsLoadingStandings] = useState(false);
 
@@ -1020,11 +1023,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
               {currentMatchdayFixtures.map((fix) => {
                 const isConfirmed = fix.status === 'CONFIRMED';
                 const isUserClub = ownedClubs.some((club) => club.id === fix.homeClubId || club.id === fix.awayClubId);
+                const canControl = canManageFixture(user,fix.competitionId);
 
                 return (
                   <CompetitionFixtureCard key={fix.id}
                     highlighted={isUserClub}
-                    onOpen={!isConfirmed&&fix.isPlayable!==false?()=>setSelectedFixtureForModal(fix):undefined}
+                    onOpen={canControl?()=>setSelectedAdminFixture(fix):!isConfirmed&&fix.isPlayable!==false?()=>setSelectedFixtureForModal(fix):undefined}
                     caption={fix.roundName || `${EFL_2_DESIGN_ENABLED?previewText.matchday:'Matchday'} ${fix.matchday}`}
                     statusTone={isConfirmed?'success':fix.status==='PENDING_CONFIRMATION'?'warning':'neutral'}
                     status={EFL_2_DESIGN_ENABLED?fixtureStatusText[fix.status||'UPCOMING']||fix.status||fixtureStatusText.UPCOMING:isConfirmed?'CONFIRMED':fix.status||'UPCOMING'}
@@ -1112,7 +1116,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
                       </div>}
                     score={isConfirmed?`${fix.homeScore} : ${fix.awayScore}`:'vs'}
                   >
-                    {!isConfirmed&&fix.isPlayable!==false&&<button type="button" className="text-xs font-bold text-[var(--efl-primary)] text-right min-h-[34px]" onClick={()=>setSelectedFixtureForModal(fix)}>{language==='uz'?'Uchrashuvni ochish':language==='ru'?'Открыть матч':'Open match'}</button>}
+                    {(canControl||(!isConfirmed&&fix.isPlayable!==false))&&<button type="button" className="text-xs font-bold text-[var(--efl-primary)] text-right min-h-[38px] touch-manipulation" onClick={event=>{event.stopPropagation();if(canControl)setSelectedAdminFixture(fix);else setSelectedFixtureForModal(fix);}}>{language==='uz'?'Uchrashuvni ochish':language==='ru'?'Открыть матч':'Open match'}</button>}
                   </CompetitionFixtureCard>
                 );
               })}
@@ -1121,6 +1125,12 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
           <AdminTournamentImageExport competition={currentComp} kind="matchday" matchday={selectedMatchday} disabled={isLoadingFixtures} />
         </div>
       )}
+
+      {selectedAdminFixture && canManageFixture(user,selectedAdminFixture.competitionId) && <AdminFixtureQuickActions
+        fixture={selectedAdminFixture}
+        onClose={()=>setSelectedAdminFixture(null)}
+        onScoreSaved={()=>{void loadLeagueFixtures(selectedLeagueId,selectedMatchday);}}
+      />}
 
       {/* TAB C: STANDINGS TABLE */}
       {activeLeagueTab === 'STANDINGS' && (
