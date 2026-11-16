@@ -70,7 +70,14 @@ export async function validateModelAdminPlan(plan: AdminPlan, request: string, s
     throw new Error('CLARIFY:Admin qaysi ligalarni boshqarsin? Barcha ruxsatlarni o‘zimizdan qo‘shmayman.');
   for (const token of ['drawSeed','previewToken']) if (plan.body[token] && !request.includes(String(plan.body[token])))
     throw new Error('CLARIFY:Avval admin panelda oldindan ko‘rishni bajaring va server bergan kodni yuboring: ' + (names[token] || token) + '.');
-  const reader = createAiTournamentReader(signal);
+  // Fixture IDs carry an authoritative competition year. Validation must
+  // re-read the SAME season the planner selected (never historical-only).
+  // Unrecognized IDs keep the previous conservative default and still
+  // require full fixture/club verification before any write.
+  const target=String(plan.targetId||'');
+  const season=/^comp-[a-z0-9-]+-2027-(?:md|round|fixture|match)/i.test(target)
+    ?'season-2027-28':'season-2026-27';
+  const reader = createAiTournamentReader(signal,season);
   const check = async (id: string, dataset: 'clubs'|'competitions'|'fixtures') => {
     const found: any = await reader.read({ dataset, ...(dataset === 'clubs' ? {club:id} : dataset === 'competitions' ? {competition:id} : {fixtureId:id}), limit:30 });
     if (!(found.data || []).some((row:any) => row.id === id)) throw new Error('CLARIFY:So‘ralgan ' + ({clubs:'klub',competitions:'turnir',fixtures:'o‘yin'})[dataset] + ' bazada aniq topilmadi. Nom, tur/bosqich yoki IDni aniqlashtiring.');
