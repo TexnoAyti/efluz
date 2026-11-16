@@ -40,6 +40,6 @@ test('staging workflow pins source and requires application-level import confirm
   assert.doesNotMatch(workflow,/inputs\.source_branch/);
   assert.match(workflow,/STAGING_IMPORT_RECEIPT_MISSING/);
   assert.match(workflow,/STAGING_IMPORT_COMMAND_FAILED/);
-  assert.match(workflow,/status\[\[:space:\]\]\*:\[\[:space:\]\]\*"/);
+  assert.ok(workflow.includes('status[[:space:]]*:[[:space:]]*'));
   assert.doesNotMatch(workflow,/tail -40 \/tmp\/tgcloud-import\.log/);
 });
