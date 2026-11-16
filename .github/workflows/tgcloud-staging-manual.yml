@@ -70,6 +70,21 @@ jobs:
           if(next===source) throw new Error('IMPORT_CONTROL_TEMPLATE_NOT_FOUND');
           writeFileSync(file,next);
           NODE
+      - name: Enable private readback only in this isolated staging runner
+        run: |
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='tgcloud/lib/importControl.js';
+          const owner=process.env.TGCLOUD_STAGING_OWNER_TELEGRAM_ID;
+          if(!/^[1-9][0-9]{0,19}$/.test(owner||'')) throw new Error('INVALID_STAGING_READBACK_OWNER');
+          const source=readFileSync(file,'utf8');
+          const next=source.replace(
+            /READBACK_CONTROL=Object\.freeze\(\{\s*enabled:\s*false,\s*ownerTelegramId:\s*['"][^'"]*['"]/,
+            `READBACK_CONTROL=Object.freeze({enabled:true, ownerTelegramId:'${owner}'`
+          );
+          if(next===source) throw new Error('READBACK_CONTROL_TEMPLATE_NOT_FOUND');
+          writeFileSync(file,next);
+          NODE
       - name: Build actual EFLUZ React Serverless UI
         run: bun run build:tgcloud:real-ui
       - name: Stage actual EFLUZ UI as the isolated Mini App
