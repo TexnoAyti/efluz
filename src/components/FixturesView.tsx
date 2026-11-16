@@ -641,8 +641,9 @@ export const FixturesView: React.FC = () => {
                   </div>
 
                   {canUseDangerZone(user)&&<button type="button"
-                    onClick={()=>setSelectedAdminFixture(fixture)}
-                    className="px-3 py-2 rounded-xl border border-sky-400/40 bg-sky-500/10 text-sky-200 text-xs font-black min-h-[38px]">
+                    aria-label={`Uchrashuvni ochish: ${fixture.homeClub?.name || fixture.homeClubId} — ${fixture.awayClub?.name || fixture.awayClubId}`}
+                    onClick={event=>{event.stopPropagation();setSelectedAdminFixture(fixture);}}
+                    className="px-3 py-2 rounded-xl border border-sky-400/40 bg-sky-500/10 text-sky-200 text-xs font-black min-h-[38px] shrink-0 touch-manipulation">
                     Uchrashuvni ochish
                   </button>}
                   <div className="flex items-center gap-1.5 shrink-0">
