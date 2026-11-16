@@ -110,16 +110,23 @@ jobs:
           process.stdout.write(JSON.stringify(packet));
           NODE
                 )"
-                if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "${payload}" --ctx "${ctx}" >/tmp/tgcloud-import.log 2>&1; then
+                if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "${payload}" --ctx "${ctx}" >"${RUNNER_TEMP}/tgcloud-import.log" 2>&1; then
+                  # CLI exit 0 alone cannot prove that the endpoint committed the batch.
+                  if ! grep -Eq 'ok[[:space:]]*:[[:space:]]*true' "${RUNNER_TEMP}/tgcloud-import.log" || \
+                     ! grep -Eq 'status[[:space:]]*:[[:space:]]*"?COMPLETE' "${RUNNER_TEMP}/tgcloud-import.log"; then
+                    echo "STAGING_IMPORT_RECEIPT_MISSING: ${table}/$(basename "${file}")" >&2
+                    exit 1
+                  fi
                   imported=1
                   break
                 fi
-                if grep -qi "too many requests\|retry after" /tmp/tgcloud-import.log && [[ "${attempt}" -lt 4 ]]; then
+                if grep -Eqi 'too many requests|retry after' "${RUNNER_TEMP}/tgcloud-import.log" && [[ "${attempt}" -lt 4 ]]; then
                   wait_seconds=$((attempt * 10))
                   echo "STAGING_IMPORT_RATE_LIMIT_RETRY: waiting ${wait_seconds}s"
                   sleep "${wait_seconds}"
                 else
-                  tail -40 /tmp/tgcloud-import.log
+                  # Raw CLI output may include private import data; keep it off Actions logs.
+                  echo "STAGING_IMPORT_COMMAND_FAILED: ${table}/$(basename "${file}")" >&2
                   exit 1
                 fi
               done
