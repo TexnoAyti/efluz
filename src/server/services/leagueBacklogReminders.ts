@@ -76,7 +76,7 @@ export function leagueBacklogMessage(data: NonNullable<Awaited<ReturnType<typeof
     const validUsername=/^[A-Za-z0-9_]{5,32}$/.test(username)?username:'';
     const name=SEED_CLUBS.find(c=>c.id===opponentClub)?.name || opponentClub;
     const who=validUsername?`@${validUsername}`:opponent?[opponent.firstName,opponent.lastName].filter(Boolean).join(' ').slice(0,45)||'Guruhda admin orqali bog‘laning':'Klub egasi hali yo‘q';
-    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)!==data.competition.currentMatchday?' · boshqa tur':''}`;
+    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)!==data.competition.currentMatchday?(data.competition.seasonId==='season-2027-28'?' · boshqa tur':' · eski tur: admin yordami'):''}`;
     if(lines.join('\n').length+line.length>3000)break;
     lines.push(line);
     if(validUsername&&!contacts.has(validUsername)){contacts.add(validUsername);buttons.push([{text:`${Number(f.matchday)}-tur · @${validUsername}`,url:`https://t.me/${validUsername}`}]);}
