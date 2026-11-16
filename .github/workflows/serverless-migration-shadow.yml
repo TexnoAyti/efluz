@@ -210,3 +210,12 @@ jobs:
         run: bun run build:tgcloud
       - name: Verify no Node server or private assets enter Telegram CDN
         run: node scripts/verifyTgcloudStatic.mjs
+      - name: Build production-shaped EFLUZ React UI for Serverless (no deploy)
+        run: |
+          bun run build:tgcloud:real-ui
+          bun run verify:tgcloud:real-ui
+      - name: Validate staged React Mini App packaging (no deploy)
+        run: |
+          node scripts/stageEflRealUi.mjs
+          EFL_VERIFY_REAL_UI=1 node scripts/verifyTgcloudStatic.mjs
+          test -f dist-tgcloud/index.html
