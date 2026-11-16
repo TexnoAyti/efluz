@@ -2,6 +2,7 @@ import { assertSeasonCompetitionEnabled } from '../../lib/seasonParticipationPol
 import {assertEuropeanDrawPublished,europeanDrawPublished,isEuropeanFixtureCompetition} from './europeanFixtureGate';
 import {MATCHDAY_NOTIFICATION_JOBS, processMatchdayNotificationJob} from './matchdayNotificationJobs';
 import { filterRetiredFixtures } from './retiredFixtureService';
+import {secondSeasonCupLeagueId} from './backlogResultEntry';
 import { createHash, randomUUID } from 'node:crypto';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS, FirestoreCompetitionDoc, FirestoreMatchdayLockDoc, FirestoreFixtureDoc } from '../firebase/collections';
@@ -67,12 +68,20 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
   if (target > totalRounds(competition, fixtures)) throw new MatchdayControlError('BAD_MATCHDAY', 'Bu tur musobaqada mavjud emas.');
   if (!fixtures.some(f => Number(f.matchday) === target)) throw new MatchdayControlError('MATCHDAY_EMPTY', `${target}-turda o‘yinlar yo‘q.`, 409);
   const seasonId = competition.seasonId;
+  // The first explicit OPEN/SELECT/RESTART of the matching Season 2 domestic cup
+  // is the transition to the remaining league rounds; a draw preview is NOT a start.
+  const launchedCupLeagueId = seasonId==='season-2027-28' && ['OPEN','SELECT','RESTART'].includes(params.action)
+    && String(competition.status).toLowerCase()==='active' && fixtures.length>0
+    ? secondSeasonCupLeagueId(competitionId) : null;
+  const linkedLeagueRef=launchedCupLeagueId
+    ? db.collection(COLLECTIONS.COMPETITIONS).doc('comp-'+launchedCupLeagueId.replace(/^league-/,'')+'-2027') : null;
   const key = (round: number) => `${seasonId}:${competitionId}:${round}`;
   const lockRef = db.collection(COLLECTIONS.MATCHDAY_LOCKS).doc(key(target));
   const nowMs = Date.now(), now = new Date(Math.max(nowMs, (Date.parse(competition.updatedAt || '') || 0) + 1)).toISOString();
   const result = await db.runTransaction(async tx => {
     const latest = await tx.get(ref);
     const selected = await tx.get(lockRef);
+    const linkedLeague=linkedLeagueRef?await tx.get(linkedLeagueRef):null;
     if (!latest.exists) throw new MatchdayControlError('COMPETITION_NOT_FOUND', 'Musobaqa topilmadi.', 404);
     const comp = latest.data() as FirestoreCompetitionDoc;
     if (isEuropeanFixtureCompetition(competitionId) && params.action !== 'LOCK') assertEuropeanDrawPublished(comp);
@@ -105,6 +114,17 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
       Object.assign(changes, { isMatchdayOpen: isOpen, adminOverrideStatus: isOpen ? 'AUTO' : 'FORCE_LOCKED', matchdayDurationHours: hours, nextMatchdayOpenAt: deadline, ...(isOpen ? { matchdayOpenedAt: lock.openedAt } : {}) });
     }
     // All state is durable together; failures never report a successful local-only unlock.
+    if(linkedLeagueRef && linkedLeague?.exists){
+      const league=linkedLeague.data() as FirestoreCompetitionDoc;
+      if(league.seasonId===seasonId && league.type==='LEAGUE' && league.leagueId===launchedCupLeagueId){
+        const total=totalRounds(league,[]);
+        tx.update(linkedLeagueRef,{
+          seasonTwoCupStartedAt: league.seasonTwoCupStartedAt||now,
+          resultEntryThroughMatchday:total,
+          updatedAt:now,
+        });
+      }
+    }
     for (const item of locks) tx.set(db.collection(COLLECTIONS.MATCHDAY_LOCKS).doc(item.id), item);
     tx.update(ref, changes);
     tx.set(db.collection(COLLECTIONS.AUDIT_LOGS).doc(randomUUID()), { action: 'MATCHDAY_CONTROL', competitionId, seasonId, matchday: target, operation: params.action, adminUserId: params.adminUserId || null, previousMatchday: current, createdAt: now });
@@ -116,6 +136,11 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
     return { competition: { ...comp, ...changes }, locks, deadlineAt: deadline, notificationJobId };
   });
   await syncCompetitionMatchdayState(result.competition as FirestoreCompetitionDoc, result.locks);
+  if(linkedLeagueRef){
+    const linked=await linkedLeagueRef.get();
+    if(linked.exists && linked.data()?.seasonTwoCupStartedAt)
+      await syncCompetitionMatchdayState({...linked.data(),id:linkedLeagueRef.id} as FirestoreCompetitionDoc,[]);
+  }
   let channelPost: 'QUEUED' | 'EXISTS' | 'SKIPPED' | 'FAILED' = 'SKIPPED';
   if (['SELECT', 'OPEN', 'RESTART'].includes(params.action)) {
     try {
