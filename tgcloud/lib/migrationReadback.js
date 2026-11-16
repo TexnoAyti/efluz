@@ -18,7 +18,7 @@ export function validateMigrationReadback(input={}){
   const numeric=table==='matchMessages';
   if(cursor!==null&&(numeric?
     !Number.isSafeInteger(cursor)||cursor<1:
-    typeof cursor!=='string'||!/^[A-Za-z0-9_:-]{1,160}$/.test(cursor)))
+    typeof cursor!=='string'||cursor.length<1||cursor.length>160||!cursor.trim()))
     throw Error('INVALID_READBACK_CURSOR');
   return {table,limit,cursor};
 }
