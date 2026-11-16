@@ -15,7 +15,7 @@ import { invalidateSharedAdminData } from '../services/adminReviewCache';
 import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 import { recordDurableRead } from '../services/durableReadCosts';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
-import {backlogResultAllowed,readBacklogResultAccess} from '../services/backlogResultEntry';
+import {backlogResultAllowed,secondSeasonLeagueResultLimit,readBacklogResultAccess} from '../services/backlogResultEntry';
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
 import { getNotificationReadState, applyNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
@@ -1480,6 +1480,9 @@ export function checkFixturePlayability(
     }
   }
 
+  // Do not expose later fixtures as playable through the legacy selected-round fallback.
+  const seasonTwoLimit=secondSeasonLeagueResultLimit(competitionId,resolvedComp);
+  if (seasonTwoLimit!==null && matchday>seasonTwoLimit) return {isPlayable:false,activeMatchday};
   if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId,europeanDrawId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate !== null) return { isPlayable: explicitGate, activeMatchday };
