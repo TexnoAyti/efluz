@@ -4,6 +4,7 @@ import {mkdtemp,readFile,writeFile,rm,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {validateImportBatch} from '../tgcloud/lib/importBatch.js';
 const script=new URL('./prepareServerlessImport.mjs',import.meta.url).pathname;
 const row={id:'one',telegram_id:'123',username:null,first_name:'Test',
   last_name:'',is_admin:false,is_banned:false,created_at:1,updated_at:1};
@@ -33,4 +34,15 @@ test('invalid source rows fail before a valid manifest is produced',async()=>{
     assert.notEqual(result.status,0);
     await assert.rejects(readFile(join(output,'manifest.json')));
   } finally { await rm(dir,{recursive:true,force:true}); }
+});
+
+test('Unicode packet limit uses actual UTF-8 bytes, not JavaScript string length',()=>{
+  const packet={table:'users',batchId:'users:00000000',rows:[
+    {...row,first_name:'o‘'.repeat(34000)}
+  ]};
+  assert.ok(JSON.stringify(packet).length<98304);
+  assert.ok(Buffer.byteLength(JSON.stringify(packet),'utf8')>98304);
+  assert.throws(()=>validateImportBatch(packet),/INVALID_BATCH_BYTES/);
+  const small={...packet,rows:[{...row,first_name:'O‘zbek tili'}]};
+  assert.equal(validateImportBatch(small).rows.length,1);
 });
