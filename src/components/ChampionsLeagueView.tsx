@@ -32,7 +32,9 @@ interface ChampionsLeagueViewProps {
 }
 
 export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavigateTab }) => {
-  const { user, currentClub, ownedClubs = [] } = useAuth();
+  const { user, currentClub, ownedClubs = [], retainedSeasonOneClubs = [] } = useAuth();
+  // UEFA competition ownership belongs to Season 1, not the current Season 2 club.
+  const europeanOwnedClubIds = new Set(retainedSeasonOneClubs.map(club=>club.id));
   // Season 1 UEFA tournaments remain live while Season 2 only accepts club registrations.
   const europeanSeasonId = 'season-2026-27';
   const { openUserProfile } = useUserProfile();
@@ -519,7 +521,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
                           const isDirectRO16 = idx < 8;
                           const isPlayoff = idx >= 8 && idx < 24;
                           const isEliminated = idx >= 24;
-                          const isMyClub = ownedClubs.some((c) => c.id === row.clubId) || currentClub?.id === row.clubId;
+                          const isMyClub = europeanOwnedClubIds.has(row.clubId);
 
                           return (
                             <React.Fragment key={row.clubId}>
@@ -695,8 +697,8 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
        </div>}
        <div className="grid min-w-0 grid-cols-1 md:grid-cols-2 gap-3">
         {fixtures.filter(f=>selectedMatchday===null||f.matchday===selectedMatchday).sort((a,b)=>a.matchday-b.matchday||a.id.localeCompare(b.id)).map(f=>{
-         const participant=!!user&&(f.homeOwnerId===user.id||f.awayOwnerId===user.id||ownedClubs.some(club=>club.id===f.homeClubId||club.id===f.awayClubId));
-         return <article key={f.id} className="glass-panel min-w-0 rounded-2xl border border-white/[0.08] p-3 sm:p-4 space-y-3 shadow-sm">
+         const participant=!!user&&(europeanOwnedClubIds.has(f.homeClubId || '')||europeanOwnedClubIds.has(f.awayClubId || ''));
+         return <article key={f.id} className={`glass-panel min-w-0 rounded-2xl border p-3 sm:p-4 space-y-3 shadow-sm ${participant?"border-[var(--efl-primary)] ring-1 ring-[var(--efl-primary)]/30":"border-[var(--efl-border)]"}`}>
           <div className="flex justify-between text-xs text-slate-500"><b>{f.roundName||f.matchday+'-tur'}</b><span>{f.status==='CONFIRMED'?'Tasdiqlangan':f.status==='PENDING_CONFIRMATION'?'Tasdiq kutilmoqda':f.status==='DISPUTED'?'Nizo':'O‘ynalmagan'}</span></div>
           <div className="flex min-w-0 justify-between items-center gap-2 text-center text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
            <span className="flex-1 truncate">{f.homeClub?.name||f.homeClubId}</span>
@@ -732,7 +734,7 @@ export const ChampionsLeagueView: React.FC<ChampionsLeagueViewProps> = ({ onNavi
 
           <TournamentBracket
             fixtures={bracketFixtures}
-            currentClubId={currentClub?.id}
+            currentClubId={retainedSeasonOneClubs[0]?.id}
             userId={user?.id}
             onSelectFixture={isLiveProjection ? undefined : (f) => setSelectedFixtureForSubmit(f)}
             competition={selectedTournament}
