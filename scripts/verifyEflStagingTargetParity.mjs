@@ -53,8 +53,10 @@ export async function verifyStagingParity(source,readPage) {
       if(++pages>Math.ceil(rows.length/20)+2)
         throw Error('STAGING_PARITY_PAGINATION_LIMIT:'+table);
       const page=await readPage({table,cursor,limit:20});
-      if(page?.ok!==true||page.table!==table||page.hasMore!==Boolean(page.hasMore)||
+      if(page?.ok!==true||page.table!==table||typeof page.hasMore!=='boolean'||
          !Array.isArray(page.rows)||page.rows.length>20||
+         page.rows.some(row=>!row||typeof row!=='object'||Array.isArray(row)||
+           Object.keys(row).some(col=>!columns.includes(col)))||
          !Array.isArray(page.columns)||page.columns.length!==columns.length||
          page.columns.some((col,i)=>col!==columns[i]))
         throw Error('STAGING_PARITY_BAD_READBACK:'+table);
