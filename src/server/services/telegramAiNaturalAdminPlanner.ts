@@ -80,7 +80,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   // season-scoped read models, then require exactly one fixture. Never issue
   // a result_clear on a guessed club, matchday or an unconfirmed match.
   if(action==='result_clear'&&deps.readSeason){
-    const explicitId=/\\b(?:fixture|oyin|uchrashuv)?\\s*id\\s*[:=]\\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
+    const explicitId=/\b(?:fixture|oyin|uchrashuv)?\s*id\s*[:=]\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
     const found=new Map<string,{id:string;home:string;away:string;competition:string;matchday:number}>();
     for(const season of ['season-2027-28','season-2026-27']){
       const read=deps.readSeason(season);
@@ -95,8 +95,17 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
         ...(named.length===1?{competition:named[0].id}:{}),
         ...(requestedMatchday(clean)?{matchday:requestedMatchday(clean)}:{})};
       const rows=await pages(read,query);
+      // A score quoted in the instruction is part of the fixture identity,
+      // not a request to overwrite it.
+      const quoted=/\\b(\\d{1,2})\\s*[:–—−-]\\s*(\\d{1,2})\\b/.exec(clean);
       for(const fixture of rows){
         if(fixture.status!=='CONFIRMED')continue;
+        if(quoted&&picked.clubs.length===2){
+          const homeFirst=picked.clubs[0].id===fixture.homeClubId;
+          const expectedHome=Number(homeFirst?quoted[1]:quoted[2]);
+          const expectedAway=Number(homeFirst?quoted[2]:quoted[1]);
+          if(Number(fixture.homeScore)!==expectedHome||Number(fixture.awayScore)!==expectedAway)continue;
+        }
         if(picked.clubs.length===2&&!picked.clubs.every(club=>[fixture.homeClubId,fixture.awayClubId].includes(club.id)))continue;
         if(String(fixture.seasonId||season)!==season)continue;
         found.set(fixture.id,fixture);
