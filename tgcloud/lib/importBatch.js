@@ -81,7 +81,7 @@ export function validateImportBatch(input) {
   // Telegram Serverless calls must remain bounded even if the row count is small.
   // This also prevents one oversized JSON document from exhausting the isolate.
   let packetBytes;
-  try { packetBytes = JSON.stringify(input).length; }
+  try { packetBytes = new TextEncoder().encode(JSON.stringify(input)).byteLength; }
   catch { throw new Error('INVALID_BATCH_ENCODING'); }
   if (packetBytes > 98304) throw new Error('INVALID_BATCH_BYTES');
   const { table, batchId, rows } = input;
