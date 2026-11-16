@@ -43,3 +43,11 @@ test('staging workflow pins source and requires application-level import confirm
   assert.ok(workflow.includes('status[[:space:]]*:[[:space:]]*'));
   assert.doesNotMatch(workflow,/tail -40 \/tmp\/tgcloud-import\.log/);
 });
+
+test('staging workflow uses immutable import packet identities without upsert',()=>{
+  assert.match(workflow,/payload="\$\(cat -- "\$\{file\}"\)"/);
+  assert.doesNotMatch(workflow,/stagingReplaceExisting\s*=\s*true/);
+  assert.doesNotMatch(workflow,/packet\.batchId\s*=/);
+  assert.doesNotMatch(workflow,/GITHUB_RUN_ID/);
+  assert.match(workflow,/STAGING_IMPORT_RECEIPT_MISSING/);
+});
