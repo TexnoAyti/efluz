@@ -9,10 +9,10 @@ import {enqueueSmartTelegramNotification} from './smartNotificationService';
 import {telegramMiniAppButton} from './telegramMiniAppButton';
 import {SEED_CLUBS} from '../db/seed';
 import {filterPublishedEuropeanFixtures} from './europeanFixtureGate';
-import {backlogResultAllowed} from './backlogResultEntry';
+import {backlogResultAllowed,secondSeasonLeagueResultLimit} from './backlogResultEntry';
 
 export const BACKLOG_STATE_COLLECTION = 'league_reminder_workers';
-export const BACKLOG_SCAN_VERSION = 4;
+export const BACKLOG_SCAN_VERSION = 5;
 export interface LeagueReminderGuard {competitionId: string; seasonId: string; day: string}
 const html = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export const reminderDay = (now = Date.now()) => new Date(now + 5 * 3600000).toISOString().slice(0,10);
@@ -44,12 +44,14 @@ export async function loadLeagueBacklog(competitionId: string, seasonId: string)
   // history boundary: confirmed results and actual opening records prove that
   // later rounds have already been reached. A future scheduled date alone does not.
   const validRound=(n:unknown)=>Number.isInteger(Number(n)) && Number(n)>0 && Number(n)<=100;
-  const reachedMatchday=validRound(competition.resultEntryThroughMatchday)?Number(competition.resultEntryThroughMatchday):Math.max(Number(competition.currentMatchday)||1,
+  const phaseLimit=secondSeasonLeagueResultLimit(competitionId,competition);
+  const reachedMatchday=phaseLimit??(validRound(competition.resultEntryThroughMatchday)?Number(competition.resultEntryThroughMatchday):Math.max(Number(competition.currentMatchday)||1,
     ...seasonFixtures.filter(f=>['CONFIRMED','PENDING_CONFIRMATION'].includes(f.status) && validRound(f.matchday)).map(f=>Number(f.matchday)),
-    ...locks.docs.map(d=>d.data()).filter(l=>validRound(l.matchday) && Number.isFinite(Date.parse(l.openedAt)) && Date.parse(l.openedAt)<=Date.now()).map(l=>Number(l.matchday)));
+    ...locks.docs.map(d=>d.data()).filter(l=>validRound(l.matchday) && Number.isFinite(Date.parse(l.openedAt)) && Date.parse(l.openedAt)<=Date.now()).map(l=>Number(l.matchday))));
   const fixtures=seasonFixtures
     .filter(f=>Number.isInteger(Number(f.matchday)) && Number(f.matchday)>0 && (['KNOCKOUT','SUPER_CUP','EUROPEAN_KNOCKOUT'].includes(competition.type) || Number(f.matchday)<=reachedMatchday) && ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.homeClubId && f.awayClubId && f.homeClubId!=='TBD' && f.awayClubId!=='TBD')
     .map(f=>({...f,canEnterBacklogResult:backlogResultAllowed(f,competition,locks.docs.find(d=>Number(d.data().matchday)===Number(f.matchday))?.data())}))
+    .filter(f=>phaseLimit===null || f.canEnterBacklogResult)
     .sort((a,b)=>Number(a.matchday)-Number(b.matchday)||a.id.localeCompare(b.id));
   const clubIds=[...new Set(fixtures.flatMap(f=>[f.homeClubId,f.awayClubId]))] as string[];
   const occupancies=await byIds('club_occupancies',clubIds.map(id=>`${seasonId}_${id}`));
