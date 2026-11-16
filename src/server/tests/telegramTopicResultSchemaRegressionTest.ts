@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {adminEditResultSchema} from '../routes/admin.routes';
-import {assertTopicResultCurrent} from '../services/topicResultGuard';
+import {assertTopicResultCurrent, type ExpectedTopicFixture} from '../services/topicResultGuard';
 
 const expectedFixture={
   seasonId:'season-2027-28',
@@ -20,8 +20,8 @@ const body={
 const parsed=adminEditResultSchema.parse(body);
 assert.deepEqual(parsed.expectedFixture,expectedFixture,
  'Telegram group result payload must preserve season proof through validation');
-assert.doesNotThrow(()=>assertTopicResultCurrent({...expectedFixture},parsed.expectedFixture!));
-assert.throws(()=>assertTopicResultCurrent({...expectedFixture,seasonId:'season-2026-27'},parsed.expectedFixture!),/o‘zgargan/);
+assert.doesNotThrow(()=>assertTopicResultCurrent({...expectedFixture},parsed.expectedFixture! as ExpectedTopicFixture));
+assert.throws(()=>assertTopicResultCurrent({...expectedFixture,seasonId:'season-2026-27'},parsed.expectedFixture! as ExpectedTopicFixture),/o‘zgargan/);
 assert.equal(adminEditResultSchema.safeParse({...body,expectedFixture:{...expectedFixture,extra:'untrusted'}}).success,false);
 assert.equal(adminEditResultSchema.safeParse({...body,homeScore:-1}).success,false);
 console.log('PASS Telegram topic result Season 2 schema acceptance, strict proof and season mismatch guard');
