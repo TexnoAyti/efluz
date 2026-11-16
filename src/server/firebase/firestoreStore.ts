@@ -3074,6 +3074,23 @@ export async function assertMatchdayPlayableFirestore(
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
   const lock = await getMatchdayLockFirestore(seasonId, competitionId, matchday, true);
 
+  // Second-season league scoring follows the phase gate, not expired round timers.
+  // Read the authoritative competition before accepting any result; explicit
+  // administrative locks still take precedence over the phase window.
+  if (seasonId === 'season-2027-28' && /-2027$/.test(competitionId)) {
+    const live = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+    const competition = live.exists ? live.data() : null;
+    const limit = secondSeasonLeagueResultLimit(competitionId, competition);
+    if (limit !== null) {
+      if (['FORCE_LOCKED','PAUSED'].includes(String(competition?.adminOverrideStatus)) ||
+          ['FORCE_LOCKED','PAUSED'].includes(String(lock?.overrideStatus)) || lock?.isLocked || lock?.isOpen === false ||
+          Number(matchday) > limit || Number(matchday) < 1) {
+        throw Object.assign(new Error('MATCHDAY_LOCKED: Bu tur yoki o‘yin admin tomonidan yopilgan yoki hali ochilmagan.'), {code:'MATCHDAY_LOCKED', statusCode:403});
+      }
+      return;
+    }
+  }
+
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate === true) return;
   if (explicitGate === false) {
