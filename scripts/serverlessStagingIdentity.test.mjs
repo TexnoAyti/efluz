@@ -51,3 +51,10 @@ test('staging workflow uses immutable import packet identities without upsert',(
   assert.doesNotMatch(workflow,/GITHUB_RUN_ID/);
   assert.match(workflow,/STAGING_IMPORT_RECEIPT_MISSING/);
 });
+
+test('staging deploy enables independent readback and requires full parity',()=>{
+  assert.match(workflow,/READBACK_CONTROL_TEMPLATE_NOT_FOUND/);
+  assert.match(workflow,/verifyEflStagingTargetParity\.mjs/);
+  assert.match(workflow,/STAGING_PARITY_COMPLETE_PRODUCTION_UNCHANGED/);
+  assert.doesNotMatch(workflow,/tail -40 "\$log"/);
+});
