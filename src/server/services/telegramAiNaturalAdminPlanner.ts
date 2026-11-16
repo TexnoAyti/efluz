@@ -97,7 +97,7 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
       const rows=await pages(read,query);
       // A score quoted in the instruction is part of the fixture identity,
       // not a request to overwrite it.
-      const quoted=/\\b(\\d{1,2})\\s*[:–—−-]\\s*(\\d{1,2})\\b/.exec(clean);
+      const quoted=/\b(\d{1,2})\s*[:–—−-]\s*(\d{1,2})\b/.exec(clean);
       for(const fixture of rows){
         if(fixture.status!=='CONFIRMED')continue;
         if(quoted&&picked.clubs.length===2){
