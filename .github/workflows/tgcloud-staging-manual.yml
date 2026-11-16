@@ -101,15 +101,9 @@ jobs:
               echo "Importing ${table}/$(basename "${file}")"
               imported=0
               for attempt in 1 2 3 4; do
-                payload="$(node --input-type=module - "${file}" "${GITHUB_RUN_ID}" <<'NODE'
-          import {readFile} from 'node:fs/promises';
-          const [file,runId]=process.argv.slice(2);
-          const packet=JSON.parse(await readFile(file,'utf8'));
-          packet.batchId=packet.batchId+':run'+runId;
-          packet.stagingReplaceExisting=true;
-          process.stdout.write(JSON.stringify(packet));
-          NODE
-                )"
+                # Preserve the manifest-bound batch identifier for exact replay.
+                # Never turn a rerun into a new, overwrite-capable import.
+                payload="$(cat -- "${file}")"
                 if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "${payload}" --ctx "${ctx}" >"${RUNNER_TEMP}/tgcloud-import.log" 2>&1; then
                   # CLI exit 0 alone cannot prove that the endpoint committed the batch.
                   if ! grep -Eq 'ok[[:space:]]*:[[:space:]]*true' "${RUNNER_TEMP}/tgcloud-import.log" || \
