@@ -164,4 +164,8 @@ jobs:
           run_readonly seasons '{}'
           run_readonly bootstrap '{}'
           echo "STAGING_RUNTIME_CHECKS_OK"
+      - name: Verify every staged target row against the private source snapshot
+        run: |
+          node scripts/verifyEflStagingTargetParity.mjs "${RUNNER_TEMP}/efl-migration-bundle/normalized-source.json"
+          echo "STAGING_PARITY_COMPLETE_PRODUCTION_UNCHANGED"
 
