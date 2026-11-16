@@ -44,6 +44,21 @@ jobs:
           bun run build
           node scripts/verify-startup-build.mjs
 
+      - name: Verify season-grouped leavers and last Web App visits
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: |
+          node scripts/run-isolated-test.mjs src/server/tests/groupLeaverSeasonActivityRegressionTest.ts
+
+      - name: Verify AI forum season and match recognition
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: |
+          node scripts/run-isolated-test.mjs src/server/tests/telegramTopicResultsRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramTopicResultFollowupRegressionTest.ts
+
       - name: Verify season-scoped notifications
         env:
           FIREBASE_FORCE_LOCAL_FALLBACK: "true"

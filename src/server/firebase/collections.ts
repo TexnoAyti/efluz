@@ -33,6 +33,7 @@ export interface FirestoreUserDoc {
   isSuspended: boolean;
   createdAt: string;
   updatedAt: string;
+  lastWebAppOpenedAt?: string;
 }
 
 export interface FirestoreSeasonDoc {
