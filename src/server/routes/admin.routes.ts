@@ -479,7 +479,7 @@ adminRouter.post('/competitions/:id/bulk-results/apply', async (req: Request, re
 });
 
 // Admin manually enter or edit fixture result
-const adminEditResultSchema = z.object({
+export const adminEditResultSchema = z.object({
   homeExtraTimeScore: z.number().int().min(0).max(99).nullable().optional(),
   awayExtraTimeScore: z.number().int().min(0).max(99).nullable().optional(),
   homePenaltyScore: z.number().int().min(0).max(99).nullable().optional(),
@@ -490,7 +490,7 @@ const adminEditResultSchema = z.object({
   status: z.enum(['CONFIRMED', 'AWAITING_RESULT', 'SCHEDULED']).optional(),
   notes: z.string().optional(),
   idempotencyKey: z.string().optional(),
-  expectedFixture: z.object({competitionId:z.string(),homeClubId:z.string(),awayClubId:z.string(),status:z.string(),updatedAt:z.string().nullable()}).strict().optional(),
+  expectedFixture: z.object({seasonId:z.string().optional(),competitionId:z.string(),homeClubId:z.string(),awayClubId:z.string(),status:z.string(),updatedAt:z.string().nullable()}).strict().optional(),
 });
 
 adminRouter.post('/fixtures/:id/result', validateBody(adminEditResultSchema), async (req: Request, res: Response) => {
