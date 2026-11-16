@@ -19,6 +19,7 @@ const maskUser = (text: string) => text.replace(/@\s*[A-Za-z0-9_]+/g, ' ');
 const reason = (text: string) => /(?:sabab|izoh)\s*:\s*([^\n]+)/i.exec(text)?.[1]?.trim();
 export interface NaturalPlannerDependencies {
   read: (query: any) => Promise<any>;
+  readSeason?: (seasonId: string) => (query: any) => Promise<any>;
   users: () => Promise<Pick<User,'id'|'username'|'telegramId'>[]>;
 }
 
@@ -73,6 +74,50 @@ export async function planNaturalAdminRequest(text: string, deps: NaturalPlanner
   const clean = maskUser(text).replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?:sarlavha|matn|sabab|izoh)\s*:/i)[0];
   const q = normalizeAiEntity(clean), note = reason(text);
   const make = (action: string, targetId?: string, body: Record<string,unknown> = {}) => adminPlanSchema.parse({ action, ...(targetId ? { targetId } : {}), body });
+
+  // A confirmed Season 2 score must remain discoverable when the ordinary
+  // historical admin reader defaults to Season 1. Search BOTH authorized
+  // season-scoped read models, then require exactly one fixture. Never issue
+  // a result_clear on a guessed club, matchday or an unconfirmed match.
+  if(action==='result_clear'&&deps.readSeason){
+    const explicitId=/\b(?:fixture|oyin|uchrashuv)?\s*id\s*[:=]\s*([A-Za-z0-9_:-]+)/i.exec(text)?.[1];
+    const found=new Map<string,{id:string;home:string;away:string;competition:string;matchday:number}>();
+    for(const season of ['season-2027-28','season-2026-27']){
+      const read=deps.readSeason(season);
+      const roster:Club[]=await pages(read,{dataset:'clubs'});
+      const picked=resolveAiClubs(clean,roster);
+      if(picked.clarification&&picked.clubs.length)clarify(picked.clarification);
+      if(!explicitId&&picked.clubs.length!==2)continue;
+      const competitions:Competition[]=await pages(read,{dataset:'competitions'});
+      const named=findConversationCompetitions(clean,competitions);
+      if(named.length>1)clarify('Qaysi turnir? Bir nechta musobaqa mos keldi.');
+      const query={dataset:'fixtures',...(explicitId?{fixtureId:explicitId}:{club:picked.clubs[0].id,opponent:picked.clubs[1].id}),
+        ...(named.length===1?{competition:named[0].id}:{}),
+        ...(requestedMatchday(clean)?{matchday:requestedMatchday(clean)}:{})};
+      const rows=await pages(read,query);
+      // A score quoted in the instruction is part of the fixture identity,
+      // not a request to overwrite it.
+      const quoted=/\b(\d{1,2})\s*[:–—−-]\s*(\d{1,2})\b/.exec(clean);
+      for(const fixture of rows){
+        if(fixture.status!=='CONFIRMED')continue;
+        if(quoted&&picked.clubs.length===2){
+          const homeFirst=picked.clubs[0].id===fixture.homeClubId;
+          const expectedHome=Number(homeFirst?quoted[1]:quoted[2]);
+          const expectedAway=Number(homeFirst?quoted[2]:quoted[1]);
+          if(Number(fixture.homeScore)!==expectedHome||Number(fixture.awayScore)!==expectedAway)continue;
+        }
+        if(picked.clubs.length===2&&!picked.clubs.every(club=>[fixture.homeClubId,fixture.awayClubId].includes(club.id)))continue;
+        if(String(fixture.seasonId||season)!==season)continue;
+        found.set(fixture.id,fixture);
+      }
+    }
+    const matches=[...found.values()];
+    if(matches.length!==1)clarify(matches.length
+      ?'Bu jamoalarning bir nechta tasdiqlangan uchrashuvi bor. Mavsum va tur yoki aniq o‘yin IDni yozing.'
+      :'Tasdiqlangan hisob bu mavsumlarda topilmadi. Jamoalar, tur va musobaqani tekshiring; natija o‘zgartirilmadi.');
+    return make('result_clear',matches[0].id,note?{notes:note}:{});
+  }
+
   if (action !== 'ai_settings') {
     assertSingleNaturalAdminRequest(text);
     const backlogPlan=await planBacklogReminder(text,deps.read);
@@ -261,6 +306,7 @@ export async function parseNaturalAdminPlan(text: string, signal: AbortSignal): 
   const reader = createAiTournamentReader(signal);
   const plan = await planNaturalAdminRequest(text, {
     read: reader.read,
+    readSeason: seasonId => createAiTournamentReader(signal,seasonId).read,
     users: async () => {
       const cached = await createAiSnapshotReader(signal).read<User>('efluz:v1:admin:user-directory');
       if (cached.available) return cached.data;
