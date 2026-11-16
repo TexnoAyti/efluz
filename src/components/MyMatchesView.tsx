@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
 import { useI18n } from '../i18n';
 import { api } from '../lib/api';
+import {mergeRetainedSeasonOneFixtures} from '../lib/retainedSeasonOneFixtures';
 import { Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { ClubCrest } from './ClubCrest';
@@ -64,23 +65,18 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
       // Fetch each season with server-authoritative ownership. Never borrow an
       // owner's Season 1 fixtures as Season 2 games, or display closed old leagues.
       const secondSeason = activeSeasonId === 'season-2027-28';
-      const [active, historical] = await Promise.all([
+      const [activeResult, oldResult] = await Promise.allSettled([
         api.getMyMatches(activeSeasonId),
         secondSeason ? api.getMyMatches('season-2026-27') : Promise.resolve(null),
       ]);
-      const retainedIds = new Set(retainedSeasonOneClubs.map(club => club.id));
-      const allowedOld = (historical?.fixtures || []).filter(fixture =>
-        (fixture.competitionId?.includes('champions') ||
-         fixture.competitionId?.includes('europa') ||
-         fixture.competitionId?.includes('super-cup')) &&
-        (retainedIds.has(fixture.homeClubId || '') || retainedIds.has(fixture.awayClubId || '')));
-      const merged = [...(active.fixtures || []), ...allowedOld];
-      const seen = new Set<string>();
-      const allFixtures = merged.filter(fixture => {
-        const key = `${fixture.seasonId}:${fixture.id}`;
-        if (seen.has(key)) return false;
-        seen.add(key); return true;
-      });
+      if (activeResult.status === 'rejected' && (oldResult.status === 'rejected' || !secondSeason)) {
+        throw activeResult.reason;
+      }
+      const activeFixtures = activeResult.status === 'fulfilled' ? activeResult.value.fixtures || [] : [];
+      const historicalFixtures = oldResult.status === 'fulfilled' ? oldResult.value?.fixtures || [] : [];
+      const allFixtures = mergeRetainedSeasonOneFixtures(
+        activeFixtures, historicalFixtures, retainedSeasonOneClubs.map(club=>club.id)
+      );
       setFixtures(allFixtures);
       if (allFixtures.length > 0) {
         // If currently focused fixture is in the new list, update it, otherwise pick next upcoming
