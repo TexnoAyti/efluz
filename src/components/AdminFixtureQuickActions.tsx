@@ -1,4 +1,5 @@
 import React,{useEffect,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {X,MessageCircle,CheckCircle2,Loader2,ShieldCheck} from 'lucide-react';
 import type {Fixture} from '../types';
 import type {MatchChatAdminRoomDetail} from '../types/matchChat';
@@ -17,7 +18,11 @@ export function AdminFixtureQuickActions({fixture,onClose,onScoreSaved}:{fixture
   if(!confirm){setConfirm(true);return;}
   setSaving(true);setError('');try{await api.adminEditFixtureResult(fixture.id,{homeScore:h,awayScore:a,status:'CONFIRMED',notes:'Asosiy admin o‘yin kartasidan tasdiqladi'});onScoreSaved();onClose();}catch(e:any){setError(e.message||'Natija saqlanmadi.');}finally{setSaving(false);}
  };
- return <div role="presentation" className="fixed inset-0 z-[1000] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}>
+ // Render outside Telegram Mini App's transformed/scroll-clipped page shell.
+ // A fixed overlay inside that shell may be visually hidden while its button
+ // still updates React state, making the card appear unresponsive.
+ if (typeof document === 'undefined') return null;
+ return createPortal(<div role="presentation" className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}>
   <section role="dialog" aria-modal="true" aria-label="O‘yin boshqaruvi" className="w-full max-w-lg rounded-2xl border border-white/15 bg-slate-950 text-slate-100 p-4 sm:p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
    <header className="flex items-start justify-between gap-3 mb-4"><div><h3 className="text-sm font-black">{fixture.homeClub?.name||fixture.homeClubId} — {fixture.awayClub?.name||fixture.awayClubId}</h3><p className="text-xs text-slate-400 mt-1">{fixture.competitionName} · {fixture.roundName||fixture.matchday+'-tur'}</p></div><button className="p-2 rounded-xl glass-card" onClick={onClose} aria-label="Yopish"><X size={18}/></button></header>
    {view==='choose'&&<div className="grid grid-cols-2 gap-3">
@@ -35,5 +40,5 @@ export function AdminFixtureQuickActions({fixture,onClose,onScoreSaved}:{fixture
    </div>}
    {error&&<p className="text-rose-300 text-xs mt-3" role="alert">{error}</p>}
   </section>
- </div>;
+ </div>, document.body);
 }
