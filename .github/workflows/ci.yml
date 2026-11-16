@@ -51,6 +51,13 @@ jobs:
         run: |
           node scripts/run-isolated-test.mjs src/server/tests/groupLeaverSeasonActivityRegressionTest.ts
 
+      - name: Verify AI Season 2 confirmed result cancellation lookup
+        env:
+          FIREBASE_FORCE_LOCAL_FALLBACK: "true"
+          NODE_ENV: "test"
+        run: |
+          node scripts/run-isolated-test.mjs src/server/tests/telegramAiSeasonResultClearRegressionTest.ts
+
       - name: Verify AI forum season and match recognition
         env:
           FIREBASE_FORCE_LOCAL_FALLBACK: "true"
