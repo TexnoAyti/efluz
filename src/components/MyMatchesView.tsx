@@ -35,7 +35,7 @@ interface MyMatchesViewProps {
 }
 
 export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFixture, onNavigateTab }) => {
-  const { user, currentClub, activeSeasonId, showToast } = useAuth();
+  const { user, currentClub, retainedSeasonOneClubs, activeSeasonId, showToast } = useAuth();
   const { openUserProfile } = useUserProfile();
   const { t, language } = useI18n();
   const previewCopy = {
@@ -60,12 +60,32 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
     setIsLoading(true);
     setError(null);
     try {
-      const res = await api.getMyMatches(activeSeasonId);
-      setFixtures(res.fixtures || []);
-      if (res.fixtures && res.fixtures.length > 0) {
+      // Season 2 clubs and retained Season 1 European/Super Cup clubs can differ.
+      // Fetch each season with server-authoritative ownership. Never borrow an
+      // owner's Season 1 fixtures as Season 2 games, or display closed old leagues.
+      const secondSeason = activeSeasonId === 'season-2027-28';
+      const [active, historical] = await Promise.all([
+        api.getMyMatches(activeSeasonId),
+        secondSeason ? api.getMyMatches('season-2026-27') : Promise.resolve(null),
+      ]);
+      const retainedIds = new Set(retainedSeasonOneClubs.map(club => club.id));
+      const allowedOld = (historical?.fixtures || []).filter(fixture =>
+        (fixture.competitionId?.includes('champions') ||
+         fixture.competitionId?.includes('europa') ||
+         fixture.competitionId?.includes('super-cup')) &&
+        (retainedIds.has(fixture.homeClubId || '') || retainedIds.has(fixture.awayClubId || '')));
+      const merged = [...(active.fixtures || []), ...allowedOld];
+      const seen = new Set<string>();
+      const allFixtures = merged.filter(fixture => {
+        const key = `${fixture.seasonId}:${fixture.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+      setFixtures(allFixtures);
+      if (allFixtures.length > 0) {
         // If currently focused fixture is in the new list, update it, otherwise pick next upcoming
-        const match = focusedFixture ? res.fixtures.find((f) => f.id === focusedFixture.id) : null;
-        const next = match || res.fixtures.find((f) => ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.isPlayable !== false) || res.fixtures.find((f) => f.status !== 'CONFIRMED') || res.fixtures[0];
+        const match = focusedFixture ? allFixtures.find((f) => f.id === focusedFixture.id && f.seasonId === focusedFixture.seasonId) : null;
+        const next = match || allFixtures.find((f) => ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.isPlayable !== false) || allFixtures.find((f) => f.status !== 'CONFIRMED') || allFixtures[0];
         setFocusedFixture(next);
       } else {
         setFocusedFixture(null);
@@ -80,7 +100,7 @@ export const MyMatchesView: React.FC<MyMatchesViewProps> = ({ initialSelectedFix
 
   useEffect(() => {
     loadMatches();
-  }, [activeSeasonId, user?.id, currentClub?.id]);
+  }, [activeSeasonId, user?.id, currentClub?.id, retainedSeasonOneClubs.map(club=>club.id).join(',')]);
 
   const filteredFixtures = fixtures.filter((f) => {
     if (activeFilter === 'ALL') return true;
