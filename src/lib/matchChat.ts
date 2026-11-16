@@ -1,7 +1,7 @@
 import {getAuthHeaders} from './customTournamentApi';
 import type {MatchChatAdminReport,MatchChatAdminRoomSummary,MatchChatAdminRoomDetail,MatchChatKind,MatchChatView} from '../types/matchChat';
 
-export interface MatchChatTarget {kind:MatchChatKind;matchId:string;title?:string;opponentName?:string}
+export interface MatchChatTarget {kind:MatchChatKind;matchId:string;title?:string;opponentName?:string;adminSpectator?:boolean;matchInfo?:MatchChatView['matchInfo']}
 const eventName='efluz:open-match-chat';
 // When the chat UI is in a deferred bundle, the initial click must not be lost.
 let pendingOpen:MatchChatTarget|null=null;
