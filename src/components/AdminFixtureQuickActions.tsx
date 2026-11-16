@@ -7,7 +7,7 @@ import {PremiumClubBadge} from './PremiumClubBadge';
 import {api} from '../lib/api';
 import {openMatchChat} from '../lib/matchChat';
 import {getClubOwnerDisplay} from '../lib/ownerUtils';
-import {canUseDangerZone} from '../lib/adminPermissions';
+import {canManageFixture,canUseDangerZone} from '../lib/adminPermissions';
 import {useAuth} from '../context/AuthContext';
 
 /** Identical match-center presentation to a player's selected fixture.
@@ -19,7 +19,7 @@ export function AdminFixtureQuickActions({fixture,onClose,onScoreSaved}:{fixture
  const [error,setError]=useState(''),[saving,setSaving]=useState(false),[confirm,setConfirm]=useState(false);
  const [home,setHome]=useState(String(fixture.homeScore??0)),[away,setAway]=useState(String(fixture.awayScore??0));
  useEffect(()=>{setEditing(false);setError('');setConfirm(false);setHome(String(fixture.homeScore??0));setAway(String(fixture.awayScore??0));},[fixture.id]);
- if(!canUseDangerZone(user))return null;
+ if(!canManageFixture(user,fixture.competitionId))return null;
  const homeOwner=getClubOwnerDisplay(fixture.homeClub,fixture.homeOwner||fixture.homeUser,fixture.homeOwnerId,'Egasi aniqlanmagan');
  const awayOwner=getClubOwnerDisplay(fixture.awayClub,fixture.awayOwner||fixture.awayUser,fixture.awayOwnerId,'Egasi aniqlanmagan');
  const openChat=()=>{
@@ -49,8 +49,8 @@ export function AdminFixtureQuickActions({fixture,onClose,onScoreSaved}:{fixture
   catch(e:any){setError(e.message||'Natija saqlanmadi.');}finally{setSaving(false);}
  };
  if (typeof document === "undefined") return null;
- return createPortal(<div className="fixed inset-0 z-[99999] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
-  <section role="dialog" aria-modal="true" aria-label="Uchrashuv markazi" className="glass-panel preview-match-center w-full max-w-xl max-h-[92vh] overflow-y-auto rounded-2xl p-5 sm:p-6 shadow-2xl space-y-5">
+ return createPortal(<div className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
+  <section role="dialog" aria-modal="true" aria-label="Uchrashuv markazi" className="glass-panel preview-match-center w-full max-w-xl max-h-[92dvh] overflow-y-auto rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] text-[var(--efl-text)] p-4 sm:p-6 shadow-2xl space-y-5">
    <header className="flex items-center justify-between border-b border-white/[0.08] pb-3.5 gap-3">
     <div><span className="text-xs font-black uppercase tracking-wider text-emerald-400">{fixture.competitionName}</span><p className="text-[11px] text-slate-400 mt-1">{fixture.roundName||fixture.matchday+'-tur'}</p></div>
     <button type="button" onClick={onClose} aria-label="Yopish" className="p-2 glass-card rounded-xl text-slate-300"><X size={19}/></button>
@@ -79,8 +79,8 @@ export function AdminFixtureQuickActions({fixture,onClose,onScoreSaved}:{fixture
     </div>
    </div>
    <div className="glass-card p-3 rounded-xl flex flex-wrap gap-2 justify-between items-center text-xs">
-    <span className="text-slate-300">{fixture.status==='CONFIRMED'?'Natija tasdiqlangan':fixture.status==='PENDING_CONFIRMATION'?'Raqib tasdig‘i kutilmoqda':fixture.status==='DISPUTED'?'Hisob bo‘yicha nizo':'Uchrashuv rejalashtirilgan'}</span>
-    <span className="text-sky-300 inline-flex items-center gap-1"><ShieldCheck size={13}/> Admin kuzatuvi</span>
+    <span className="text-[var(--efl-text-2)]">{fixture.status==='CONFIRMED'?'Natija tasdiqlangan':fixture.status==='PENDING_CONFIRMATION'?'Raqib tasdig‘i kutilmoqda':fixture.status==='DISPUTED'?'Hisob bo‘yicha nizo':'Uchrashuv rejalashtirilgan'}</span>
+    <span className="text-[var(--efl-primary)] inline-flex items-center gap-1"><ShieldCheck size={13}/> {canUseDangerZone(user)?'Admin kuzatuvi':'Liga nazorati'}</span>
    </div>
    {editing?<div className="space-y-4">
     <button type="button" onClick={()=>{setEditing(false);setConfirm(false);setError('');}} className="text-xs font-bold text-slate-400 flex gap-1 items-center"><ArrowLeft size={15}/> Uchrashuvga qaytish</button>
@@ -92,9 +92,9 @@ export function AdminFixtureQuickActions({fixture,onClose,onScoreSaved}:{fixture
     {confirm&&<p className="text-xs text-amber-200" role="status">Natija: {home}:{away}. Buni rasmiy tasdiqlangan hisob sifatida saqlaysizmi?</p>}
     <button type="button" disabled={saving} onClick={()=>void submit()} className="w-full px-4 py-3 rounded-xl bg-emerald-600 text-white font-black disabled:opacity-50">{saving?'Saqlanmoqda…':confirm?'Tasdiqlab saqlash':'Hisobni tekshirish'}</button>
    </div>:<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-    <button type="button" onClick={openChat} className="w-full px-4 py-3.5 rounded-xl glass-card border border-sky-500/30 text-sky-300 font-bold flex gap-2 justify-center items-center">
+    {canUseDangerZone(user)&&<button type="button" onClick={openChat} className="w-full px-4 py-3.5 rounded-xl glass-card border border-sky-500/30 text-[var(--efl-primary)] font-bold flex gap-2 justify-center items-center">
      <MessageCircle size={19}/> Uchrashuv chati
-    </button>
+    </button>}
     <button type="button" onClick={()=>{setEditing(true);setError('');}} className="w-full px-4 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex gap-2 justify-center items-center">
      <CheckCircle2 size={19}/> Hisob kiritish
     </button>

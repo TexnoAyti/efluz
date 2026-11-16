@@ -20,5 +20,18 @@ export function canUseDangerZone(user?: Pick<User, 'id' | 'telegramId' | 'isAdmi
   return Boolean(user?.isAdmin && !user.isSuspended && String(user.telegramId) === MAIN_ADMIN_TELEGRAM_ID && user.id === `user-${MAIN_ADMIN_TELEGRAM_ID}`);
 }
 export function permittedAdminCompetitionIds(user: Pick<User, 'adminPermissions'>): string[] {
-  return permittedAdminLeagues(user).flatMap(league => [league.competitionId, league.cupCompetitionId]);
+  return permittedAdminLeagues(user).flatMap(league => [
+    league.competitionId,
+    // Only the same explicitly assigned league in the new season.
+    league.competitionId.replace(/-2026$/, '-2027'),
+    league.cupCompetitionId,
+  ]);
+}
+
+/** Safe, narrow external fixture access. Does not grant primary-owner danger zone or chat inspection. */
+export function canManageFixture(user: Pick<User, 'id' | 'telegramId' | 'isAdmin' | 'isSuspended' | 'adminPermissions'> | null | undefined,
+  competitionId: string): boolean {
+  if (!user?.isAdmin || user.isSuspended || !competitionId) return false;
+  if (canUseDangerZone(user)) return true;
+  return isLeagueAdmin(user) && permittedAdminCompetitionIds(user).includes(competitionId);
 }

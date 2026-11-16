@@ -1,6 +1,6 @@
 import { AdminTournamentImageExport } from './AdminTournamentImageExport';
 import {AdminFixtureQuickActions} from './AdminFixtureQuickActions';
-import { canUseDangerZone } from '../lib/adminPermissions';
+import { canUseDangerZone, canManageFixture } from '../lib/adminPermissions';
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../context/UserProfileContext';
@@ -34,8 +34,8 @@ import {
 
 export const FixturesView: React.FC = () => {
   const { user, currentClub, ownedClubs, activeSeasonId, showToast } = useAuth();
-  // League registration uses Season 2, but all current fixture results remain in Season 1.
-  const fixtureSeasonId = activeSeasonId === 'season-2027-28' ? 'season-2026-27' : activeSeasonId;
+  // Use the selected season; old UEFA fixtures are handled under the Season 1 European tab.
+  const fixtureSeasonId = activeSeasonId;
   const { openUserProfile } = useUserProfile();
   const { t } = useI18n();
 
@@ -471,11 +471,11 @@ export const FixturesView: React.FC = () => {
             return (
               <div
                 key={fixture.id}
-                role={canUseDangerZone(user)?'button':undefined}
-                tabIndex={canUseDangerZone(user)?0:undefined}
-                aria-label={canUseDangerZone(user)?'O‘yin: chatni ko‘rish yoki hisob kiritish':undefined}
-                onClick={e=>{if(canUseDangerZone(user)&&!(e.target as HTMLElement).closest('button,a,input,textarea,select'))setSelectedAdminFixture(fixture);}}
-                onKeyDown={e=>{if(canUseDangerZone(user)&&(e.key==='Enter'||e.key===' ')&&e.target===e.currentTarget){e.preventDefault();setSelectedAdminFixture(fixture);}}}
+                role={canManageFixture(user,fixture.competitionId)?'button':undefined}
+                tabIndex={canManageFixture(user,fixture.competitionId)?0:undefined}
+                aria-label={canManageFixture(user,fixture.competitionId)?'Uchrashuvni boshqarish':undefined}
+                onClick={e=>{if(canManageFixture(user,fixture.competitionId)&&!(e.target as HTMLElement).closest('button,a,input,textarea,select'))setSelectedAdminFixture(fixture);}}
+                onKeyDown={e=>{if(canManageFixture(user,fixture.competitionId)&&(e.key==='Enter'||e.key===' ')&&e.target===e.currentTarget){e.preventDefault();setSelectedAdminFixture(fixture);}}}
                 className={`glass-panel p-3.5 sm:p-4 flex flex-col justify-between shadow-lg transition-all ${
                   isUserParticipant
                     ? 'border-emerald-500/50 bg-emerald-950/20 shadow-emerald-500/10'
@@ -640,7 +640,7 @@ export const FixturesView: React.FC = () => {
                       : 'Pending Score'}
                   </div>
 
-                  {canUseDangerZone(user)&&<button type="button"
+                  {canManageFixture(user,fixture.competitionId)&&<button type="button"
                     aria-label={`Uchrashuvni ochish: ${fixture.homeClub?.name || fixture.homeClubId} — ${fixture.awayClub?.name || fixture.awayClubId}`}
                     onClick={event=>{event.stopPropagation();setSelectedAdminFixture(fixture);}}
                     className="px-3 py-2 rounded-xl border border-sky-400/40 bg-sky-500/10 text-sky-200 text-xs font-black min-h-[38px] shrink-0 touch-manipulation">
@@ -710,7 +710,7 @@ export const FixturesView: React.FC = () => {
 
       <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />
 
-      {selectedAdminFixture&&canUseDangerZone(user)&&<AdminFixtureQuickActions
+      {selectedAdminFixture&&canManageFixture(user,selectedAdminFixture.competitionId)&&<AdminFixtureQuickActions
         fixture={selectedAdminFixture}
         onClose={()=>setSelectedAdminFixture(null)}
         onScoreSaved={()=>{invalidateClientCache('/api/fixtures');invalidateClientCache('/api/standings');void loadFixtures(true);}}
