@@ -44,7 +44,7 @@ export async function readMigrationPage(db,input={}){
       throw Error('READBACK_ROW_CONTRACT_INVALID');
     const value=row[pk];
     if(numeric? !Number.isSafeInteger(value)||value<1:
-      typeof value!=='string'||!/^[A-Za-z0-9_:-]{1,160}$/.test(value))
+      typeof value!=='string'||value.length<1||value.length>160||!value.trim())
       throw Error('READBACK_PRIMARY_KEY_INVALID');
     if(previous!==null&&
        (numeric? value<=previous: String(value)<=String(previous)))
