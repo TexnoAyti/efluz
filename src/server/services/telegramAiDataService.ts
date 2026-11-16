@@ -40,9 +40,8 @@ const validScore = (f: Fixture) => f.status === 'CONFIRMED' && Number.isInteger(
 
 /** All active-season datasets are searchable; only explicit public fields leave this boundary.
  * Lazy, request-local batched Redis reads; never scans Firestore or trusts model-supplied keys. */
-export function createAiTournamentReader(signal?: AbortSignal) {
+export function createAiTournamentReader(signal?: AbortSignal, season = 'season-2026-27') {
   const reader = createAiSnapshotReader(signal);
-  const season = 'season-2026-27';
   let catalog: Promise<{ competitions: Competition[]; clubs: OwnerNeutralClub[]; stale: boolean }> | undefined;
   const fixtureLoads = new Map<string, Promise<Fixture[]>>();
   const fixtureCoverage = new Map<string, boolean>();
@@ -130,7 +129,7 @@ export function createAiTournamentReader(signal?: AbortSignal) {
         unfinished: !['CONFIRMED', 'CANCELLED'].includes(f.status), confirmed: f.status === 'CONFIRMED',
       })[q.fixtureState];
       const games = sortSeasonFixtures((await loadFixtures(selectedComps)).filter(f => compIds.has(f.competitionId) && (!q.club || involves(f, clubIds)) && (!q.opponent || involves(f, new Set(opponents.map(c => c.id)))) && (!q.fixtureId || f.id === q.fixtureId) && (!q.matchday || f.matchday === q.matchday) && (!q.matchdayTo || f.matchday <= q.matchdayTo) && stateMatches(f) && (!q.status || f.status === q.status) && (!stage || fixtureMatchesAiCupStage(f, stage))));
-      if (q.dataset === 'fixtures') rows = games.map(f => ({ ...project(f, ['id', 'competitionId', 'matchday', 'roundName', 'homeClubId', 'awayClubId', 'status', 'scheduledAt', 'resultConfirmedAt', 'winnerClubId', 'homePenaltyScore', 'awayPenaltyScore', 'homeExtraTimeScore', 'awayExtraTimeScore', 'updatedAt']), home: name(f.homeClubId), away: name(f.awayClubId), competition: competitions.find(c => c.id === f.competitionId)?.name, homeScore: validScore(f) ? f.homeScore : null, awayScore: validScore(f) ? f.awayScore : null }));
+      if (q.dataset === 'fixtures') rows = games.map(f => ({ ...project(f, ['id', 'competitionId', 'seasonId', 'matchday', 'roundName', 'homeClubId', 'awayClubId', 'status', 'scheduledAt', 'resultConfirmedAt', 'winnerClubId', 'homePenaltyScore', 'awayPenaltyScore', 'homeExtraTimeScore', 'awayExtraTimeScore', 'updatedAt']), home: name(f.homeClubId), away: name(f.awayClubId), competition: competitions.find(c => c.id === f.competitionId)?.name, homeScore: validScore(f) ? f.homeScore : null, awayScore: validScore(f) ? f.awayScore : null }));
       else rows = selectedComps.map(c => {
         const scope = games.filter(f => f.competitionId === c.id); const confirmed = scope.filter(validScore);
         const club = q.club && selectedClubs.length === 1 ? selectedClubs[0] : null;

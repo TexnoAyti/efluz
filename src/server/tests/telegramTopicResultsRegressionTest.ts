@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
-import { handleTopicResultUpdate, planTopicResult, competitionResultTopic, setTestTopicResultDependencies } from '../services/telegramTopicResults';
+import { handleTopicResultUpdate, planTopicResult, competitionResultTopic, topicResultSeason, setTestTopicResultDependencies } from '../services/telegramTopicResults';
 import { adminEditFixtureResultFirestore } from '../firebase/firestoreStore';
 import { assertTopicResultCurrent } from '../services/topicResultGuard';
 
@@ -15,11 +15,40 @@ const competitions: any[] = [{ id: liga, name: 'La Liga', type: 'LEAGUE', league
 const clubs: any[] = [{ id: 'club-real-madrid', name: 'Real Madrid', leagueId: 'league-la-liga', ownerUserId: 'user-1001' }, { id: 'club-barcelona', name: 'Barcelona', leagueId: 'league-la-liga', ownerUserId: 'user-1002' }];
 const fixture = (id: string, competitionId: string) => ({ id, competitionId, seasonId, homeClubId: clubs[0].id, awayClubId: clubs[1].id, home: 'Real Madrid', away: 'Barcelona', competition: competitionId === liga ? 'La Liga' : 'Copa del Rey', matchday: 11, status: 'SCHEDULED', updatedAt: 'v1' });
 let games: any[] = [fixture('league-game', liga), fixture('cup-game', cup)];
-const reader: any = { read: async (q: any) => ({ complete: true, stale: false, data: q.dataset === 'competitions' ? competitions : games.filter(f => (!q.competition || f.competitionId === q.competition) && (!q.matchday || f.matchday === q.matchday) && (!q.club || [f.homeClubId,f.awayClubId].includes(q.club)) && (!q.opponent || [f.homeClubId,f.awayClubId].includes(q.opponent))), nextOffset: null }) };
+const reader: any = { read: async (q: any) => {const all=q.dataset === 'competitions' ? competitions : games.filter(f => (!q.competition || f.competitionId === q.competition) && (!q.matchday || f.matchday === q.matchday) && (!q.club || [f.homeClubId,f.awayClubId].includes(q.club)) && (!q.opponent || [f.homeClubId,f.awayClubId].includes(q.opponent)));const offset=q.offset||0,limit=q.limit||30;return {complete:true,stale:false,data:all.slice(offset,offset+limit),nextOffset:offset+limit<all.length?offset+limit:null};} };
 let executions = 0;
 setTestTopicResultDependencies({ reader, ownership: async () => ({ data: clubs, available: true, stale: false }), authorize: async id => id === 5209126900,
   execute: async plan => { executions++; const f = games.find(f => f.id === plan.targetId); assertTopicResultCurrent(f, plan.body.expectedFixture as any); Object.assign(f, plan.body, {updatedAt:'v2'}); return {status:200,data:{success:true,fixture:{...f}}}; } });
 assert.equal(competitionResultTopic(competitions[0]), 3); assert.equal(competitionResultTopic(competitions[1]), 8);
+assert.equal(topicResultSeason(2),'season-2027-28','current domestic league must use Season 2');
+assert.equal(topicResultSeason(7),'season-2026-27','existing UEFA fixtures remain in Season 1');
+assert.equal(topicResultSeason(2335),'season-2026-27','Season 1 Super Cup stays open');
+assert.equal(topicResultSeason(11429),'season-2026-27','Verified UEL thread uses Season 1');
+assert.equal(topicResultSeason(11972),'season-2027-28','Verified Asian thread uses Season 2');
+assert.equal(topicResultSeason(6),'season-2027-28','Ligue 1 topic keeps Season 2');
+const europaComp={id:'comp-europa-league-2026',name:'UEFA Europa League',type:'EUROPEAN_LEAGUE_PHASE',seasonId,leagueId:null};
+assert.equal(competitionResultTopic(europaComp as any),11429,'Europa League uses its separately verified topic');
+assert.equal(competitionResultTopic({id:'comp-champions-league-2026',name:'UEFA Champions League'} as any),7,'UCL stays separate from UEL');
+assert.equal(competitionResultTopic({id:'comp-japan-2027',name:'Japan J1 League',leagueId:'league-japan'} as any),11972,'Asia uses its verified topic');
+const fillers=Array.from({length:32},(_,i)=>({id:'comp-dummy-'+i,name:'Other League '+i,type:'LEAGUE',seasonId,leagueId:'other-'+i}));
+competitions.push(...fillers,europaComp as any);
+games.push({...fixture('europa-game',europaComp.id),competition:'UEFA Europa League'});
+assert.equal((await planTopicResult('Real Madrid 2-1 Barca',1001,11429,signal))?.plan.targetId,'europa-game','Must paginate beyond the first 30 competitions and resolve Europa fixture');
+assert.equal((await planTopicResult('Real Madrid 1-1 Barca',1001,11429,signal))?.plan.body.homeScore,1,'Draws are legal in UEFA league phase');
+await assert.rejects(planTopicResult('Real Madrid 1-1 Barca penalti 4-3',1001,11429,signal),/penaltilar bo‘lmaydi/);
+competitions.splice(competitions.length-fillers.length-1);
+games.pop();
+// Asia is routable as soon as a real league and match exist in the verified
+// season catalog. No synthetic fixture is created in production.
+await assert.rejects(planTopicResult('Kashima 2-1 Urawa',1001,11972,signal),/Osiyo ligalari.*hali topilmadi/);
+const asia={id:'comp-japan-2027',name:'Japan J1 League',type:'LEAGUE',seasonId:'season-2027-28',leagueId:'league-japan',currentMatchday:1};
+const kashima={id:'club-kashima',name:'Kashima Antlers',leagueId:'league-japan',ownerUserId:'user-1001'};
+const urawa={id:'club-urawa',name:'Urawa Reds',leagueId:'league-japan',ownerUserId:'user-1002'};
+competitions.push(asia);clubs.push(kashima,urawa);
+games.push({...fixture('japan-match',asia.id),seasonId:asia.seasonId,home:'Kashima Antlers',away:'Urawa Reds',homeClubId:kashima.id,awayClubId:urawa.id,competition:'Japan J1 League',matchday:1});
+assert.equal((await planTopicResult('Kashima Antlers 2-1 Urawa Reds',1001,11972,signal))?.plan.targetId,'japan-match','Verified Asia league match must resolve in topic 11972');
+competitions.pop();clubs.splice(-2);games.pop();
+
 assert.equal((await planTopicResult('Real Madrid 1-2 Barca',1001,3,signal))?.plan.targetId, 'league-game');
 assert.equal((await planTopicResult('Barca 2-1 Real Madrid',1002,8,signal))?.plan.targetId, 'cup-game');
 assert.equal((await planTopicResult('2-1',1002,3,signal))?.plan.body.homeScore, 1);
@@ -61,6 +90,20 @@ for (const [leagueId,name,thread] of [['league-premier-league','Premier League',
   competitions.pop(); clubs.splice(-2);
 }
 games=originalGames;
+// A user's match can be outside the first 30 fixture rows; a page limit
+// cannot make the AI silently miss an otherwise verified current game.
+const pagingComp={id:'page-fixtures-league',name:'La Liga',type:'LEAGUE',seasonId,leagueId:'league-la-liga',currentMatchday:31};
+competitions.push(pagingComp);
+const savedGames=games;
+games=Array.from({length:31},(_,i)=>({...fixture('paged-fixture-'+i,pagingComp.id),matchday:i+1,status:i===30?'SCHEDULED':'CONFIRMED'}));
+const paged=await planTopicResult('2-1 31-tur',1001,3,signal);
+assert.equal(paged?.plan.targetId,'paged-fixture-30','A valid fixture beyond page one must be recognized');
+assert.equal((paged?.plan.body.expectedFixture as any)?.seasonId,seasonId,'Proposal must bind exact season');
+assert.throws(()=>assertTopicResultCurrent(
+ {...games[30],seasonId:'season-2027-28'},
+ paged!.plan.body.expectedFixture as any
+),/o‘zgargan/,'A mismatched season cannot be confirmed');
+games=savedGames;competitions.pop();
 const reported=games[0];
 Object.assign(reported,{status:'CONFIRMED',homeScore:3,awayScore:2});
 await assert.rejects(planTopicResult('Real Madrid 4-1 Barca',1001,3,signal),/allaqachon tasdiqlangan.*Real Madrid 3:2 Barcelona/s);

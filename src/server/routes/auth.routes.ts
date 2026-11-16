@@ -50,7 +50,7 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
 
   try {
     const started = performance.now();
-    const user = await getOrCreateTelegramUser(verifyResult.user);
+    const user = await getOrCreateTelegramUser(verifyResult.user,true);
     const identityMs = performance.now() - started;
     const clubState = await getLoginClubState(user.id);
     // Home and Club load standings independently. Do not rebuild/publish tables

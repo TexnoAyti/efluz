@@ -4672,7 +4672,7 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
   last_name?: string;
   username?: string;
   photo_url?: string;
-}): Promise<User> {
+}, recordWebAppVisit = false): Promise<User> {
   const rawId = String(tgUser.id).trim();
   const telegramId = rawId.startsWith('user-') ? rawId.slice(5) : rawId;
   const docId = getCanonicalTelegramUserId(telegramId);
@@ -4707,6 +4707,7 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
         isSuspended: false,
         createdAt: now,
         updatedAt: now,
+        ...(recordWebAppVisit?{lastWebAppOpenedAt:now}:{}),
       };
       await userDocRef.set(newUser);
       trackFirestoreWrite(COLLECTIONS.USERS, 1, 'getOrCreateTelegramUserFirestore:create');
@@ -4730,6 +4731,10 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
     } else {
       const existing = userDoc.data() as FirestoreUserDoc;
       const updatedAdmin = Boolean(existing.isAdmin || isAdmin);
+      // Visits are separate from profile updatedAt. The auth path already
+      // reads the identity record: no additional read, only a throttled write.
+      const lastOpened=Date.parse(String((existing as any).lastWebAppOpenedAt||''));
+      const shouldMarkOpened=recordWebAppVisit&&(!Number.isFinite(lastOpened)||Date.now()-lastOpened>=30*60_000);
       const changed =
         existing.username !== username ||
         existing.firstName !== firstName ||
@@ -4745,8 +4750,12 @@ export async function getOrCreateTelegramUserFirestore(tgUser: {
           photoUrl: photoUrl || existing.photoUrl || '',
           isAdmin: updatedAdmin,
           updatedAt: now,
+          ...(shouldMarkOpened?{lastWebAppOpenedAt:now}:{}),
         });
         trackFirestoreWrite(COLLECTIONS.USERS, 1, 'getOrCreateTelegramUserFirestore:update');
+      } else if(shouldMarkOpened) {
+        await userDocRef.update({lastWebAppOpenedAt:now});
+        trackFirestoreWrite(COLLECTIONS.USERS,1,'getOrCreateTelegramUserFirestore:visit');
       }
 
       const returnedUser: User = {
