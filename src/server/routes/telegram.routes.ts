@@ -4,6 +4,7 @@ import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
 import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
 import { randomUUID } from 'node:crypto';
+import {getAuthoritativeUserForAuthorization} from '../firebase/firestoreStore';
 import {handleClubOwnerGroupExit,listClubOwnerGroupExits,listSeasonGroupedClubOwnerExits,handleGroupLeaverRelease,markGroupLeaverReleaseConfirmation,reconcileExistingClubOwnerLeavers} from '../services/clubOwnerGroupExitService';
 import { Router, Request, Response } from 'express';
 import {
