@@ -151,12 +151,11 @@ jobs:
             local input="$2"
             local log="/tmp/tgcloud-${module}.log"
             npx --yes --package=@tgcloud/cli tgcloud run "endpoints/${module}" "$input" --ctx "$ctx" >"$log" 2>&1 || {
-              tail -40 "$log"
+              echo "STAGING_RUNTIME_COMMAND_FAILED:${module}" >&2
               exit 1
             }
             grep -Eq 'ok[[:space:]]*:[[:space:]]*true|"ok"[[:space:]]*:[[:space:]]*true' "$log" || {
-              echo "STAGING_RUNTIME_CHECK_FAILED:${module}"
-              tail -40 "$log"
+              echo "STAGING_RUNTIME_CHECK_FAILED:${module}" >&2
               exit 1
             }
           }
