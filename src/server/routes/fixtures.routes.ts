@@ -13,7 +13,8 @@ import { isDomesticCup, advanceDomesticCupWinnerSafe } from '../tournament/domes
 import { reconcileDomesticCupSourceFixture } from '../tournament/domesticCupRoundOps';
 import { notifySmartResultLifecycle } from '../services/smartNotificationService';
 import { assertFixtureLifecycleOpen } from '../services/seasonLifecycleService';
-import {readBacklogResultAccess} from '../services/backlogResultEntry';
+import {readBacklogResultAccess,secondSeasonLeagueResultLimit} from '../services/backlogResultEntry';
+import {getFirestoreDb} from '../firebase/admin';
 
 export const fixturesRouter = Router();
 export const fixturesResilientRouter = fixturesRouter;
@@ -56,6 +57,16 @@ fixturesRouter.post('/:id/result', requireAuth, validateBody(resultSubmissionSch
     if (!existingFixture) {
       res.status(404).json({ error: 'Fixture not found', code: 'NOT_FOUND' });
       return;
+    }
+    // The second-season phase boundary cannot be bypassed by a legacy
+    // lifecycle/selected-round fallback. Re-read the authoritative competition.
+    if(existingFixture.seasonId==='season-2027-28'){
+      const leagueDoc=await getFirestoreDb().collection('competitions').doc(existingFixture.competitionId).get();
+      const phaseLimit=secondSeasonLeagueResultLimit(existingFixture.competitionId,leagueDoc.data());
+      if(phaseLimit!==null && Number(existingFixture.matchday)>phaseLimit){
+        res.status(423).json({error:'SEASON_PHASE_LOCKED',code:'SEASON_PHASE_LOCKED',message:'Kubok boshlangach keyingi turlar ochiladi.'});
+        return;
+      }
     }
     if (!await readBacklogResultAccess(existingFixture)) await assertFixtureLifecycleOpen(existingFixture);
 

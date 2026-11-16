@@ -1,6 +1,20 @@
 import {getFirestoreDb} from '../firebase/admin';
 import {isSeasonCompetitionEnabled} from '../../lib/seasonParticipationPolicy';
 import {isEuropeanFixtureCompetition,europeanDrawPublished} from './europeanFixtureGate';
+import {PREPARED_DOMESTIC_CUPS} from '../../content/season2Rules';
+
+/** First nine league rounds unlock at launch; a verified cup OPEN unlocks the remainder. */
+export function secondSeasonLeagueResultLimit(competitionId:string, competition:any):number|null {
+  if (competition?.seasonId!=='season-2027-28' || competition?.type!=='LEAGUE' || !/-2027$/.test(competitionId)) return null;
+  const total=Number(competition.totalMatchdays || (Number(competition.formatConfig?.totalClubs || 20)-1));
+  const bounded=Number.isInteger(total)&&total>0?total:19;
+  return competition.seasonTwoCupStartedAt ? bounded : Math.min(9,bounded);
+}
+
+export function secondSeasonCupLeagueId(cupId:string):string|null {
+  return PREPARED_DOMESTIC_CUPS.find(cup=>cup.id===cupId)?.leagueId||null;
+}
+
 
 /** Explicit reached-round watermark, independent of a selected round/timer.
  * Expiry does not erase an unfinished game. Explicit admin holds still win. */
@@ -18,9 +32,14 @@ export function backlogResultAllowed(f: any, c: any, lock?: any): boolean {
   if (f.seasonId === 'season-2026-27' && c.type === 'SUPER_CUP' &&
       String(c.status).toLowerCase() === 'active' &&
       Number(f.matchday) === Number(c.currentMatchday || 1)) return true;
+  const phaseLimit=secondSeasonLeagueResultLimit(f.competitionId,c);
   const configured=c.resultEntryThroughMatchday;
-  if(!Number.isInteger(configured))return false;
-  const through=Math.max(configured,Number.isInteger(c.currentMatchday)?c.currentMatchday:0);
+  if(phaseLimit===null && !Number.isInteger(configured))return false;
+  // Season 2 must not inherit an advanced round's unrestricted result-entry watermark.
+  // The cup transition is a durable competition flag, not an expiring match timer.
+  const through=phaseLimit===null
+    ?Math.max(configured,Number.isInteger(c.currentMatchday)?c.currentMatchday:0)
+    :phaseLimit;
   return Number.isInteger(through) && through>0 && through<=100 && Number.isInteger(Number(f.matchday)) &&
     Number(f.matchday)>0 && Number(f.matchday)<=through;
 }

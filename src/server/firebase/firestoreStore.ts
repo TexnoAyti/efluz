@@ -15,7 +15,7 @@ import { invalidateSharedAdminData } from '../services/adminReviewCache';
 import { filterRetiredFixtures, isRetiredFixture, assertFixtureNotRetired, RETIRED_FIXTURES, correctFixtureMatchday, hasFixtureMatchdayCorrection } from '../services/retiredFixtureService';
 import { recordDurableRead } from '../services/durableReadCosts';
 import { resolveMatchdayGate } from '../../lib/matchdayState';
-import {backlogResultAllowed,readBacklogResultAccess} from '../services/backlogResultEntry';
+import {backlogResultAllowed,secondSeasonLeagueResultLimit,readBacklogResultAccess} from '../services/backlogResultEntry';
 import { Firestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getNotificationControls, notificationVisible } from '../services/notificationVisibility';
 import { getNotificationReadState, applyNotificationReadState, persistNotificationReadState } from '../services/notificationReadState';
@@ -1480,6 +1480,9 @@ export function checkFixturePlayability(
     }
   }
 
+  // Do not expose later fixtures as playable through the legacy selected-round fallback.
+  const seasonTwoLimit=secondSeasonLeagueResultLimit(competitionId,resolvedComp);
+  if (seasonTwoLimit!==null && matchday>seasonTwoLimit) return {isPlayable:false,activeMatchday};
   if (backlogResultAllowed({seasonId,competitionId,matchday,status:fixtureStatus,homeClubId,awayClubId,europeanDrawId},resolvedComp,lock)) return {isPlayable:true,activeMatchday};
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate !== null) return { isPlayable: explicitGate, activeMatchday };
@@ -3070,6 +3073,23 @@ export async function assertMatchdayPlayableFirestore(
   assertSeasonCompetitionEnabled(competitionId,seasonId);
   const key = getMatchdayLockKey(seasonId, competitionId, matchday);
   const lock = await getMatchdayLockFirestore(seasonId, competitionId, matchday, true);
+
+  // Second-season league scoring follows the phase gate, not expired round timers.
+  // Read the authoritative competition before accepting any result; explicit
+  // administrative locks still take precedence over the phase window.
+  if (seasonId === 'season-2027-28' && /-2027$/.test(competitionId)) {
+    const live = await getFirestoreDb().collection(COLLECTIONS.COMPETITIONS).doc(competitionId).get();
+    const competition = live.exists ? live.data() : null;
+    const limit = secondSeasonLeagueResultLimit(competitionId, competition);
+    if (limit !== null) {
+      if (['FORCE_LOCKED','PAUSED'].includes(String(competition?.adminOverrideStatus)) ||
+          ['FORCE_LOCKED','PAUSED'].includes(String(lock?.overrideStatus)) || lock?.isLocked || lock?.isOpen === false ||
+          Number(matchday) > limit || Number(matchday) < 1) {
+        throw Object.assign(new Error('MATCHDAY_LOCKED: Bu tur yoki o‘yin admin tomonidan yopilgan yoki hali ochilmagan.'), {code:'MATCHDAY_LOCKED', statusCode:403});
+      }
+      return;
+    }
+  }
 
   const explicitGate = resolveMatchdayGate(lock);
   if (explicitGate === true) return;

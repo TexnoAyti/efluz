@@ -9,10 +9,10 @@ import {enqueueSmartTelegramNotification} from './smartNotificationService';
 import {telegramMiniAppButton} from './telegramMiniAppButton';
 import {SEED_CLUBS} from '../db/seed';
 import {filterPublishedEuropeanFixtures} from './europeanFixtureGate';
-import {backlogResultAllowed} from './backlogResultEntry';
+import {backlogResultAllowed,secondSeasonLeagueResultLimit} from './backlogResultEntry';
 
 export const BACKLOG_STATE_COLLECTION = 'league_reminder_workers';
-export const BACKLOG_SCAN_VERSION = 4;
+export const BACKLOG_SCAN_VERSION = 5;
 export interface LeagueReminderGuard {competitionId: string; seasonId: string; day: string}
 const html = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export const reminderDay = (now = Date.now()) => new Date(now + 5 * 3600000).toISOString().slice(0,10);
@@ -44,12 +44,14 @@ export async function loadLeagueBacklog(competitionId: string, seasonId: string)
   // history boundary: confirmed results and actual opening records prove that
   // later rounds have already been reached. A future scheduled date alone does not.
   const validRound=(n:unknown)=>Number.isInteger(Number(n)) && Number(n)>0 && Number(n)<=100;
-  const reachedMatchday=validRound(competition.resultEntryThroughMatchday)?Number(competition.resultEntryThroughMatchday):Math.max(Number(competition.currentMatchday)||1,
+  const phaseLimit=secondSeasonLeagueResultLimit(competitionId,competition);
+  const reachedMatchday=phaseLimit??(validRound(competition.resultEntryThroughMatchday)?Number(competition.resultEntryThroughMatchday):Math.max(Number(competition.currentMatchday)||1,
     ...seasonFixtures.filter(f=>['CONFIRMED','PENDING_CONFIRMATION'].includes(f.status) && validRound(f.matchday)).map(f=>Number(f.matchday)),
-    ...locks.docs.map(d=>d.data()).filter(l=>validRound(l.matchday) && Number.isFinite(Date.parse(l.openedAt)) && Date.parse(l.openedAt)<=Date.now()).map(l=>Number(l.matchday)));
+    ...locks.docs.map(d=>d.data()).filter(l=>validRound(l.matchday) && Number.isFinite(Date.parse(l.openedAt)) && Date.parse(l.openedAt)<=Date.now()).map(l=>Number(l.matchday))));
   const fixtures=seasonFixtures
     .filter(f=>Number.isInteger(Number(f.matchday)) && Number(f.matchday)>0 && (['KNOCKOUT','SUPER_CUP','EUROPEAN_KNOCKOUT'].includes(competition.type) || Number(f.matchday)<=reachedMatchday) && ['SCHEDULED','PENDING_CONFIRMATION'].includes(f.status) && f.homeClubId && f.awayClubId && f.homeClubId!=='TBD' && f.awayClubId!=='TBD')
     .map(f=>({...f,canEnterBacklogResult:backlogResultAllowed(f,competition,locks.docs.find(d=>Number(d.data().matchday)===Number(f.matchday))?.data())}))
+    .filter(f=>phaseLimit===null || f.canEnterBacklogResult)
     .sort((a,b)=>Number(a.matchday)-Number(b.matchday)||a.id.localeCompare(b.id));
   const clubIds=[...new Set(fixtures.flatMap(f=>[f.homeClubId,f.awayClubId]))] as string[];
   const occupancies=await byIds('club_occupancies',clubIds.map(id=>`${seasonId}_${id}`));
@@ -74,7 +76,7 @@ export function leagueBacklogMessage(data: NonNullable<Awaited<ReturnType<typeof
     const validUsername=/^[A-Za-z0-9_]{5,32}$/.test(username)?username:'';
     const name=SEED_CLUBS.find(c=>c.id===opponentClub)?.name || opponentClub;
     const who=validUsername?`@${validUsername}`:opponent?[opponent.firstName,opponent.lastName].filter(Boolean).join(' ').slice(0,45)||'Guruhda admin orqali bog‘laning':'Klub egasi hali yo‘q';
-    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)!==data.competition.currentMatchday?' · eski tur: admin yordami':''}`;
+    const line=`${Number(f.matchday)}-tur · <b>${html(String(name).slice(0,50))}</b> · ${html(who)}${f.status==='PENDING_CONFIRMATION'?' · ⏳ hisob tasdiqlanishi kutilmoqda':''}${Number(f.matchday)!==data.competition.currentMatchday?(data.competition.seasonId==='season-2027-28'?' · boshqa tur':' · eski tur: admin yordami'):''}`;
     if(lines.join('\n').length+line.length>3000)break;
     lines.push(line);
     if(validUsername&&!contacts.has(validUsername)){contacts.add(validUsername);buttons.push([{text:`${Number(f.matchday)}-tur · @${validUsername}`,url:`https://t.me/${validUsername}`}]);}
@@ -137,4 +139,23 @@ export async function processLeagueBacklogReminders(options: {now?:number; deadl
     if(state)await ref.set({...state,status:'RETRY_PENDING',lastError:'LEAGUE_REMINDER_PREPARATION_FAILED',updatedAt:new Date().toISOString(),lastSliceMs:Date.now()-started}).catch(()=>{});
     console.warn('[LEAGUE_REMINDER_PREPARATION_FAILED]');throw error;
   }finally{await store.eval('EFL_STATE_RELEASE_V1',[lock],[token]).catch(()=>{});}
+}
+
+/** One deduplicated announcement per owner when their domestic cup opens the remaining league phase. */
+export async function announceSeasonTwoCupPhase(competitionId:string, seasonId:string):Promise<number>{
+  const data=await loadLeagueBacklog(competitionId,seasonId);
+  if(!data || !data.competition.seasonTwoCupStartedAt)return 0;
+  const last=secondSeasonLeagueResultLimit(competitionId,data.competition);
+  if(last===null || last<=9)return 0;
+  let queued=0;
+  for(const userId of [...new Set(data.owners.values())].sort()){
+    if(!data.users.get(userId)?.telegramId)continue;
+    if(await enqueueSmartTelegramNotification({
+      userId,seasonId,eventId:`matchday-open:season2-cup-phase:${competitionId}`,
+      title:'🏆 Kubok boshlandi — liga turlari ochildi',
+      body:`<b>${html(data.competition.name||competitionId)}</b> — 10–${last}-turlarga hisob kiritish ochildi. 1–9-turlardagi yakunlanmagan o‘yinlar ham ochiq qoladi. O‘yinlar va natijalar uchun ilovaga kiring.`,
+      replyMarkup:{inline_keyboard:[[telegramMiniAppButton('⚽ O‘yinlarim')]]},
+    }))queued++;
+  }
+  return queued;
 }
