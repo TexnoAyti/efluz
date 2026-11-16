@@ -6,7 +6,7 @@ import {PREPARED_DOMESTIC_CUPS} from '../../content/season2Rules';
 /** First nine league rounds unlock at launch; a verified cup OPEN unlocks the remainder. */
 export function secondSeasonLeagueResultLimit(competitionId:string, competition:any):number|null {
   if (competition?.seasonId!=='season-2027-28' || competition?.type!=='LEAGUE' || !/-2027$/.test(competitionId)) return null;
-  const total=Number(competition.totalMatchdays || competition.formatConfig?.totalClubs-1 || 19);
+  const total=Number(competition.totalMatchdays || (Number(competition.formatConfig?.totalClubs || 20)-1));
   const bounded=Number.isInteger(total)&&total>0?total:19;
   return competition.seasonTwoCupStartedAt ? bounded : Math.min(9,bounded);
 }
