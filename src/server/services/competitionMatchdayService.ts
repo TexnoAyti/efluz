@@ -119,7 +119,7 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
       if(league.seasonId===seasonId && league.type==='LEAGUE' && league.leagueId===launchedCupLeagueId){
         const total=totalRounds(league,[]);
         tx.update(linkedLeagueRef,{
-          seasonTwoCupStartedAt: league.seasonTwoCupStartedAt||now,
+          seasonTwoCupStartedAt: (league as any).seasonTwoCupStartedAt||now,
           resultEntryThroughMatchday:total,
           updatedAt:now,
         });
