@@ -103,7 +103,7 @@ await invalidateSharedAdminData(); await readSharedAdminReview('pg-reviews', rev
 
 const hour = new Date().toISOString().slice(0, 13);
 await first.eval(READ_COST_INCREMENT_LUA, [`${KEY_PREFIX}:read-cost:${hour}`], ['totalReads', 3, 'endpoint:GET /state', 3]);
-assert.equal((await getDurableReadCosts() as any).byEndpoint['GET /state'], 3);
+assert.equal((await getDurableReadCosts()).available,false,'Optional telemetry must not use the PostgreSQL runtime as a substitute for Redis');
 assert.equal((await runDeadlineSweep(season)).skipped, false);
 assert.equal((await runDeadlineSweep(season)).reason, 'HOURLY_LOCK');
 
