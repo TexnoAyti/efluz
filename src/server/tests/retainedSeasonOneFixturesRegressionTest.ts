@@ -15,7 +15,7 @@ const stranger=fixture('stranger','season-2026-27','comp-champions-league-2026',
 assert.deepEqual(mergeRetainedSeasonOneFixtures([current],[ucl,uel,superCup,oldLeague,stranger,ucl],['club-sunderland']).map(f=>f.id),['current','ucl','uel','super']);
 assert.deepEqual(mergeRetainedSeasonOneFixtures([current],[ucl],[]).map(f=>f.id),['current']);
 assert.deepEqual(mergeRetainedSeasonOneFixtures([],[ucl],['club-sunderland']).map(f=>f.id),['ucl']);
-const delegated={id:'user-8574301555',telegramId:'8574301555',isAdmin:true,isSuspended:false,adminPermissions:{
+const delegated={id:'user-444444444',telegramId:'444444444',isAdmin:true,isSuspended:false,adminPermissions:{
   scope:'LEAGUES' as const,leagueIds:['league-premier-league','league-la-liga','league-serie-a','league-bundesliga']
 }} as User;
 assert.equal(canManageFixture(delegated,'comp-premier-league-2026'),true);
