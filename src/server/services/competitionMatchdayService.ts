@@ -138,8 +138,16 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
   await syncCompetitionMatchdayState(result.competition as FirestoreCompetitionDoc, result.locks);
   if(linkedLeagueRef){
     const linked=await linkedLeagueRef.get();
-    if(linked.exists && linked.data()?.seasonTwoCupStartedAt)
+    if(linked.exists && linked.data()?.seasonTwoCupStartedAt){
       await syncCompetitionMatchdayState({...linked.data(),id:linkedLeagueRef.id} as FirestoreCompetitionDoc,[]);
+      // Notify all active owners once; deterministic queue IDs deduplicate retries.
+      try {
+        const {announceSeasonTwoCupPhase}=await import('./leagueBacklogReminders');
+        await announceSeasonTwoCupPhase(linkedLeagueRef.id,seasonId);
+      }catch(error:any){
+        console.warn('[SEASON2_CUP_PHASE_NOTIFICATION_PENDING]',{competitionId:linkedLeagueRef.id,reason:error?.message});
+      }
+    }
   }
   let channelPost: 'QUEUED' | 'EXISTS' | 'SKIPPED' | 'FAILED' = 'SKIPPED';
   if (['SELECT', 'OPEN', 'RESTART'].includes(params.action)) {
