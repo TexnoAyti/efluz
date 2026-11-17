@@ -144,7 +144,7 @@ try {
   assert.equal((await handleTopicResultUpdate(source)).result, 'duplicate_source');
   const race = await Promise.all([handleTopicResultUpdate(callback(first,token)),handleTopicResultUpdate(callback(first,token))]);
   assert.equal(race.filter(r=>r.result==='executing').length,1); assert.equal(executions,1);
-  assert.match(sent.at(-1).text,/Natija saqlandi:.*Real Madrid — Barcelona.*La Liga.*11-tur.*Hisob: 1:2/s);
+  assert.ok(sent.some(row=>/Natija saqlandi:.*Real Madrid — Barcelona.*La Liga.*11-tur.*Hisob: 1:2/s.test(row.text)),'Successful confirmation must still publish its original group reply despite a parallel stale-button diagnostic');
   assert.equal((await handleTopicResultUpdate(callback(first,token))).result, 'already_processed');
   const cupSource = update('Barca 2-3 Real Madrid',8,1002);
   assert.equal((await handleTopicResultUpdate(cupSource)).result, 'proposal_sent');
