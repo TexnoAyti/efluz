@@ -53,3 +53,20 @@ export const guidePreviewOpponentFixture:Fixture={
   clubId:'club-arsenal',homeScore:3,awayScore:1,createdAt:'2026-11-17T17:00:00.000Z',
  },
 };
+
+/** The submitting player's view while the other participant has not yet
+ * entered a matching score. This is display-only data, not persisted. */
+export const guidePreviewPendingFixture:Fixture={
+ ...guidePreviewFixtures[0],
+ status:'PENDING_CONFIRMATION',
+ userSubmission:{
+  id:'guide-home-submission',fixtureId:'guide-fixture-md7',
+  userId:'design-preview',clubId:'club-arsenal',
+  homeScore:3,awayScore:1,createdAt:'2026-11-17T16:00:00.000Z',
+ }
+};
+
+export const guidePreviewConfirmedFixture:Fixture={
+ ...guidePreviewFixtures[0],status:'CONFIRMED',homeScore:3,awayScore:1,
+ resultConfirmedAt:'2026-11-17T17:30:00.000Z'
+};
