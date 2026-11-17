@@ -65,6 +65,7 @@ jobs:
         run: |
           node scripts/run-isolated-test.mjs src/server/tests/telegramTopicResultsRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramResultApprovalLeaseRegressionTest.ts
+          node scripts/run-isolated-test.mjs src/server/tests/telegramGroupResultBacklogRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramTopicResultSchemaRegressionTest.ts
           node scripts/run-isolated-test.mjs src/server/tests/telegramTopicResultFollowupRegressionTest.ts
 
