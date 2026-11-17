@@ -3,12 +3,14 @@ import {isSeasonCompetitionEnabled} from '../../lib/seasonParticipationPolicy';
 import {isEuropeanFixtureCompetition,europeanDrawPublished} from './europeanFixtureGate';
 import {PREPARED_DOMESTIC_CUPS} from '../../content/season2Rules';
 
-/** First nine league rounds unlock at launch; a verified cup OPEN unlocks the remainder. */
+/** All scheduled league rounds are playable in Season 2, regardless of the
+ * selected/current matchday. Each league retains its actual one-leg schedule:
+ * 19 rounds for 20 clubs, 17 for 18 clubs, 15 for 16 clubs. */
 export function secondSeasonLeagueResultLimit(competitionId:string, competition:any):number|null {
   if (competition?.seasonId!=='season-2027-28' || competition?.type!=='LEAGUE' || !/-2027$/.test(competitionId)) return null;
   const total=Number(competition.totalMatchdays || (Number(competition.formatConfig?.totalClubs || 20)-1));
   const bounded=Number.isInteger(total)&&total>0?total:19;
-  return competition.seasonTwoCupStartedAt ? bounded : Math.min(9,bounded);
+  return bounded;
 }
 
 export function secondSeasonCupLeagueId(cupId:string):string|null {
@@ -35,8 +37,8 @@ export function backlogResultAllowed(f: any, c: any, lock?: any): boolean {
   const phaseLimit=secondSeasonLeagueResultLimit(f.competitionId,c);
   const configured=c.resultEntryThroughMatchday;
   if(phaseLimit===null && !Number.isInteger(configured))return false;
-  // Season 2 must not inherit an advanced round's unrestricted result-entry watermark.
-  // The cup transition is a durable competition flag, not an expiring match timer.
+  // Season 2 league fixtures are independent of the selected/current round.
+  // Actual league schedule bounds and explicit administrative holds still apply.
   const through=phaseLimit===null
     ?Math.max(configured,Number.isInteger(c.currentMatchday)?c.currentMatchday:0)
     :phaseLimit;
