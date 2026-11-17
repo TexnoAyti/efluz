@@ -132,6 +132,14 @@ global.fetch = async (_input: any, init?: any) => {
   return new Response(JSON.stringify({ok:true,result:{message_id:body.botId}}));
 };
 try {
+  // An authorized admin can recover an old score by forwarding the original
+  // text into its tournament topic. Non-admin forwarded text is not trusted.
+  const forwardedByAdmin = update('Real Madrid 2-1 Barca',3,5209126900);
+  (forwardedByAdmin.message as any).forward_origin={type:'user'};
+  assert.equal((await handleTopicResultUpdate(forwardedByAdmin)).result,'proposal_sent');
+  const forwardedByPlayer = update('Real Madrid 2-1 Barca',3,1001);
+  (forwardedByPlayer.message as any).forward_origin={type:'user'};
+  assert.equal((await handleTopicResultUpdate(forwardedByPlayer)).handled,false);
   const source = update('Real Madrid 1-2 Barca');
   assert.equal((await handleTopicResultUpdate(source)).result, 'proposal_sent');
   const first = sent.at(-1);
