@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
-import { handleTopicResultUpdate, planTopicResult, competitionResultTopic, topicResultSeason, setTestTopicResultDependencies } from '../services/telegramTopicResults';
+import { handleTopicResultUpdate, planTopicResult, competitionResultTopic, topicResultSeason, describeBlockedTopicResultApproval, setTestTopicResultDependencies } from '../services/telegramTopicResults';
 import { adminEditFixtureResultFirestore } from '../firebase/firestoreStore';
 import { assertTopicResultCurrent } from '../services/topicResultGuard';
 
@@ -19,6 +19,17 @@ const reader: any = { read: async (q: any) => {const all=q.dataset === 'competit
 let executions = 0;
 setTestTopicResultDependencies({ reader, ownership: async () => ({ data: clubs, available: true, stale: false }), authorize: async id => id === 5209126900,
   execute: async plan => { executions++; const f = games.find(f => f.id === plan.targetId); assertTopicResultCurrent(f, plan.body.expectedFixture as any); Object.assign(f, plan.body, {updatedAt:'v2'}); return {status:200,data:{success:true,fixture:{...f}}}; } });
+const feedbackPlan={state:'pending',token:'a'.repeat(24),plan:{action:'result_edit',targetId:'f',body:{homeScore:2,awayScore:1}}} as any;
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'CONFIRMED',homeScore:2,awayScore:1},feedbackPlan.token,null).reason,'already_saved');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'CONFIRMED',homeScore:0,awayScore:3},feedbackPlan.token,null).reason,'saved_conflict');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'SCHEDULED'},'other',null).reason,'superseded');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'PENDING_CONFIRMATION'},feedbackPlan.token,'b'.repeat(24)).reason,'other_approval');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'PENDING_CONFIRMATION'},feedbackPlan.token,null).reason,'pending_approval');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'DISPUTED'},feedbackPlan.token,null).reason,'dispute');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'executing'},null,feedbackPlan.token,feedbackPlan.token).reason,'in_progress');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'unknown'},null,feedbackPlan.token,feedbackPlan.token).reason,'unknown_outcome');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'rejected',receipt:{status:400}},null,feedbackPlan.token,null).reason,'previously_rejected');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'done',receipt:{status:200}},null,feedbackPlan.token,feedbackPlan.token).reason,'processed');
 assert.equal(competitionResultTopic(competitions[0]), 3); assert.equal(competitionResultTopic(competitions[1]), 8);
 assert.equal(topicResultSeason(2),'season-2027-28','current domestic league must use Season 2');
 assert.equal(topicResultSeason(7),'season-2026-27','existing UEFA fixtures remain in Season 1');
@@ -123,6 +134,14 @@ global.fetch = async (_input: any, init?: any) => {
   return new Response(JSON.stringify({ok:true,result:{message_id:body.botId}}));
 };
 try {
+  // An authorized admin can recover an old score by forwarding the original
+  // text into its tournament topic. Non-admin forwarded text is not trusted.
+  const forwardedByAdmin = update('Real Madrid 2-1 Barca',3,5209126900);
+  (forwardedByAdmin.message as any).forward_origin={type:'user'};
+  assert.equal((await handleTopicResultUpdate(forwardedByAdmin)).result,'proposal_sent');
+  const forwardedByPlayer = update('Real Madrid 2-1 Barca',3,1001);
+  (forwardedByPlayer.message as any).forward_origin={type:'user'};
+  assert.equal((await handleTopicResultUpdate(forwardedByPlayer)).handled,false);
   const source = update('Real Madrid 1-2 Barca');
   assert.equal((await handleTopicResultUpdate(source)).result, 'proposal_sent');
   const first = sent.at(-1);
@@ -135,7 +154,7 @@ try {
   assert.equal((await handleTopicResultUpdate(source)).result, 'duplicate_source');
   const race = await Promise.all([handleTopicResultUpdate(callback(first,token)),handleTopicResultUpdate(callback(first,token))]);
   assert.equal(race.filter(r=>r.result==='executing').length,1); assert.equal(executions,1);
-  assert.match(sent.at(-1).text,/Natija saqlandi:.*Real Madrid — Barcelona.*La Liga.*11-tur.*Hisob: 1:2/s);
+  assert.ok(sent.some(row=>/Natija saqlandi:.*Real Madrid — Barcelona.*La Liga.*11-tur.*Hisob: 1:2/s.test(row.text)),'Successful confirmation must still publish its original group reply despite a parallel stale-button diagnostic');
   assert.equal((await handleTopicResultUpdate(callback(first,token))).result, 'already_processed');
   const cupSource = update('Barca 2-3 Real Madrid',8,1002);
   assert.equal((await handleTopicResultUpdate(cupSource)).result, 'proposal_sent');
