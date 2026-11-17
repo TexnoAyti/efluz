@@ -38,3 +38,18 @@ export const guidePreviewFixtures:Fixture[]=[
   activeMatchday:1,createdAt:'',updatedAt:'',
  }
 ];
+
+/** Same real fixture from the opponent's perspective. A score matching the
+ * first player's 3:1 submission confirms it in the real submission pipeline;
+ * preview has zero database writes. */
+export const guidePreviewOpponentFixture:Fixture={
+ ...guidePreviewFixtures[0],
+ homeOwnerId:'guide-opponent',awayOwnerId:'design-preview',
+ homeOwner:{userId:'guide-opponent',username:'guide_arsenal',displayName:'Sinov Arsenal'},
+ awayOwner:{userId:'design-preview',username:'design_preview',displayName:'Sinov Chelsea'},
+ status:'PENDING_CONFIRMATION',
+ opponentSubmission:{
+  id:'guide-opponent-submission',fixtureId:'guide-fixture-md7',userId:'guide-opponent',
+  clubId:'club-arsenal',homeScore:3,awayScore:1,createdAt:'2026-11-17T17:00:00.000Z',
+ },
+};
