@@ -9,7 +9,7 @@ import { api, invalidateClientCache } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { isDesignPreview } from '../designPreview';
-import { guidePreviewCompetition, guidePreviewFixtures } from '../lib/resultGuidePreviewData';
+import { guidePreviewCompetition, guidePreviewFixtures, guidePreviewOpponentFixture } from '../lib/resultGuidePreviewData';
 import { ClubCrest } from './ClubCrest';
 import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
@@ -55,8 +55,12 @@ export const FixturesView: React.FC = () => {
   // Screenshot automation only: open the real result modal with a synthetic
   // sample fixture. Outside Vercel Preview/local dev this has no effect.
   useEffect(()=>{
-    if(isDesignPreview && new URLSearchParams(window.location.search).get('guideModal')==='1')
-      setSelectedFixtureForSubmit(guidePreviewFixtures[0]);
+    if(isDesignPreview && new URLSearchParams(window.location.search).get('guideModal')==='1'){
+      setSelectedFixtureForSubmit(
+        new URLSearchParams(window.location.search).get('guideStep')==='opponent'
+          ? guidePreviewOpponentFixture : guidePreviewFixtures[0]
+      );
+    }
   },[]);
 
 
@@ -188,7 +192,9 @@ export const FixturesView: React.FC = () => {
 
   const loadFixtures = async (skipCache = false) => {
     if(isDesignPreview){
-      setFixtures(guidePreviewFixtures.filter(item=>item.matchday===selectedMatchday));
+      const opponent = new URLSearchParams(window.location.search).get('guideStep')==='opponent';
+      setFixtures((opponent?[guidePreviewOpponentFixture,...guidePreviewFixtures.slice(1)]:guidePreviewFixtures)
+        .filter(item=>item.matchday===selectedMatchday));
       setError(null);
       setIsLoading(false);
       return;
