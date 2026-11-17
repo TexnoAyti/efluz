@@ -455,6 +455,23 @@ export const MatchdayHomeView: React.FC<Props> = ({
         )}
       </div>
 
+      {activeSeasonId === 'season-2027-28' && (
+        <div role="note" className="rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface)] px-3 py-2.5">
+          <p className="text-xs font-black text-[var(--efl-text)]">
+            {language === 'uz' ? '2-mavsum: barcha liga turlarini oldindan o‘ynash mumkin'
+              : language === 'ru' ? 'Сезон 2: можно заранее играть матчи всех туров'
+              : 'Season 2: you can play any league round in advance'}
+          </p>
+          <p className="mt-1 text-[11px] text-[var(--efl-text-2)]">
+            {language === 'uz'
+              ? 'Raqibingiz bilan kelishib istalgan ochiq turdagi o‘yinni o‘tkazing va hisobni kiriting. “Joriy tur” kutish shart emas.'
+              : language === 'ru'
+              ? 'Договоритесь с соперником и внесите счёт любого открытого тура. Ждать текущего тура не нужно.'
+              : 'Agree with your opponent and submit any open-round score without waiting for the current matchday.'}
+          </p>
+        </div>
+      )}
+
       {stale && !error && <div role="status" className="text-xs text-[var(--efl-text-muted)]">{language === 'uz' ? 'Oxirgi saqlangan o‘yinlar va natijalar ko‘rsatilmoqda. Ma’lumotlar yangilanishi kutilmoqda.' : language === 'ru' ? 'Показаны последние сохранённые матчи и результаты. Ожидается обновление.' : 'Showing the last saved matches and results. Waiting for an update.'}</div>}
 
       {/* Network / Error banner */}
