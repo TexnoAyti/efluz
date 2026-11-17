@@ -152,8 +152,8 @@ export async function announceSeasonTwoCupPhase(competitionId:string, seasonId:s
     if(!data.users.get(userId)?.telegramId)continue;
     if(await enqueueSmartTelegramNotification({
       userId,seasonId,eventId:`matchday-open:season2-cup-phase:${competitionId}`,
-      title:'🏆 Kubok boshlandi — liga turlari ochildi',
-      body:`<b>${html(data.competition.name||competitionId)}</b> — 10–${last}-turlarga hisob kiritish ochildi. 1–9-turlardagi yakunlanmagan o‘yinlar ham ochiq qoladi. O‘yinlar va natijalar uchun ilovaga kiring.`,
+      title:'🏆 Kubok boshlandi — liga o‘yinlari ham davom etadi',
+      body:`<b>${html(data.competition.name||competitionId)}</b> — 1–${last}-turlardagi barcha mavjud liga o‘yinlarini oldindan o‘ynash va hisob kiritish mumkin. “Joriy tur” boshqa turlarni cheklamaydi. O‘yinlar va natijalar uchun ilovaga kiring.`,
       replyMarkup:{inline_keyboard:[[telegramMiniAppButton('⚽ O‘yinlarim')]]},
     }))queued++;
   }

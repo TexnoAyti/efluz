@@ -26,6 +26,8 @@ for (const league of EFL_SECOND_SEASON.leagues.filter(l => l.group === 'EUROPE')
   });
   const control = await getCompetitionMatchdayControl(league.competitionId);
   assert.equal(control.rounds.length, league.format.totalMatchdays);
+  assert.ok(control.rounds.every(row=>row.isOpen),
+    'Every Season 2 league round should show OPEN while currentMatchday stays at 1');
   const fresh = league.roster.clubs.find(c => !SEED_CLUBS.some(old => old.id === c.id));
   if (fresh) {
     const row = normalizeFixtureSnapshot({id: 'new-club', seasonId: EFL_SECOND_SEASON.id, homeClubId: fresh.id, awayClubId: league.roster.clubs[0].id, competitionId: league.competitionId});

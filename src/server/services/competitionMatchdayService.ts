@@ -48,7 +48,11 @@ export async function getCompetitionMatchdayControl(competitionId: string) {
       const matchday = index + 1, lock = locks.get(matchday);
       const round = fixtures.filter(f => Number(f.matchday) === matchday);
       const explicit = resolveMatchdayGate(lock);
-      const fallback = matchday === (competition.currentMatchday || 1) && competition.isMatchdayOpen !== false && !['FORCE_LOCKED', 'PAUSED'].includes(competition.adminOverrideStatus || '') && (!competition.nextMatchdayOpenAt || Date.parse(competition.nextMatchdayOpenAt) > Date.now());
+      const seasonTwoLeague = competition.seasonId === 'season-2027-28' &&
+        competition.type === 'LEAGUE' && competitionId.endsWith('-2027');
+      const fallback = seasonTwoLeague
+        ? competition.isMatchdayOpen !== false && !['FORCE_LOCKED','PAUSED'].includes(competition.adminOverrideStatus||'')
+        : matchday === (competition.currentMatchday || 1) && competition.isMatchdayOpen !== false && !['FORCE_LOCKED', 'PAUSED'].includes(competition.adminOverrideStatus || '') && (!competition.nextMatchdayOpenAt || Date.parse(competition.nextMatchdayOpenAt) > Date.now());
       return { matchday, isOpen: (!isEuropeanFixtureCompetition(competitionId) || europeanDrawPublished(competition)) && (explicit ?? fallback), deadlineAt: lock ? lock.expiresAt || null : matchday === (competition.currentMatchday || 1) ? competition.nextMatchdayOpenAt || null : null,
         fixtureCount: round.length, unfinished: round.filter(f => !finalStatuses.has(String(f.status))).map(f => ({ id: f.id, status: String(f.status) })) };
     }),
@@ -68,8 +72,8 @@ export async function controlCompetitionMatchday(competitionId: string, params: 
   if (target > totalRounds(competition, fixtures)) throw new MatchdayControlError('BAD_MATCHDAY', 'Bu tur musobaqada mavjud emas.');
   if (!fixtures.some(f => Number(f.matchday) === target)) throw new MatchdayControlError('MATCHDAY_EMPTY', `${target}-turda o‘yinlar yo‘q.`, 409);
   const seasonId = competition.seasonId;
-  // The first explicit OPEN/SELECT/RESTART of the matching Season 2 domestic cup
-  // is the transition to the remaining league rounds; a draw preview is NOT a start.
+  // Keep the durable domestic-cup start marker for cup scheduling/history.
+  // Season 2 league rounds are now playable independently of cup start.
   const launchedCupLeagueId = seasonId==='season-2027-28' && ['OPEN','SELECT','RESTART'].includes(params.action)
     && String(competition.status).toLowerCase()==='active' && fixtures.length>0
     ? secondSeasonCupLeagueId(competitionId) : null;
