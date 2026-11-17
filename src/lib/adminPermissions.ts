@@ -5,6 +5,9 @@ export const ADMIN_LEAGUES = [
   { id: 'league-serie-a', name: 'Serie A', competitionId: 'comp-serie-a-2026', cupCompetitionId: 'comp-coppa-italia-2026' },
   { id: 'league-bundesliga', name: 'Bundesliga', competitionId: 'comp-bundesliga-2026', cupCompetitionId: 'comp-dfb-pokal-2026' },
   { id: 'league-ligue-1', name: 'Ligue 1', competitionId: 'comp-ligue-1-2026', cupCompetitionId: 'comp-coupe-de-france-2026' },
+  // The Superliga has an active 2027/28 competition but no domestic cup in
+  // the live catalog. Never invent a cup permission or competition.
+  { id: 'league-uzbekistan-superliga', name: 'O‘zbekiston Superligasi', competitionId: 'comp-uzbekistan-superliga-2027', cupCompetitionId: '' },
 ];
 export function isLeagueAdmin(user: Pick<User, 'adminPermissions'>): boolean {
   return user.adminPermissions != null && user.adminPermissions.scope !== 'ALL';
@@ -25,7 +28,7 @@ export function permittedAdminCompetitionIds(user: Pick<User, 'adminPermissions'
     // Only the same explicitly assigned league in the new season.
     league.competitionId.replace(/-2026$/, '-2027'),
     league.cupCompetitionId,
-  ]);
+  ].filter(Boolean));
 }
 
 /** Safe, narrow external fixture access. Does not grant primary-owner danger zone or chat inspection. */

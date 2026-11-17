@@ -10,7 +10,7 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   const allowed = permittedAdminLeagues(req.user!);
   const leagueIds = new Set(allowed.map(league => league.id));
   const competitionIds = new Set(permittedAdminCompetitionIds(req.user!));
-  const cupIds = new Set(allowed.map(league => league.cupCompetitionId));
+  const cupIds = new Set(allowed.map(league => league.cupCompetitionId).filter(Boolean));
   const path = new URL(req.originalUrl, 'https://efluz.invalid').pathname;
   const deny = () => { res.status(403).json({ error: 'ADMIN_SCOPE_FORBIDDEN', message: 'Sizda bu liga yoki amal uchun ruxsat yo‘q.' }); };
   if (req.method === 'GET' && path === '/api/admin/access') return next();
@@ -95,7 +95,13 @@ export async function getLeagueAdminOverview(user: User, seasonId: string) {
   const catalog = await getCompetitionsFromReadModel(seasonId);
   const competitions = catalog.competitions.filter(competition => competitionIds.has(competition.id));
   const rows = await Promise.all(allowed.map(async league => {
-    const [clubs, fixtureSnapshots] = await Promise.all([getAdminClubsFromReadModel(seasonId, league.id), Promise.all([league.competitionId, league.cupCompetitionId].map(competitionId => getCompetitionFixturesFromReadModel(competitionId, { seasonId })))]);
+    // Do not query 2026 fixtures for the current 2027 season. Use the
+    // published, season-scoped competition catalog for every granted league.
+    const seasonCompetitionIds = competitions.filter(c => c.leagueId === league.id).map(c => c.id);
+    const [clubs, fixtureSnapshots] = await Promise.all([
+      getAdminClubsFromReadModel(seasonId, league.id),
+      Promise.all(seasonCompetitionIds.map(competitionId => getCompetitionFixturesFromReadModel(competitionId, { seasonId }))),
+    ]);
     return { clubs: clubs.clubs, fixtures: fixtureSnapshots.flatMap(snapshot => snapshot.fixtures), stale: clubs.stale || fixtureSnapshots.some(snapshot => snapshot.stale), degraded: clubs.degraded || fixtureSnapshots.some(snapshot => snapshot.degraded) };
   }));
   return { leagues: allowed, competitions, clubs: rows.flatMap(row => row.clubs).filter(club => allowed.some(league => league.id === club.leagueId)), fixtures: rows.flatMap(row => row.fixtures).filter(fixture => competitionIds.has(fixture.competitionId)), stale: catalog.stale || rows.some(row => row.stale), degraded: catalog.degraded || rows.some(row => row.degraded) };
