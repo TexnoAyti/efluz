@@ -126,6 +126,7 @@ export const AdminView: React.FC = () => {
 
 const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPermissions; canUseDangerZone?: boolean }> = ({ managementSeason = 'season-2027-28', permissions, canUseDangerZone = false }) => {
   const isScoped = Boolean(permissions && permissions.scope !== 'ALL');
+  const isAllMatchesDelegate = permissions?.manageAllFixturesAndClubs === true;
   const allowedLeagues = permittedAdminLeagues({ adminPermissions: permissions });
   const [scopedFixtures, setScopedFixtures] = useState<Fixture[]>([]);
   const { user, showToast } = useAuth();
@@ -271,8 +272,20 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
         const data = await api.getLeagueAdminOverview(activeSeasonId);
         setClubs(data.clubs); setCompetitions(data.competitions); setScopedFixtures(data.fixtures);
         if (tab === 'matches') {
-          const page = getScopedAdminFixturePage(data.fixtures, { competitionId: matchCompFilter, status: matchStatusFilter, clubId: matchClubFilter, matchday: matchdayFilter, search: matchSearch, limit: matchPageSize });
-          setFixtures(page.fixtures); setFixturesTotal(page.total); setFixturesHasMore(page.hasMore); setFixturesNextCursor(undefined); setMatchPage(1); setPageCursors({ 1: undefined });
+          // The all-matches delegate uses actual server pagination, not the
+          // first 100 fixtures embedded in the scoped overview snapshot.
+          const page = isAllMatchesDelegate
+            ? await api.getAdminFixtures({
+                seasonId:activeSeasonId,
+                competitionId:matchCompFilter!=='ALL'?matchCompFilter:undefined,
+                status:matchStatusFilter!=='ALL'?matchStatusFilter:undefined,
+                clubId:matchClubFilter!=='ALL'?matchClubFilter:undefined,
+                matchday:matchdayFilter!=='ALL'?parseInt(matchdayFilter,10):undefined,
+                search:matchSearch.trim()||undefined,
+                limit:matchPageSize,page:1,
+              })
+            : getScopedAdminFixturePage(data.fixtures,{competitionId:matchCompFilter,status:matchStatusFilter,clubId:matchClubFilter,matchday:matchdayFilter,search:matchSearch,limit:matchPageSize});
+          setFixtures(page.fixtures); setFixturesTotal(page.total); setFixturesHasMore(page.hasMore); setFixturesNextCursor(page.nextCursor); setMatchPage(1); setPageCursors({1:undefined,2:page.nextCursor});
         }
       } else if (tab === 'overview') {
         const overviewRes = await api.getAdminOverview(activeSeasonId, skipCache);
@@ -391,7 +404,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
     try {
       const source = isScoped && skipCache ? await api.getLeagueAdminOverview(activeSeasonId) : null;
       if (source) { setScopedFixtures(source.fixtures); setClubs(source.clubs); setCompetitions(source.competitions); }
-      const res = isScoped ? getScopedAdminFixturePage(source?.fixtures || scopedFixtures, { competitionId: matchCompFilter, status: matchStatusFilter, clubId: matchClubFilter, matchday: matchdayFilter, search: matchSearch, page: targetPage, limit: matchPageSize }) : await api.getAdminFixtures(
+      const res = isScoped && !isAllMatchesDelegate ? getScopedAdminFixturePage(source?.fixtures || scopedFixtures, { competitionId: matchCompFilter, status: matchStatusFilter, clubId: matchClubFilter, matchday: matchdayFilter, search: matchSearch, page: targetPage, limit: matchPageSize }) : await api.getAdminFixtures(
         {
           seasonId: activeSeasonId,
           competitionId: matchCompFilter !== 'ALL' ? matchCompFilter : undefined,
@@ -875,7 +888,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
                 <Shield className="w-3 h-3" />
                 {t.adminPanel}
               </span>
-              {isScoped && <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">{allowedLeagues.map(league => league.name).join(', ')}</span>}
+              {isScoped && <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/15 text-emerald-300 border border-emerald-500/20">{isAllMatchesDelegate?'Barcha o‘yinlar va klublar':allowedLeagues.map(league => league.name).join(', ')}</span>}
               <span className="text-[11px] font-semibold text-slate-400">
                 {t.adminOfficer}: <strong className="text-emerald-400">@{user?.username}</strong> ({user?.id})
               </span>
@@ -1366,7 +1379,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Shield className="w-4 h-4 text-emerald-400" />
-                  <span>{isScoped ? `${clubs.length} ${loc('klub', 'клубов', 'clubs')} · ${allowedLeagues.map(league => league.name).join(', ')}` : '96 Official European Clubs'}</span>
+                  <span>{isScoped ? `${clubs.length} ${loc('klub', 'клубов', 'clubs')} · ${isAllMatchesDelegate?'Barcha ligalar':allowedLeagues.map(league => league.name).join(', ')}` : '96 Official European Clubs'}</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Safely manage club occupancy, assign registered users, or release clubs. Deletion is protected.
@@ -1403,7 +1416,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
                 onChange={(e) => setClubLeagueFilter(e.target.value)}
                 className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
               >
-                <option value="ALL">{isScoped ? loc('Ruxsat berilgan ligalar', 'Доступные лиги', 'Permitted leagues') : 'All Leagues (96 Clubs)'}</option>
+                <option value="ALL">{isScoped && !isAllMatchesDelegate ? loc('Ruxsat berilgan ligalar', 'Доступные лиги', 'Permitted leagues') : 'Barcha ligalar'}</option>
                 {allowedLeagues.map(league => <option key={league.id} value={league.id}>{league.name}</option>)}
               </select>
 
@@ -2120,7 +2133,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
               <div>
                 <h2 className="text-sm font-black text-white flex items-center gap-2">
                   <Trophy className="w-4 h-4 text-amber-400" />
-                  <span>{isScoped ? allowedLeagues.map(league => league.name).join(', ') : activeSeasonId === 'season-2026-27' ? '1-mavsum · Yevrokuboklar va Superkubok' : '2-mavsum · Musobaqalar boshqaruvi'}</span>
+                  <span>{isScoped ? (isAllMatchesDelegate?'Barcha musobaqalar':allowedLeagues.map(league => league.name).join(', ')) : activeSeasonId === 'season-2026-27' ? '1-mavsum · Yevrokuboklar va Superkubok' : '2-mavsum · Musobaqalar boshqaruvi'}</span>
                 </h2>
                 <p className="text-xs text-slate-400">
                   {isScoped ? loc('Tanlangan liga boshqaruvi', 'Управление выбранной лигой', 'Selected league management') : activeSeasonId === 'season-2026-27' ? 'Season 1: European Competitions and Super Cups only.' : 'Season 2: European domestic leagues and their match operations.'}
