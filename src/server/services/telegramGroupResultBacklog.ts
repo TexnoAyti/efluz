@@ -42,7 +42,12 @@ const leaseKey=(fixtureId:string)=>`${PREFIX}fixture:${fixtureId}`;
 export async function previewGroupResultBacklog(maxItems=80){
   const db=getFirestoreDb(),client=getTopicResultStateClient(AbortSignal.timeout(18000));
   if(!client)throw Error('TELEGRAM_RESULT_STATE_UNAVAILABLE');
-  const snap=await db.collection('telegram_ai_state').where('value.state','==','pending').limit(250).get();
+  // The isolated in-memory test adapter cannot query dotted fields; the
+  // production PostgreSQL adapter can. Keep the production scan selective.
+  const query=process.env.FIREBASE_FORCE_LOCAL_FALLBACK==='true'
+    ? db.collection('telegram_ai_state').limit(250)
+    : db.collection('telegram_ai_state').where('value.state','==','pending').limit(250);
+  const snap=await query.get();
   const proposals=snap.docs.map(row=>row.data()?.value as CandidateProposal)
     .filter(p=>p && p.kind!=='uzeflife' && p.plan?.action==='result_edit' &&
       Number.isSafeInteger(p.chat) && Number.isSafeInteger(p.thread) &&
