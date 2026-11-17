@@ -7,6 +7,7 @@ import {UzeflifeMatchDialog} from './UzeflifeMatchDialog';
 
 export function UzeflifeResultQueue({state:s,busy,act,error=''}:{state:UViewState;busy:boolean;act:UAct;error?:string}){
  const [filter,setFilter]=useState('all'),[selected,setSelected]=useState('');
+ const [batchRunning,setBatchRunning]=useState(false),[batchProgress,setBatchProgress]=useState('');
  const [topicResults,setTopicResults]=useState<NonNullable<UViewState['topicResults']>>([]),[topicError,setTopicError]=useState(''),[topicLoading,setTopicLoading]=useState(true),[refresh,setRefresh]=useState(0);
  useEffect(()=>{
   const controller=new AbortController();let live=true;
@@ -16,11 +17,31 @@ export function UzeflifeResultQueue({state:s,busy,act,error=''}:{state:UViewStat
  },[s.revision,refresh]);
  const pending=s.matches.filter(m=>!m.winner&&(m.proposal||m.dispute?.status==='open'));
  const matches=pending.filter(m=>filter==='all'||(filter==='disputes'?m.dispute?.status==='open':m.dispute?.status!=='open'));
+ // Old league rounds remain eligible: current round 5 does not close a
+ // legitimate unconfirmed result from rounds 1–4.
+ const approvable=pending.filter(m=>Boolean(m.proposal) && m.dispute?.status!=='open' && m.round<=s.round && s.status==='playing');
+ const confirmAll=async()=>{
+   if(!approvable.length||batchRunning||busy)return;
+   if(!window.confirm(`${approvable.length} ta nizosiz UZEFLIFE hisob taklifini birma-bir tasdiqlaysizmi? Har bir natija saqlangandan keyin navbatdagisiga o‘tiladi. Ochiq e’tirozlar o‘zgartirilmaydi.`))return;
+   setBatchRunning(true);let done=0;
+   try{
+     for(const match of approvable){
+       if(!match.proposal)continue;
+       setBatchProgress(`${done}/${approvable.length} ta tasdiqlandi. Navbatdagi: ${match.id}`);
+       const saved=await act('approveResult',{matchId:match.id,expected:match.proposal});
+       if(!saved){setBatchProgress(`${done} ta tasdiqlandi. ${match.id} da to‘xtadi: holatni yangilang va xatoni tekshiring.`);return;}
+       done++;
+     }
+     setBatchProgress(`${done} ta hisob tasdiqlandi. Boshqa takliflar va e’tirozlar o‘zgartirilmadi.`);
+   }finally{setBatchRunning(false);}
+ };
  const [page,setPage]=useState(0);const current=Math.min(page,Math.max(0,Math.ceil(matches.length/10)-1));
  const name=(id:string|null)=>s.participants.find(p=>p.id===id)?.name||'Ishtirokchi';
  const active=s.matches.find(m=>m.id===selected);
  return <section className="competition-panel u-admin-section">
   <div className="u-section-heading"><h3><ClipboardCheck size={17}/> Natijalar navbati</h3><span className="u-status">{pending.length+topicResults.length} ta</span><button className="competition-button" disabled={topicLoading} onClick={()=>setRefresh(v=>v+1)}>Yangilash</button></div>
+  {approvable.length>0&&<div className="u-dialog-section space-y-2"><p className="competition-muted">{approvable.length} ta nizosiz hisob taklifi tasdiqlashga tayyor. Oldingi turlar ham qabul qilinadi.</p><button className="competition-button primary" type="button" disabled={busy||batchRunning} onClick={()=>void confirmAll()}>Barcha nizosiz hisoblarni tasdiqlash ({approvable.length})</button></div>}
+  {batchProgress&&<p role="status" aria-live="polite" className="competition-note">{batchProgress}</p>}
   {topicLoading&&<p className="competition-muted" role="status">Telegram natijalari yuklanmoqda…</p>}
   {topicError&&<p className="competition-note error" role="alert">{topicError} <button className="competition-button" onClick={()=>setRefresh(v=>v+1)}>Qayta urinish</button></p>}
   <label className="competition-field">Ko‘rsatish<select value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="all">Barcha kutilayotgan natijalar</option><option value="pending">Tasdiq kutayotganlar</option><option value="disputes">Bahsli natijalar</option></select></label>
@@ -31,7 +52,7 @@ export function UzeflifeResultQueue({state:s,busy,act,error=''}:{state:UViewStat
    <strong className="block break-words">{name(m.home)} {m.proposal?`${m.proposal.home} : ${m.proposal.away}`:'—'} {name(m.away)}</strong>
    {m.proposal?.penaltyHome!=null&&<p className="competition-muted">Penaltilar: {m.proposal.penaltyHome} : {m.proposal.penaltyAway}</p>}
    {m.dispute?.status==='open'&&<p className="competition-note"><AlertTriangle size={14}/> E’tiroz: {m.dispute.reason}</p>}
-   <div className="competition-actions"><button className="competition-button" onClick={()=>setSelected(m.id)}>Tekshirish</button>{m.proposal&&m.dispute?.status!=='open'&&<button className="competition-button primary" disabled={busy||s.status!=='playing'||s.round!==m.round} onClick={()=>void act('approveResult',{matchId:m.id,expected:m.proposal})}>Hisobni tasdiqlash</button>}{m.proposal&&m.dispute?.status!=='open'&&<button className="competition-button" disabled={busy} onClick={()=>{if(window.confirm('Bu natijani rad etasizmi? O‘yinchilar qayta yuborishi mumkin.'))void act('clearProposal',{matchId:m.id});}}>Rad etish</button>}</div>
+   <div className="competition-actions"><button className="competition-button" onClick={()=>setSelected(m.id)}>Tekshirish</button>{m.proposal&&m.dispute?.status!=='open'&&<button className="competition-button primary" disabled={busy||batchRunning||s.status!=='playing'||m.round>s.round} onClick={()=>void act('approveResult',{matchId:m.id,expected:m.proposal})}>Hisobni tasdiqlash</button>}{m.proposal&&m.dispute?.status!=='open'&&<button className="competition-button" disabled={busy} onClick={()=>{if(window.confirm('Bu natijani rad etasizmi? O‘yinchilar qayta yuborishi mumkin.'))void act('clearProposal',{matchId:m.id});}}>Rad etish</button>}</div>
   </article>)}
   {matches.length>10&&<nav className="u-page-controls" aria-label="Natijalar navbati sahifalari"><button className="competition-button" disabled={!current} onClick={()=>setPage(current-1)}>Oldingi</button><span>{current+1} / {Math.ceil(matches.length/10)}</span><button className="competition-button" disabled={(current+1)*10>=matches.length} onClick={()=>setPage(current+1)}>Keyingi</button></nav>}
   {active&&<UzeflifeMatchDialog key={active.id} match={active} state={s} busy={busy} error={error} subscriptionNotice={null} act={act} onClose={()=>setSelected('')}/>}
