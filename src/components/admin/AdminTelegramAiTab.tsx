@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {AdminTaskPanel} from './AdminTaskPanel';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
-import { Bot, Shield, AlertTriangle, CheckCircle2, RefreshCw, Send, Sliders, Database, Info, Lock } from 'lucide-react';
+import { Bot, Shield, AlertTriangle, CheckCircle2, RefreshCw, Send, Sliders, Database, Info, Lock, ClipboardCheck } from 'lucide-react';
 
 export const AdminTelegramAiTab: React.FC = () => {
   const { user } = useAuth();
@@ -19,6 +19,44 @@ export const AdminTelegramAiTab: React.FC = () => {
   const [report, setReport] = useState<string>('');
   const [reportLoading, setReportLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [groupBacklog,setGroupBacklog]=useState<Awaited<ReturnType<typeof api.getGroupResultBacklog>>|null>(null);
+  const [groupEvidence,setGroupEvidence]=useState<Awaited<ReturnType<typeof api.getGroupResultEvidence>>|null>(null);
+  const [groupLoading,setGroupLoading]=useState(false);
+  const [groupApplying,setGroupApplying]=useState(false);
+  const [groupReport,setGroupReport]=useState('');
+  const refreshGroupBacklog=async()=>{
+    if(!isOwner)return;
+    setGroupLoading(true);
+    try{
+      const [pending,evidence]=await Promise.all([
+        api.getGroupResultBacklog(),api.getGroupResultEvidence(),
+      ]);
+      setGroupBacklog(pending);setGroupEvidence(evidence);
+    }catch(error:any){setGroupReport('Guruh natijalari ochilmadi: '+String(error?.message||error).slice(0,180));}
+    finally{setGroupLoading(false);}
+  };
+  const applyGroupBacklog=async()=>{
+    if(!isOwner||groupApplying||!groupBacklog?.items?.length)return;
+    const candidates=[...groupBacklog.items];
+    if(!window.confirm(`${candidates.length} ta manbasi tasdiqlangan va bazada hali saqlanmagan hisobni tekshirib, ketma-ket kiritilsinmi? Har bir hisob guruhdagi asl xabarga javob bilan qaytariladi; biror xato bo‘lsa to‘xtaydi.`))return;
+    setGroupApplying(true);
+    let saved=0;
+    try{
+      // Server never accepts more than five unique verified proposal tokens
+      // per request. Stop at the first unverified or failed result.
+      for(let i=0;i<candidates.length;i+=5){
+        const group=candidates.slice(i,i+5);
+        setGroupReport(`${saved}/${candidates.length}: hisoblar tekshirilmoqda…`);
+        const result=await api.applyGroupResultBacklog(group.map(item=>item.token));
+        saved+=result.saved||0;
+        const failed=result.results?.find(item=>item.outcome!=='saved');
+        if(failed){setGroupReport(`${saved} ta saqlandi. ${failed.fixtureId}: ${failed.reason||'Tasdiqlanmadi'}. Qolganlari o‘zgartirilmadi.`);return;}
+      }
+      setGroupReport(`${saved} ta hisob bazaga yozildi va guruhga javob yuborish so‘raldi.`);
+    }catch(error:any){setGroupReport(`${saved} ta saqlandi; davomida xato: ${String(error?.message||error).slice(0,200)}`);}
+    finally{setGroupApplying(false);void refreshGroupBacklog();}
+  };
+
 
   // Form states
   const [enabled, setEnabled] = useState(false);
@@ -70,6 +108,9 @@ export const AdminTelegramAiTab: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [isOwner]);
+  useEffect(()=>{
+    if(isOwner)void refreshGroupBacklog();
+  },[isOwner]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +211,44 @@ export const AdminTelegramAiTab: React.FC = () => {
           <span>{feedback.message}</span>
         </div>
       )}
+
+      {/* Telegram score reconciliation — source-bound, owner-only. */}
+      <section className="glass-panel rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-4 sm:p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-sm font-black text-[var(--efl-text)] flex items-center gap-2"><ClipboardCheck size={17}/> Guruh hisoblarini tiklash</h3>
+            <p className="text-xs text-[var(--efl-text-2)] mt-1">2-mavsum va 1-mavsum Yevrokuboklari · asl xabar va o‘yin tekshiruvlari bilan</p>
+          </div>
+          <button type="button" className="competition-button" disabled={groupLoading||groupApplying} onClick={()=>void refreshGroupBacklog()}>
+            <RefreshCw size={14} className={groupLoading?'animate-spin':''}/> Yangilash
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs text-[var(--efl-text-2)]">
+          <span>Qabul qilishga tayyor: <strong className="text-[var(--efl-text)]">{groupBacklog?.items.length??'—'}</strong></span>
+          <span>Ziddiyatli: <strong className="text-[var(--efl-text)]">{groupBacklog?.conflicted??'—'}</strong></span>
+          <span>Qo‘shimcha tekshiruv: <strong className="text-[var(--efl-text)]">{groupBacklog?.skipped??'—'}</strong></span>
+          <span>Yangi arxiv xabarlari: <strong className="text-[var(--efl-text)]">{groupEvidence?.entries.length??'—'}</strong></span>
+        </div>
+        {groupBacklog?.items.length?<>
+          <div className="max-h-72 overflow-y-auto space-y-2">
+            {groupBacklog.items.map(item=><div key={item.token} className="rounded-xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] px-3 py-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-bold text-xs text-[var(--efl-text)] truncate">{item.homeClubId} — {item.awayClubId}</p>
+                <p className="text-[10px] text-[var(--efl-text-2)]">{item.competitionId} · {item.seasonId} · #{item.thread}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="font-black text-[var(--efl-primary)]">{item.homeScore}:{item.awayScore}</p>
+                <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="text-[10px] underline text-[var(--efl-text-2)]">Asl xabar</a>
+              </div>
+            </div>)}
+          </div>
+          <button type="button" className="competition-button primary w-full" onClick={()=>void applyGroupBacklog()} disabled={groupApplying||groupLoading}>
+            {groupApplying?'Hisoblar tekshirilmoqda…':`Barcha mos ${groupBacklog.items.length} ta hisobni saqlash va javob yozish`}
+          </button>
+        </>:<p className="text-xs text-[var(--efl-text-2)]">Hozir tasdiqlashga tayyor, amaldagi guruh taklifi topilmadi. Saqlangan hisoblar yoki bahsli xabarlar majburan qayta yozilmaydi.</p>}
+        {groupReport&&<p role="status" aria-live="polite" className="text-xs text-[var(--efl-text)] rounded-xl border border-[var(--efl-border)] p-3">{groupReport}</p>}
+        <p className="text-[10px] text-[var(--efl-text-2)]">Bu amal faqat amaldagi musobaqa, asl xabar, klub juftligi, hisob va mavsum mos kelganda ishlaydi. Nizoli, eskirgan yoki allaqachon tasdiqlangan o‘yinlar o‘zgartirilmaydi. UZEFLIFE natijalari o‘zining Natijalar navbatida tasdiqlanadi.</p>
+      </section>
 
       {/* Main Settings Form */}
       <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6">
