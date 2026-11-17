@@ -52,6 +52,13 @@ export const FixturesView: React.FC = () => {
   const [selectedAdminFixture, setSelectedAdminFixture] = useState<Fixture | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lockStates, setLockStates] = useState<Record<string, Record<number, { isOpen: boolean; isLocked: boolean; overrideStatus: string }>>>({});
+  // Screenshot automation only: open the real result modal with a synthetic
+  // sample fixture. Outside Vercel Preview/local dev this has no effect.
+  useEffect(()=>{
+    if(isDesignPreview && new URLSearchParams(window.location.search).get('guideModal')==='1')
+      setSelectedFixtureForSubmit(guidePreviewFixtures[0]);
+  },[]);
+
 
   // Reset selected matchday to active competition's currentMatchday when switching competitions
   const prevCompIdRef = useRef<string>(selectedCompetitionId);
