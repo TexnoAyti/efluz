@@ -38,9 +38,9 @@ test('test token passes, production token is always rejected without logging sec
 test('staging workflow pins source and requires application-level import confirmation',()=>{
   assert.match(workflow,/ref: feat\/tgcloud-staging-8533963416-20261111/);
   assert.doesNotMatch(workflow,/inputs\.source_branch/);
-  assert.match(workflow,/verifyEflStagingImportReceipt\\.mjs/);
+  assert.ok(workflow.includes('verifyEflStagingImportReceipt.mjs'));
   assert.match(workflow,/STAGING_IMPORT_COMMAND_FAILED/);
-  assert.doesNotMatch(workflow,/grep -Eq 'ok\\[\\[:space:/);
+  assert.ok(!workflow.includes("grep -Eq 'ok[[:space:]]"));
   assert.doesNotMatch(workflow,/tail -40 \/tmp\/tgcloud-import\.log/);
 });
 
@@ -49,7 +49,7 @@ test('staging workflow uses immutable import packet identities without upsert',(
   assert.doesNotMatch(workflow,/stagingReplaceExisting\s*=\s*true/);
   assert.doesNotMatch(workflow,/packet\.batchId\s*=/);
   assert.doesNotMatch(workflow,/GITHUB_RUN_ID/);
-  assert.match(workflow,/verifyEflStagingImportReceipt\\.mjs/);
+  assert.ok(workflow.includes('verifyEflStagingImportReceipt.mjs'));
 });
 
 test('staging deploy enables independent readback and requires full parity',()=>{
