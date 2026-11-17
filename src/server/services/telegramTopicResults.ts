@@ -319,7 +319,8 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
           await client.set(proposalKey(token), { ...p, state: definitelyRejected?'rejected':'done', receipt: {status:result.status} }, {ex:ttl});
           if (definitelyRejected) await client.eval(TOPIC_RESULT_RELEASE,[fixtureLeaseKey],[token]);
         } catch(error:any) {
-          const rejected=isDefinitiveTopicResultRejection(Number(error?.statusCode ?? error?.status));
+          const rejectionStatus=Number(error?.statusCode ?? error?.status);
+          const rejected=isDefinitiveTopicResultRejection(rejectionStatus) || (isUzeflife && rejectionStatus===409);
           await client.set(proposalKey(token), { ...p, state: rejected?'rejected':'unknown', ...(rejected?{receipt:{status:Number(error?.statusCode ?? error?.status)}}:{}) }, {ex:ttl});
           if(rejected)await client.eval(TOPIC_RESULT_RELEASE,[fixtureLeaseKey],[token]);
           reply = rejected?'Natija saqlanmadi: '+String(error.message).slice(0,250):'Natijani saqlash yakuni tasdiqlanmadi. Admin panelda tekshiring; amal avtomatik qayta bajarilmaydi.';
