@@ -43,6 +43,7 @@ import { handleTelegramAiMessage as processTelegramAiMessage, escapeTelegramHtml
 import { handleTopicResultUpdate } from '../services/telegramTopicResults';
 import { isAiAdminCommand } from '../services/telegramAiAdminCatalog';
 import { archiveCommunityMessage, communityPost, communitySourceStats } from '../services/telegramAiCommunitySources';
+import {recordGroupResultEvidence,updateGroupResultEvidenceOutcome} from '../services/telegramGroupResultEvidence';
 import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
 
 export const telegramRouter = Router();
@@ -98,6 +99,13 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     const ownerExitOutcome = await handleClubOwnerGroupExit(update);
     const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
     console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat), hasPhoto:Boolean(sourceMessage?.photo?.length), imageDocument:Boolean(sourceMessage?.document&&['image/jpeg','image/png'].includes(sourceMessage.document.mime_type)), forwarded:Boolean(sourceMessage?.forward_origin||sourceMessage?.forward_from||sourceMessage?.forward_from_chat), groupMatched:sourceMessage?.chat?.username?.toLowerCase()==='efleagueuz' }));
+    // Preserve the original group topic and sender for later result audit.
+    // This is independent of the public 200-post AI community archive.
+    let resultEvidence: Awaited<ReturnType<typeof recordGroupResultEvidence>> = null;
+    if(sourceMessage?.chat?.username?.toLowerCase()==='efleagueuz'){
+      try{resultEvidence=await recordGroupResultEvidence(sourceMessage,update.update_id);}
+      catch(error:any){console.warn('[TELEGRAM_RESULT_EVIDENCE_UNAVAILABLE]',String(error?.message||error).slice(0,120));}
+    }
     // Result ingestion must not wait for the optional community archive.
     const earlyTopicResult=sourceMessage?.chat?.username?.toLowerCase()==='efleagueuz'&&sourceMessage.message_thread_id===UZEFLIFE_RESULT_TOPIC?await handleTopicResultUpdate(update):undefined;
     const privateResultPhoto=sourceMessage?.chat?.type==='private'&&isPrimaryOwner(sourceMessage?.from?.id)&&sourceMessage.chat.id===sourceMessage.from.id&&!sourceMessage.sender_chat&&!sourceMessage.from.is_bot&&!sourceMessage.is_automatic_forward&&Boolean(sourceMessage.photo?.length||['image/jpeg','image/png'].includes(sourceMessage.document?.mime_type));
@@ -113,6 +121,10 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
 
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
     const topicResult = earlyTopicResult || await handleTopicResultUpdate(update);
+    if(resultEvidence){
+      try{await updateGroupResultEvidenceOutcome(resultEvidence,topicResult.result||'unmatched');}
+      catch(error:any){console.warn('[TELEGRAM_RESULT_EVIDENCE_OUTCOME_DEFERRED]',String(error?.message||error).slice(0,120));}
+    }
     if (ownerExitOutcome !== 'ignored') {
       response = {ok:true,handled:'club_owner_group_membership',outcome:ownerExitOutcome};
     } else if (topicResult.handled) {

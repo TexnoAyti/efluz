@@ -144,6 +144,35 @@ adminRouter.get('/scoped/overview', async (req: Request, res: Response) => {
   } catch (err: any) { handleFirestoreError(res, err, 'GET /api/admin/scoped/overview'); }
 });
 
+/** Explicit owner-only recovery of Telegram group score proposals.
+ * GET is read-only; POST uses the normal audited fixture-result transaction. */
+adminRouter.get('/telegram/group-result-backlog',async(req:Request,res:Response)=>{
+  if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_OWNER_ONLY'});return;}
+  try{
+    const {previewGroupResultBacklog}=await import('../services/telegramGroupResultBacklog');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({ok:true,...await previewGroupResultBacklog(100)});
+  }catch(error:any){handleFirestoreError(res,error,'GET /api/admin/telegram/group-result-backlog');}
+});
+adminRouter.post('/telegram/group-result-backlog/apply',validateBody(z.object({
+  tokens:z.array(z.string().regex(/^[a-f0-9]{24}$/)).min(1).max(5),
+}).strict()),async(req:Request,res:Response)=>{
+  if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_OWNER_ONLY'});return;}
+  try{
+    const {applyGroupResultBacklog}=await import('../services/telegramGroupResultBacklog');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({ok:true,...await applyGroupResultBacklog(req.user!,req.body.tokens)});
+  }catch(error:any){handleFirestoreError(res,error,'POST /api/admin/telegram/group-result-backlog/apply');}
+});
+adminRouter.get('/telegram/group-result-evidence',async(req:Request,res:Response)=>{
+  if(!canUseDangerZone(req.user)){res.status(403).json({error:'MAIN_OWNER_ONLY'});return;}
+  try{
+    const {getGroupResultEvidenceAudit}=await import('../services/telegramGroupResultEvidence');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({ok:true,...await getGroupResultEvidenceAudit(100)});
+  }catch(error:any){handleFirestoreError(res,error,'GET /api/admin/telegram/group-result-evidence');}
+});
+
 adminRouter.get('/clubs/admission', async (req: Request, res: Response) => {
   const seasonId = String(req.query.seasonId || 'season-2026-27');
   try {

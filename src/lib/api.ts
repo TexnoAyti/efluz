@@ -1326,6 +1326,28 @@ export const api = {
     return request('/api/admin/telegram-notifications/process-queue', { method: 'POST', skipCache: true });
   },
 
+  async getGroupResultBacklog(): Promise<{
+    ok:boolean;items:Array<{token:string;fixtureId:string;competitionId:string;seasonId:string;
+    homeClubId:string;awayClubId:string;homeScore:number;awayScore:number;
+    thread:number;sourceMessage:number;sourceUrl:string;reason:string}>;
+    conflicted:number;skipped:number;scanned:number;limited:boolean;
+  }> {
+    return request('/api/admin/telegram/group-result-backlog',{skipCache:true,timeoutMs:30000});
+  },
+  async applyGroupResultBacklog(tokens:string[]):Promise<{ok:boolean;saved:number;results:Array<{
+    fixtureId:string;outcome:'saved'|'skipped'|'failed';reason?:string}>}> {
+    return request('/api/admin/telegram/group-result-backlog/apply',{
+      method:'POST',body:JSON.stringify({tokens}),skipCache:true,timeoutMs:60000,
+    });
+  },
+  async getGroupResultEvidence():Promise<{ok:boolean;counts:Record<string,number>;entries:Array<{
+    id:string;chatId:number;threadId:number;messageId:number;senderId:number;
+    text:string;receivedAt:string;ingestionResult?:string;fixtureId?:string;
+    competitionId?:string;proposedHome?:number;proposedAway?:number;
+  }>}> {
+    return request('/api/admin/telegram/group-result-evidence',{skipCache:true,timeoutMs:30000});
+  },
+
   async getTelegramAiConfig(): Promise<{
     success: boolean;
     config: {
