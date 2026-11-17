@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import express from 'express';
+import type {User} from '../../types';
 import {initDatabase} from '../db';
 import {getFirestoreDb} from '../firebase/admin';
 import {requireAdmin} from '../middleware/authMiddleware';
@@ -9,8 +10,8 @@ await initDatabase();
 const db=getFirestoreDb();
 const actor='delegate-all-fixtures-test';
 const user={id:actor,telegramId:'999999991',isAdmin:true,isSuspended:false,
-  adminPermissions:{scope:'LEAGUES',leagueIds:[],manageAllFixturesAndClubs:true}};
-const narrow={...user,id:'scoped-test',telegramId:'999999992',adminPermissions:{scope:'LEAGUES',leagueIds:['league-la-liga']}};
+  adminPermissions:{scope:'LEAGUES',leagueIds:[],manageAllFixturesAndClubs:true}} as User;
+const narrow={...user,id:'scoped-test',telegramId:'999999992',adminPermissions:{scope:'LEAGUES',leagueIds:['league-la-liga']}} as User;
 await db.collection('users').doc(actor).set(user);
 await db.collection('users').doc(narrow.id).set(narrow);
 await db.collection('fixtures').doc('uefa-match').set({id:'uefa-match',seasonId:'season-2026-27',competitionId:'comp-champions-league-2026'});
