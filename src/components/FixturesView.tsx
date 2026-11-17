@@ -8,6 +8,8 @@ import { useI18n } from '../i18n';
 import { api, invalidateClientCache } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { isDesignPreview } from '../designPreview';
+import { guidePreviewCompetition, guidePreviewFixtures } from '../lib/resultGuidePreviewData';
 import { ClubCrest } from './ClubCrest';
 import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
@@ -65,6 +67,10 @@ export const FixturesView: React.FC = () => {
 
   // Fetch isolated locks for selected competition
   useEffect(() => {
+    if (isDesignPreview) {
+      setLockStates({[guidePreviewCompetition.id]:{}});
+      return;
+    }
     if (!selectedCompetitionId) return;
     let isMounted = true;
     api.getCompetitionLocks(selectedCompetitionId, fixtureSeasonId)
@@ -88,6 +94,13 @@ export const FixturesView: React.FC = () => {
   useEffect(() => {
     async function loadComps() {
       setIsLoading(true);
+      if(isDesignPreview){
+        setCompetitions([guidePreviewCompetition]);
+        setSelectedCompetitionId(guidePreviewCompetition.id);
+        setSelectedMatchday(7);
+        setIsLoading(false);
+        return;
+      }
       try {
         const res = await api.getCompetitions(fixtureSeasonId);
         setCompetitions(res.competitions || []);
@@ -162,6 +175,12 @@ export const FixturesView: React.FC = () => {
   };
 
   const loadFixtures = async (skipCache = false) => {
+    if(isDesignPreview){
+      setFixtures(guidePreviewFixtures.filter(item=>item.matchday===selectedMatchday));
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
     if (!selectedCompetitionId) {
       setIsLoading(false);
       return;
@@ -726,9 +745,9 @@ export const FixturesView: React.FC = () => {
         </div>
       )}
 
-      <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />
+      {!isDesignPreview && <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />}
 
-      {selectedAdminFixture&&canManageFixture(user,selectedAdminFixture.competitionId)&&<AdminFixtureQuickActions
+      {!isDesignPreview&&selectedAdminFixture&&canManageFixture(user,selectedAdminFixture.competitionId)&&<AdminFixtureQuickActions
         fixture={selectedAdminFixture}
         onClose={()=>setSelectedAdminFixture(null)}
         onScoreSaved={()=>{invalidateClientCache('/api/fixtures');invalidateClientCache('/api/standings');void loadFixtures(true);}}
