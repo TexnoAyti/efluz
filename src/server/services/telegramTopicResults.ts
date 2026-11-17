@@ -161,6 +161,54 @@ export function describeBlockedTopicResultApproval(
   return {reason:'superseded_or_expired',message:'Bu tasdiqlash taklifi yangilangan yoki eskirgan. Klub va hisobni qayta yuboring; yangi tugmadan foydalaning.'};
 }
 
+/**
+ * A 409 on a fixture result is a rejected compare-and-set, not a saved match.
+ * Rebase only when the authoritative match is still unscored and its identity
+ * is unchanged. The final result save retains its own CAS guard.
+ */
+export function safeFixtureSnapshotForTopicRetry(
+  plan: AdminPlan, fixture: any
+): {seasonId?:string;competitionId:string;homeClubId:string;awayClubId:string;status:string;updatedAt:string|null}|null {
+  const expected=plan.body?.expectedFixture as any;
+  if (plan.action!=='result_edit'||!expected||!fixture||
+      !['SCHEDULED','PENDING_CONFIRMATION','AWAITING_RESULT'].includes(fixture.status) ||
+      fixture.homeScore!=null || fixture.awayScore!=null ||
+      fixture.competitionId!==expected.competitionId ||
+      fixture.homeClubId!==expected.homeClubId ||
+      fixture.awayClubId!==expected.awayClubId ||
+      (expected.seasonId && fixture.seasonId!==expected.seasonId) ||
+      !Number.isInteger(Number(plan.body?.homeScore)) ||
+      !Number.isInteger(Number(plan.body?.awayScore)))return null;
+  return {
+    ...(fixture.seasonId?{seasonId:fixture.seasonId}:{}),
+    competitionId:fixture.competitionId,
+    homeClubId:fixture.homeClubId,awayClubId:fixture.awayClubId,
+    status:fixture.status,updatedAt:fixture.updatedAt??null
+  };
+}
+
+/** Atomically restore one still-current button after a rejected CAS-409, or
+ * refresh its stale pending fixture snapshot. KEYS proposal, source, lease.
+ * Reject success/unknown statuses and proposals superseded by newer messages. */
+export const TOPIC_RESULT_REBASE = `-- EFL_TOPIC_RESULT_REBASE_V1
+local raw=redis.call('GET',KEYS[1])
+local source=redis.call('GET',KEYS[2])
+if not raw or not source then return 0 end
+local p=cjson.decode(raw)
+if p.token~=ARGV[1] or cjson.decode(source).token~=p.token or p.expiresAt<=tonumber(ARGV[3]) then return 0 end
+local prior409=(p.state=='done' or p.state=='rejected') and p.receipt and p.receipt.status==409
+if p.state~='pending' and not prior409 then return 0 end
+local holder=redis.call('GET',KEYS[3])
+if holder and holder~=p.token then return 0 end
+if holder and not prior409 then return 0 end
+if holder then redis.call('DEL',KEYS[3]) end
+p.plan.body.expectedFixture=cjson.decode(ARGV[2])
+p.expectedFixture=cjson.decode(ARGV[2])
+p.state='pending'
+p.receipt=nil
+redis.call('SET',KEYS[1],cjson.encode(p),'EX',ARGV[4])
+return 1`;
+
 export const TOPIC_RESULT_CLAIM = `-- EFL_TOPIC_RESULT_CLAIM_V1
 local raw = redis.call('GET', KEYS[1])
 local source = redis.call('GET', KEYS[3])
@@ -321,7 +369,7 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       const client = getTopicResultStateClient(signal);
       if (!client) throw Error('RESULT_STATE_UNAVAILABLE');
       const [,action,token] = callback.data.split(':');
-      const p = await client.get<TopicResultProposal>(proposalKey(token));
+      let p = await client.get<TopicResultProposal>(proposalKey(token));
       const botId = Number(process.env.TELEGRAM_BOT_TOKEN?.split(':')[0]);
       if (!p || message?.from?.id !== botId || message?.chat?.id !== p.chat || message.message_thread_id !== p.thread || message.message_id !== p.deliveredMessage || p.expiresAt <= Date.now()) {
         await answerTelegramCallback(callback.id, 'Taklif topilmadi yoki muddati o‘tgan.', true); return { handled: true, result: 'invalid' };
@@ -331,6 +379,32 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if(!await (isUzeflife?authorizeUzeflifeTopicResult(actor,action==='approve'?p.plan:undefined):authorize(actor))){await answerTelegramCallback(callback.id,'Faqat raqib yoki vakolatli admin tasdiqlaydi.',true);return {handled:true,result:'unauthorized'};}
       const state = action === 'approve' ? 'executing' : 'cancelled';
       const fixtureLeaseKey = prefix+'fixture:'+(isUzeflife?'uzeflife:':'')+p.plan.targetId;
+      if(action==='approve'&&!isUzeflife){
+        // Refresh a match only after the authenticated button and permission
+        // check. A stale 409 must never force the player to submit again.
+        // No changes to a confirmed result, competition or club identity.
+        const snap=await getFirestoreDb().collection('fixtures').doc(p.plan.targetId).get();
+        const fresh=snap.exists?safeFixtureSnapshotForTopicRetry(p.plan,snap.data()):null;
+        if(fresh){
+          const held=await client.get<string>(fixtureLeaseKey);
+          if(typeof held==='string'&&held!==p.token){
+            // Release old 409 only when the authoritative fixture is still
+            // unscored; successful, unknown and running writes stay locked.
+            const previous=await client.get<TopicResultProposal>(proposalKey(held));
+            if(previous?.token===held && previous.plan.targetId===p.plan.targetId &&
+               ['done','rejected'].includes(previous.state) && previous.receipt?.status===409){
+              await client.eval(TOPIC_RESULT_RELEASE,[fixtureLeaseKey],[held]);
+            }
+          }
+          const prepared=await client.eval(TOPIC_RESULT_REBASE,
+            [proposalKey(token),sourceKey(p.chat,p.thread,p.sourceMessage),fixtureLeaseKey],
+            [token,JSON.stringify(fresh),Date.now(),ttl]);
+          if(Number(prepared)===1){
+            const revised=await client.get<TopicResultProposal>(proposalKey(token));
+            if(revised) p=revised;
+          }
+        }
+      }
       if (action === 'approve') {
         // A previous 400 (validation error) never saved the result. The old
         // implementation retained its lease even after reporting failure,
@@ -378,7 +452,14 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
             const outcome = inspectAiAdminOutcome(p.plan,result.data);
             reply = outcome.state === 'verified' ? `Natija saqlandi:\n${p.summary || 'O‘yin: '+p.plan.targetId}\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.${p.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${p.plan.body.homePenaltyScore}:${p.plan.body.awayPenaltyScore}.`:''}${result.data?.webAppRefreshPending ? '\nWeb App hisobni ko‘rsatish uchun qayta yuklanmoqda; hozircha ekranda tasdiqlanmagan.' : ''}${result.data?.derivedPending ? '\nTurnir jadvali yangilanish navbatiga qo‘yildi.' : ''}` : outcome.message;
           } else reply = 'Natija saqlanmadi: ' + String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,250);
-          const definitelyRejected = isDefinitiveTopicResultRejection(result.status);
+          // 409 is a failed fixture CAS: release only after an authoritative,
+          // unscored match read proves no result was committed.
+          let safeConflict=false;
+          if(!isUzeflife&&result.status===409&&result.data?.error==='TOPIC_RESULT_CHANGED'){
+            const fresh=await getFirestoreDb().collection('fixtures').doc(p.plan.targetId).get();
+            safeConflict=Boolean(fresh.exists&&safeFixtureSnapshotForTopicRetry(p.plan,fresh.data()));
+          }
+          const definitelyRejected = isDefinitiveTopicResultRejection(result.status)||safeConflict;
           await client.set(proposalKey(token), { ...p, state: definitelyRejected?'rejected':'done', receipt: {status:result.status} }, {ex:ttl});
           if (definitelyRejected) await client.eval(TOPIC_RESULT_RELEASE,[fixtureLeaseKey],[token]);
         } catch(error:any) {
