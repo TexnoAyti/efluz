@@ -195,6 +195,9 @@ try {
   assert.equal((await handleTopicResultUpdate(callback(retryPrompt,retryToken))).result,'already_processed');
   assert.equal(executions,3);
 
+  // Restore the mock fixture to an unsaved state for the unrelated delivery-failure test.
+  Object.assign(games[0], {status:'SCHEDULED', updatedAt:'v1'});
+  delete games[0].homeScore; delete games[0].awayScore;
   const failedDelivery=update('Real Madrid 3-1 Barca');
   global.fetch=async (_input: any, init?: any) => { const body=JSON.parse(init.body); sent.push({...body,botId:99999}); return new Response(JSON.stringify({ok:false,description:'mock delivery rejected'})); };
   assert.equal((await handleTopicResultUpdate(failedDelivery)).result,'delivery_unknown');
