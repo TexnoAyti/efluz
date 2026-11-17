@@ -32,7 +32,7 @@ export function topicResultSeason(thread:number):string {
 }
 const proposalKey = (token: string) => prefix + 'proposal:' + token;
 const sourceKey = (chat: number, thread: number, message: number) => `${prefix}source:${chat}:${thread}:${message}`;
-export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; kind?:'uzeflife'; summary?: string; originalSourceMessage?:number; originalSourceUpdateId?:number };
+export type TopicResultProposal = { token: string; chat: number; thread: number; sourceMessage: number; submitter: number; updateId: number; expiresAt: number; state: string; plan: AdminPlan; deliveredMessage?: number; expectedFixture: any; receipt?: {status:number}; kind?:'uzeflife'; summary?: string; originalSourceMessage?:number; originalSourceUpdateId?:number };
 /** Admin queue mirrors only references; Telegram's bound proposal remains authoritative. */
 export async function listUzeflifeTopicQueue(state:UState){
  const db=getFirestoreDb(),rows=await db.collection('uzeflife_topic_queue').where('status','==','pending').limit(50).get();
@@ -103,6 +103,30 @@ export const TOPIC_RESULT_RELEASE = `-- EFL_TOPIC_RESULT_RELEASE_V1
 if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
 redis.call('DEL', KEYS[1])
 return 1`;
+/** Only a definitive pre-commit client rejection can free a fixture lease.
+ * Ambiguous failures (timeouts, 5xx, unknown outcomes) must stay locked, so a
+ * retry cannot submit a duplicate result after a successful but delayed write. */
+export function isDefinitiveTopicResultRejection(status: number): boolean {
+  return [400, 403, 404, 422].includes(status);
+}
+
+/** Earlier builds marked HTTP 400 validation failures as "done" but left the
+ * fixture lease held. Reconcile that specific, verified stale lease before a
+ * new authenticated confirmation. Never free a successful/unknown lease. */
+export async function releaseRejectedTopicResultLease(
+  client: NonNullable<ReturnType<typeof getTopicResultStateClient>>,
+  fixtureKey: string
+): Promise<boolean> {
+  const token = await client.get<string>(fixtureKey);
+  if (typeof token !== 'string' || !/^[a-f0-9]{24}$/.test(token)) return false;
+  const previous = await client.get<TopicResultProposal>(proposalKey(token));
+  if (!previous || previous.token !== token) return false;
+  const status = Number(previous.receipt?.status);
+  if (!isDefinitiveTopicResultRejection(status) ||
+      !['done', 'rejected'].includes(previous.state)) return false;
+  return Number(await client.eval(TOPIC_RESULT_RELEASE,[fixtureKey],[token])) === 1;
+}
+
 export const TOPIC_RESULT_CLAIM = `-- EFL_TOPIC_RESULT_CLAIM_V1
 local raw = redis.call('GET', KEYS[1])
 local source = redis.call('GET', KEYS[3])
@@ -272,7 +296,15 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
       if(isUzeflife&&p.thread!==UZEFLIFE_RESULT_TOPIC||!isUzeflife&&p.thread===UZEFLIFE_RESULT_TOPIC){await answerTelegramCallback(callback.id,'Mavzu va turnir mos emas.',true);return {handled:true,result:'invalid'};}
       if(!await (isUzeflife?authorizeUzeflifeTopicResult(actor,action==='approve'?p.plan:undefined):authorize(actor))){await answerTelegramCallback(callback.id,'Faqat raqib yoki vakolatli admin tasdiqlaydi.',true);return {handled:true,result:'unauthorized'};}
       const state = action === 'approve' ? 'executing' : 'cancelled';
-      const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), prefix+'fixture:'+(isUzeflife?'uzeflife:':'')+p.plan.targetId, sourceKey(p.chat,p.thread,p.sourceMessage),sourceKey(p.chat,p.thread,p.originalSourceMessage||p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
+      const fixtureLeaseKey = prefix+'fixture:'+(isUzeflife?'uzeflife:':'')+p.plan.targetId;
+      if (action === 'approve') {
+        // A previous 400 (validation error) never saved the result. The old
+        // implementation retained its lease even after reporting failure,
+        // making fresh approvals appear "already processed" for 24 hours.
+        const released = await releaseRejectedTopicResultLease(client,fixtureLeaseKey);
+        if (released) console.info('[TOPIC_RESULT_REJECTED_LEASE_RELEASED]',JSON.stringify({kind:isUzeflife?'uzeflife':'fixture'}));
+      }
+      const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), fixtureLeaseKey, sourceKey(p.chat,p.thread,p.sourceMessage),sourceKey(p.chat,p.thread,p.originalSourceMessage||p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
       if (Number(claimed) !== 1) { await answerTelegramCallback(callback.id, 'Taklif eskirgan yoki allaqachon ko‘rib chiqilgan.', true); return { handled: true, result: 'already_processed' }; }
       let reply = 'Taklif rad etildi. Natija o‘zgarmadi.';
       if(action==='reject'&&isUzeflife){try{await rejectUzeflifeTopicResult(p.plan,actor);reply='Hisob taklifi rad etildi. O‘yinchilar qayta yuborishi mumkin.';}catch(error:any){reply='Hisob taklifi tozalanmadi: '+String(error.message).slice(0,250);}}
@@ -283,11 +315,13 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
             const outcome = inspectAiAdminOutcome(p.plan,result.data);
             reply = outcome.state === 'verified' ? `Natija saqlandi:\n${p.summary || 'O‘yin: '+p.plan.targetId}\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.${p.plan.body.homePenaltyScore!=null?`\nPenaltilar: ${p.plan.body.homePenaltyScore}:${p.plan.body.awayPenaltyScore}.`:''}${result.data?.webAppRefreshPending ? '\nWeb App hisobni ko‘rsatish uchun qayta yuklanmoqda; hozircha ekranda tasdiqlanmagan.' : ''}${result.data?.derivedPending ? '\nTurnir jadvali yangilanish navbatiga qo‘yildi.' : ''}` : outcome.message;
           } else reply = 'Natija saqlanmadi: ' + String(result.data?.message || result.data?.error || 'server rad etdi').slice(0,250);
-          await client.set(proposalKey(token), { ...p, state: 'done', receipt: {status:result.status} }, {ex:ttl});
+          const definitelyRejected = isDefinitiveTopicResultRejection(result.status);
+          await client.set(proposalKey(token), { ...p, state: definitelyRejected?'rejected':'done', receipt: {status:result.status} }, {ex:ttl});
+          if (definitelyRejected) await client.eval(TOPIC_RESULT_RELEASE,[fixtureLeaseKey],[token]);
         } catch(error:any) {
-          const rejected=isUzeflife&&Number.isInteger(error?.statusCode)&&error.statusCode>=400&&error.statusCode<500;
-          await client.set(proposalKey(token), { ...p, state: rejected?'rejected':'unknown' }, {ex:ttl});
-          if(rejected)await client.eval(TOPIC_RESULT_RELEASE,[prefix+'fixture:uzeflife:'+p.plan.targetId],[token]);
+          const rejected=isDefinitiveTopicResultRejection(Number(error?.statusCode ?? error?.status));
+          await client.set(proposalKey(token), { ...p, state: rejected?'rejected':'unknown', ...(rejected?{receipt:{status:Number(error?.statusCode ?? error?.status)}}:{}) }, {ex:ttl});
+          if(rejected)await client.eval(TOPIC_RESULT_RELEASE,[fixtureLeaseKey],[token]);
           reply = rejected?'Natija saqlanmadi: '+String(error.message).slice(0,250):'Natijani saqlash yakuni tasdiqlanmadi. Admin panelda tekshiring; amal avtomatik qayta bajarilmaydi.';
         }
       }
