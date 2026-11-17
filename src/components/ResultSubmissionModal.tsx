@@ -61,10 +61,12 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
     return()=>{cancelled=true;};
   },[fixture.id]);
   const [homeScore, setHomeScore] = useState<number>(
-    fixture.userSubmission ? fixture.userSubmission.homeScore : 0
+    fixture.userSubmission ? fixture.userSubmission.homeScore :
+      isDesignPreview && fixture.opponentSubmission ? fixture.opponentSubmission.homeScore : 0
   );
   const [awayScore, setAwayScore] = useState<number>(
-    fixture.userSubmission ? fixture.userSubmission.awayScore : 0
+    fixture.userSubmission ? fixture.userSubmission.awayScore :
+      isDesignPreview && fixture.opponentSubmission ? fixture.opponentSubmission.awayScore : 0
   );
   const isCup = isDomesticCupResult(fixture.competitionId);
   const isParticipant = Boolean(user && (isHomeOwner || isAwayOwner || ownedClubs.some(club => club.id === fixture.homeClubId || club.id === fixture.awayClubId)));
