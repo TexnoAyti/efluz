@@ -267,8 +267,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           leagueId:'league-premier-league',leagueName:'APL',
           logoUrl:'',active:true,createdAt:'',
         };
-        setOwnedClubs([previewClub]);
-        setCurrentClub(previewClub);
+        const opponentPreview = new URLSearchParams(window.location.search).get('guideStep')==='opponent';
+        const activePreviewClub:Club=opponentPreview?{
+          ...previewClub,id:'club-chelsea',name:'Chelsea',shortName:'CHE'
+        }:previewClub;
+        setOwnedClubs([activePreviewClub]);
+        setCurrentClub(activePreviewClub);
         setActiveSeasonId('season-2027-28');
         const season: Season = {
           id: 'season-2027-28', name: '2-mavsum', status: 'active',
