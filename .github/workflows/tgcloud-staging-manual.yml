@@ -120,12 +120,8 @@ jobs:
                 # Never turn a rerun into a new, overwrite-capable import.
                 payload="$(cat -- "${file}")"
                 if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "${payload}" --ctx "${ctx}" >"${RUNNER_TEMP}/tgcloud-import.log" 2>&1; then
-                  # CLI exit 0 alone cannot prove that the endpoint committed the batch.
-                  if ! grep -Eq 'ok[[:space:]]*:[[:space:]]*true' "${RUNNER_TEMP}/tgcloud-import.log" || \
-                     ! grep -Eq 'status[[:space:]]*:[[:space:]]*"?COMPLETE' "${RUNNER_TEMP}/tgcloud-import.log"; then
-                    echo "STAGING_IMPORT_RECEIPT_MISSING: ${table}/$(basename "${file}")" >&2
-                    exit 1
-                  fi
+                  # Confirm this exact packet, not merely a successful CLI exit.
+                  node scripts/verifyEflStagingImportReceipt.mjs "${file}" "${RUNNER_TEMP}/tgcloud-import.log" || exit 1
                   imported=1
                   break
                 fi
