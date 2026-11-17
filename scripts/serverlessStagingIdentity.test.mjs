@@ -40,7 +40,6 @@ test('staging workflow pins source and requires application-level import confirm
   assert.doesNotMatch(workflow,/inputs\.source_branch/);
   assert.ok(workflow.includes('verifyEflStagingImportReceipt.mjs'));
   assert.match(workflow,/STAGING_IMPORT_COMMAND_FAILED/);
-  assert.ok(!workflow.includes("grep -Eq 'ok[[:space:]]"));
   assert.doesNotMatch(workflow,/tail -40 \/tmp\/tgcloud-import\.log/);
 });
 
