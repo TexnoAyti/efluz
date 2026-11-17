@@ -134,7 +134,27 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
 }
 
 export async function getLeagueAdminOverview(user: User, seasonId: string) {
-  const { getAdminClubsFromReadModel, getCompetitionFixturesFromReadModel, getCompetitionsFromReadModel } = await import('../readModel/readModelStore');
+  const { getAdminClubsFromReadModel, getAdminFixturesFromReadModel, getCompetitionFixturesFromReadModel, getCompetitionsFromReadModel } = await import('../readModel/readModelStore');
+  if (canManageAllFixturesAndClubs(user)) {
+    const seasons=seasonId==='season-2027-28'?[seasonId,'season-2026-27']:[seasonId];
+    const results=await Promise.all(seasons.map(async currentSeason=>{
+      const [catalog,clubs,fixtures]=await Promise.all([
+        getCompetitionsFromReadModel(currentSeason),
+        getAdminClubsFromReadModel(currentSeason),
+        getAdminFixturesFromReadModel({seasonId:currentSeason,limit:100}),
+      ]);
+      return {catalog,clubs,fixtures};
+    }));
+    return {
+      leagues:permittedAdminLeagues(user),
+      competitions:results.flatMap(r=>r.catalog.competitions),
+      clubs:results.flatMap(r=>r.clubs.clubs),
+      fixtures:results.flatMap(r=>r.fixtures.fixtures),
+      hasMoreFixtures:results.some(r=>r.fixtures.hasMore),
+      stale:results.some(r=>r.catalog.stale||r.clubs.stale||r.fixtures.stale),
+      degraded:results.some(r=>r.catalog.degraded||r.clubs.degraded||r.fixtures.degraded),
+    };
+  }
   const allowed = permittedAdminLeagues(user);
   const competitionIds = new Set(permittedAdminCompetitionIds(user));
   const catalog = await getCompetitionsFromReadModel(seasonId);
