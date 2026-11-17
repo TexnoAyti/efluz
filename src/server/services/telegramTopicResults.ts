@@ -391,7 +391,10 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     const documents=m.document&&['image/jpeg','image/png'].includes(m.document.mime_type)?[m.document]:[];
     const photos=[...(m.photo||[]),...documents].filter((p:any)=>typeof p.file_id==='string'&&p.file_id.length<=256&&(!p.file_size||p.file_size<=4*1024*1024));
     const photo=photos.at(-1);
-    if(forwarded&&!photo)return {handled:false};
+    // A verified admin may re-forward missed historical text results into the
+    // correct competition topic; the current sender (not the forwarded author)
+    // remains the accountable actor. Non-admin forwarded text is not proof.
+    if(forwarded&&!photo&&!isAiAdminActor(m.from.id))return {handled:false};
     let photoRate:any=null,photoReadSummary='';
     if (!text && !photo && !update.edited_message) return {handled:false};
     const client = getTopicResultStateClient(signal);
@@ -461,6 +464,9 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
     if (!rate.allowed) {
       if(planning)await planning;
       if(rate.reason==='REDIS_UNAVAILABLE')throw Error('RESULT_STATE_UNAVAILABLE');
+      if(rate.shouldNotifyUser) await sendTelegramMessage(m.chat.id,
+        'Hisoblar juda tez yuborilyapti, vaqtinchalik cheklov ishga tushdi. Keyinroq shu xabarning o‘zini qayta yuboring; natija hozir saqlanmadi.',
+        {parse_mode:null,message_thread_id:m.message_thread_id,reply_to_message_id:m.message_id,signal});
       return {handled:true,result:'rate_limited'};
     }
     if(continuation){
