@@ -2,6 +2,7 @@ import { CupTieBreakFields, CupScoreSummary } from './CupTieBreakFields';
 import { cupScoreMetadata, resolveCupResult, isDomesticCupResult } from '../lib/cupResult';
 import { CupMatchModal } from './CupMatchModal';
 import { EFL_2_DESIGN_ENABLED } from '../releaseDesign';
+import {isDesignPreview} from '../designPreview';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Fixture } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -103,6 +104,15 @@ export const ResultSubmissionModal: React.FC<ResultSubmissionModalProps> = ({
     try {
       if (disciplineBlocked) throw new Error('Qizil kartochka: bu o‘yin natijasini admin hal qiladi.');
       if (isCup) resolveCupResult({ homeScore, awayScore, ...cupScores }, fixture, true);
+      // This mode is compiled out of production builds. It uses the real
+      // score-entry UI but NEVER submits a result or assumes any club ownership.
+      if(isDesignPreview){
+        const simulated={...fixture,homeScore,awayScore,status:'PENDING_CONFIRMATION' as const};
+        showToast('NAMUNA: natija yuborildi. Raqib tasdig‘i kutilmoqda. Baza o‘zgarmadi.','info');
+        onSuccess(simulated);
+        onClose();
+        return;
+      }
       const res = await api.submitFixtureResult(fixture.id, homeScore, awayScore, proofUrl.trim() || undefined, isCup ? cupScores : {});
 
       if (res.fixture.status === 'CONFIRMED') {
