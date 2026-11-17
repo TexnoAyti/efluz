@@ -63,6 +63,11 @@ export const FixturesView: React.FC = () => {
   // Reset selected matchday to active competition's currentMatchday when switching competitions
   const prevCompIdRef = useRef<string>(selectedCompetitionId);
   useEffect(() => {
+    if (isDesignPreview) {
+      // Screenshot the 7th-round example while the actual competition remains at round 1.
+      prevCompIdRef.current = selectedCompetitionId;
+      return;
+    }
     if (selectedCompetitionId && selectedCompetitionId !== prevCompIdRef.current) {
       prevCompIdRef.current = selectedCompetitionId;
       const comp = competitions.find((c) => c.id === selectedCompetitionId);
