@@ -127,6 +127,37 @@ export async function releaseRejectedTopicResultLease(
   return Number(await client.eval(TOPIC_RESULT_RELEASE,[fixtureKey],[token])) === 1;
 }
 
+/**
+ * Explain the real fixture state instead of treating every duplicate or
+ * superseded callback as the same generic "expired" error.
+ * Never mutate a fixture or infer an approval from a diagnostic read.
+ */
+export function describeBlockedTopicResultApproval(
+  proposal: Pick<TopicResultProposal,'state'|'token'|'plan'|'receipt'>,
+  fixture: {status?:string;homeScore?:number;awayScore?:number}|null,
+  currentSourceToken: string|null,
+  heldLeaseToken: string|null
+): {reason:string; message:string} {
+  const proposedHome=Number(proposal.plan.body.homeScore);
+  const proposedAway=Number(proposal.plan.body.awayScore);
+  if (fixture?.status==='CONFIRMED' &&
+      Number.isInteger(fixture.homeScore) && Number.isInteger(fixture.awayScore)) {
+    const matches=fixture.homeScore===proposedHome && fixture.awayScore===proposedAway;
+    return matches
+      ? {reason:'already_saved',message:`Natija bazada allaqachon tasdiqlangan: ${fixture.homeScore}:${fixture.awayScore}. Takroran kiritilmadi.`}
+      : {reason:'saved_conflict',message:`Hisoblar farq qiladi. Bazada tasdiqlangan: ${fixture.homeScore}:${fixture.awayScore}; bu taklif: ${proposedHome}:${proposedAway}. Natija o‘zgartirilmadi. Admin o‘yinni tekshirsin.`};
+  }
+  if (proposal.state==='executing') return {reason:'in_progress',message:'Bu hisobni saqlash so‘rovi bajarilmoqda. Takroriy yozish to‘xtatildi; Web App yoki admin paneldan tekshiring.'};
+  if (proposal.state==='unknown') return {reason:'unknown_outcome',message:'Hisobni saqlashning yakuniy holati noma’lum. Takroriy tasdiqlash xavfsiz emas; admin o‘yinni tekshirsin.'};
+  if (proposal.state==='rejected' || (proposal.state==='done'&&isDefinitiveTopicResultRejection(Number(proposal.receipt?.status)))) return {reason:'previously_rejected',message:'Oldingi tasdiqlash server tomonidan rad etilgan. Natija saqlanmagan bo‘lishi mumkin; xabarni yangidan yuboring.'};
+  if (proposal.state==='cancelled') return {reason:'cancelled',message:'Bu taklif rad etilgan. O‘zgartirish uchun yangi hisob xabari yuboring.'};
+  if (proposal.state==='done') return {reason:'processed',message:'Ushbu taklif avval qayta ishlangan. Hisobni Web App’da tekshiring; o‘zgartirish kerak bo‘lsa admin paneldan bajaring.'};
+  if (currentSourceToken!==proposal.token) return {reason:'superseded',message:'Ushbu xabar bo‘yicha yangiroq taklif mavjud. Eng yangi “Tasdiqlash” tugmasidan foydalaning.'};
+  if (heldLeaseToken && heldLeaseToken!==proposal.token) return {reason:'other_approval',message:'Shu uchrashuv uchun boshqa tasdiqlash oldin bosilgan. Natijani takror yozmayman; admin panelda mavjud hisobni tekshiring.'};
+  if (heldLeaseToken===proposal.token) return {reason:'already_claimed',message:'Bu tugma avval bosilgan. Natija ikki marta kiritilmaydi; admin panelda holatini tekshiring.'};
+  return {reason:'superseded_or_expired',message:'Bu tasdiqlash taklifi yangilangan yoki eskirgan. Klub va hisobni qayta yuboring; yangi tugmadan foydalaning.'};
+}
+
 export const TOPIC_RESULT_CLAIM = `-- EFL_TOPIC_RESULT_CLAIM_V1
 local raw = redis.call('GET', KEYS[1])
 local source = redis.call('GET', KEYS[3])
@@ -305,7 +336,28 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
         if (released) console.info('[TOPIC_RESULT_REJECTED_LEASE_RELEASED]',JSON.stringify({kind:isUzeflife?'uzeflife':'fixture'}));
       }
       const claimed = await client.eval(TOPIC_RESULT_CLAIM, [proposalKey(token), fixtureLeaseKey, sourceKey(p.chat,p.thread,p.sourceMessage),sourceKey(p.chat,p.thread,p.originalSourceMessage||p.sourceMessage)], [Date.now(),p.chat,p.thread,p.deliveredMessage,state,ttl]);
-      if (Number(claimed) !== 1) { await answerTelegramCallback(callback.id, 'Taklif eskirgan yoki allaqachon ko‘rib chiqilgan.', true); return { handled: true, result: 'already_processed' }; }
+      if (Number(claimed) !== 1) {
+        const [liveProposal,source,lease] = await Promise.all([
+          client.get<TopicResultProposal>(proposalKey(token)),
+          client.get<{token?:string}>(sourceKey(p.chat,p.thread,p.sourceMessage)),
+          client.get<string>(fixtureLeaseKey),
+        ]);
+        let currentFixture: {status?:string;homeScore?:number;awayScore?:number}|null=null;
+        if (!isUzeflife) {
+          try {
+            const snap=await getFirestoreDb().collection('fixtures').doc(p.plan.targetId).get();
+            if (snap.exists) currentFixture=snap.data() as typeof currentFixture;
+          } catch (error:any) { console.warn('[TOPIC_RESULT_CONFIRM_READ_UNAVAILABLE]',String(error?.message||error).slice(0,100)); }
+        }
+        const feedback=describeBlockedTopicResultApproval(liveProposal||p,currentFixture,source?.token||null,typeof lease==='string'?lease:null);
+        console.info('[TOPIC_RESULT_CONFIRM_BLOCKED]',JSON.stringify({thread:p.thread,fixture:p.plan.targetId,reason:feedback.reason}));
+        await answerTelegramCallback(callback.id,feedback.message.slice(0,190),true);
+        // A single public reply makes the failure discoverable even after
+        // Telegram's ephemeral callback toast disappears. No duplicate floods.
+        const feedbackClaim=await client.set(prefix+'feedback:'+token,1,{nx:true,ex:3600});
+        if (feedbackClaim==='OK') await sendTelegramMessage(p.chat,feedback.message,{parse_mode:null,message_thread_id:p.thread,reply_to_message_id:p.sourceMessage,signal});
+        return {handled:true,result:'already_processed'};
+      }
       let reply = 'Taklif rad etildi. Natija o‘zgarmadi.';
       if(action==='reject'&&isUzeflife){try{await rejectUzeflifeTopicResult(p.plan,actor);reply='Hisob taklifi rad etildi. O‘yinchilar qayta yuborishi mumkin.';}catch(error:any){reply='Hisob taklifi tozalanmadi: '+String(error.message).slice(0,250);}}
       if (action === 'approve') {
