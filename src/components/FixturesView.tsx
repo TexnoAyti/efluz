@@ -9,7 +9,7 @@ import { api, invalidateClientCache } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
 import { isDesignPreview } from '../designPreview';
-import { guidePreviewCompetition, guidePreviewFixtures, guidePreviewOpponentFixture } from '../lib/resultGuidePreviewData';
+import { guidePreviewCompetition, guidePreviewFixtures, guidePreviewOpponentFixture, guidePreviewPendingFixture, guidePreviewConfirmedFixture } from '../lib/resultGuidePreviewData';
 import { ClubCrest } from './ClubCrest';
 import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
@@ -192,8 +192,11 @@ export const FixturesView: React.FC = () => {
 
   const loadFixtures = async (skipCache = false) => {
     if(isDesignPreview){
-      const opponent = new URLSearchParams(window.location.search).get('guideStep')==='opponent';
-      setFixtures((opponent?[guidePreviewOpponentFixture,...guidePreviewFixtures.slice(1)]:guidePreviewFixtures)
+      const step = new URLSearchParams(window.location.search).get('guideStep');
+      const first=step==='opponent'?guidePreviewOpponentFixture:
+        step==='waiting'?guidePreviewPendingFixture:
+        step==='confirmed'?guidePreviewConfirmedFixture:guidePreviewFixtures[0];
+      setFixtures([first,...guidePreviewFixtures.slice(1)]
         .filter(item=>item.matchday===selectedMatchday));
       setError(null);
       setIsLoading(false);
