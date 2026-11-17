@@ -316,7 +316,7 @@ const AppContent: React.FC = () => {
             )}
 
             {/* CLUB: Replaces Profile & Matches - Active Club, Switcher, Matches, Stats, Settings */}
-            {(currentTab === 'my-club' || currentTab === 'profile' || (currentTab === 'my-matches' && !isDesignPreview)) && (
+            {(currentTab === 'my-club' || currentTab === 'profile' || currentTab === 'my-matches') && !(isDesignPreview && currentTab === 'my-matches') && (
               <>
               {canSeeTeamPreview(user?.telegramId)&&<button type="button" onClick={openTeamDirectory} className="preview-surface w-full rounded-2xl border border-[var(--efl-border)] p-4 mb-4 flex items-center justify-between text-left"><span><strong className="text-sm text-[var(--efl-text)]">Teamlarim</strong><span className="block text-xs text-[var(--efl-text-2)] mt-1">Team profili · Tarkib · O‘yinlar · Turnirlar</span></span><span className="text-xs text-[var(--efl-primary)]">Faqat sizga →</span></button>}
               <ClubHubView
