@@ -47,6 +47,17 @@ jobs:
           npx --yes playwright screenshot --browser chromium --viewport-size "430,932" --wait-for-timeout 3500 --full-page \
             "http://127.0.0.1:4173/my-matches?designPreview=1&guideModal=1" \
             artifacts/result-guide/02-efluz-hisob-kiritish-real-ui.png
+      - name: Capture verified states of actual Web App score workflow
+        run: |
+          npx --yes playwright screenshot --browser chromium --viewport-size "430,932" --wait-for-timeout 3500 --full-page \
+            "http://127.0.0.1:4173/my-matches?designPreview=1&guideStep=waiting" \
+            artifacts/result-guide/03-efluz-raqib-tasdigi-kutilmoqda-real-ui.png
+          npx --yes playwright screenshot --browser chromium --viewport-size "430,932" --wait-for-timeout 3500 --full-page \
+            "http://127.0.0.1:4173/my-matches?designPreview=1&guideStep=opponent&guideModal=1" \
+            artifacts/result-guide/04-efluz-raqib-tasdiqlaydi-real-ui.png
+          npx --yes playwright screenshot --browser chromium --viewport-size "430,932" --wait-for-timeout 3500 --full-page \
+            "http://127.0.0.1:4173/my-matches?designPreview=1&guideStep=confirmed" \
+            artifacts/result-guide/05-efluz-natija-tasdiqlangan-real-ui.png
       - name: Upload screenshot originals
         uses: actions/upload-artifact@v4
         with:
