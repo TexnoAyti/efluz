@@ -12,7 +12,7 @@ const owner = 'user-5209126900';
 for (const [id, telegramId, permissions] of [[owner, '5209126900', { scope: 'ALL', leagueIds: [] }], ['other-admin', '123', { scope: 'ALL', leagueIds: [] }], ['league-admin', '456', { scope: 'LEAGUES', leagueIds: ['league-la-liga'] }]]) {
   await db.collection('users').doc(String(id)).set({ id, telegramId, isAdmin: true, isSuspended: false, adminPermissions: permissions });
 }
-for (const league of ADMIN_LEAGUES) await db.collection('fixtures').doc(league.cupCompetitionId).set({ id: league.cupCompetitionId, competitionId: league.cupCompetitionId, seasonId: 'season-2026-27' });
+for (const league of ADMIN_LEAGUES.filter(league => league.cupCompetitionId)) await db.collection('fixtures').doc(league.cupCompetitionId).set({ id: league.cupCompetitionId, competitionId: league.cupCompetitionId, seasonId: 'season-2026-27' });
 const app = express(); app.use(express.json());
 // Forged owner claims must be replaced by authoritative identity and permissions.
 app.use((req: any, _res, next) => { req.user = { id: String(req.headers['x-test-user'] || 'other-admin'), telegramId: '5209126900', isAdmin: true, adminPermissions: { scope: 'ALL', leagueIds: [] } }; next(); });
@@ -41,9 +41,9 @@ try {
     assert.equal((await request(path, method, owner)).status, 200, path);
     assert.equal((await request(path.toUpperCase() + '/', method, 'other-admin')).status, 403, 'case/trailing slash: ' + path);
   }
-  for (const league of ADMIN_LEAGUES) {
+  for (const league of ADMIN_LEAGUES.filter(league=>league.cupCompetitionId)) {
     await db.collection('users').doc('league-admin').update({ adminPermissions: { scope: 'LEAGUES', leagueIds: [league.id] } });
-    for (const candidate of ADMIN_LEAGUES) {
+    for (const candidate of ADMIN_LEAGUES.filter(candidate=>candidate.cupCompetitionId)) {
       const expected = candidate.id === league.id ? 200 : 403;
       for (const [method, suffix] of [['GET',''], ['GET','/health'], ['POST','/round'], ['POST','/round/advance'], ['POST','/reconcile'], ['POST','/bracket/preview']] as const) {
         assert.equal((await request('/api/admin/cups/' + candidate.cupCompetitionId + suffix, method)).status, expected);
@@ -60,5 +60,5 @@ try {
   await db.collection('users').doc(owner).update({ isSuspended: true });
   assert.equal((await request('/api/admin/fixtures/test', 'DELETE', owner)).status, 403);
   assert.equal(canUseDangerZone({ id: 'imposter', telegramId: '5209126900', isAdmin: true, isSuspended: false }), false);
-  console.log('PASS owner-only danger routes, legacy aliases, forged claims, revoked owner, all five league/cup grants, actual fixture scope and authoritative access flags');
+  console.log('PASS owner-only danger routes, legacy aliases, forged claims, revoked owner, all five real league/cup grants (Superliga has no cup), actual fixture scope and authoritative access flags');
 } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
