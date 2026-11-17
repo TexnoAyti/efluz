@@ -147,6 +147,9 @@ export function describeBlockedTopicResultApproval(
       ? {reason:'already_saved',message:`Natija bazada allaqachon tasdiqlangan: ${fixture.homeScore}:${fixture.awayScore}. Takroran kiritilmadi.`}
       : {reason:'saved_conflict',message:`Hisoblar farq qiladi. Bazada tasdiqlangan: ${fixture.homeScore}:${fixture.awayScore}; bu taklif: ${proposedHome}:${proposedAway}. Natija o‘zgartirilmadi. Admin o‘yinni tekshirsin.`};
   }
+  if (fixture?.status==='DISPUTED') return {reason:'dispute',message:'Ushbu uchrashuvda hisob bo‘yicha e’tiroz ochilgan. Avval UZEFLIFE admin panelida e’tirozni hal qiling; natija o‘zgartirilmadi.'};
+  if (fixture?.status==='PENDING_CONFIRMATION' && proposal.state==='pending' && currentSourceToken===proposal.token && !heldLeaseToken)
+    return {reason:'pending_approval',message:'Bu natija hali tasdiqlanmagan. Vakolatli admin yoki raqib yangi tasdiqlashni amalga oshirsin; o‘yin hali Web App’da yakunlanmagan.'};
   if (proposal.state==='executing') return {reason:'in_progress',message:'Bu hisobni saqlash so‘rovi bajarilmoqda. Takroriy yozish to‘xtatildi; Web App yoki admin paneldan tekshiring.'};
   if (proposal.state==='unknown') return {reason:'unknown_outcome',message:'Hisobni saqlashning yakuniy holati noma’lum. Takroriy tasdiqlash xavfsiz emas; admin o‘yinni tekshirsin.'};
   if (proposal.state==='rejected' || (proposal.state==='done'&&isDefinitiveTopicResultRejection(Number(proposal.receipt?.status)))) return {reason:'previously_rejected',message:'Oldingi tasdiqlash server tomonidan rad etilgan. Natija saqlanmagan bo‘lishi mumkin; xabarni yangidan yuboring.'};
@@ -343,12 +346,20 @@ export async function handleTopicResultUpdate(update: any): Promise<{ handled: b
           client.get<string>(fixtureLeaseKey),
         ]);
         let currentFixture: {status?:string;homeScore?:number;awayScore?:number}|null=null;
-        if (!isUzeflife) {
-          try {
+        try {
+          if (isUzeflife) {
+            const {readUState}=await import('./uzeflifeService');
+            const state=await readUState(),match=state.matches.find(m=>m.id===p.plan.targetId);
+            if (match) {
+              currentFixture=uMatchFinished(match)
+                ? {status:'CONFIRMED',homeScore:match.homeScore??undefined,awayScore:match.awayScore??undefined}
+                : {status:match.dispute?.status==='open'?'DISPUTED':match.proposal?'PENDING_CONFIRMATION':'SCHEDULED'};
+            }
+          } else {
             const snap=await getFirestoreDb().collection('fixtures').doc(p.plan.targetId).get();
             if (snap.exists) currentFixture=snap.data() as typeof currentFixture;
-          } catch (error:any) { console.warn('[TOPIC_RESULT_CONFIRM_READ_UNAVAILABLE]',String(error?.message||error).slice(0,100)); }
-        }
+          }
+        } catch (error:any) { console.warn('[TOPIC_RESULT_CONFIRM_READ_UNAVAILABLE]',String(error?.message||error).slice(0,100)); }
         const feedback=describeBlockedTopicResultApproval(liveProposal||p,currentFixture,source?.token||null,typeof lease==='string'?lease:null);
         console.info('[TOPIC_RESULT_CONFIRM_BLOCKED]',JSON.stringify({thread:p.thread,fixture:p.plan.targetId,reason:feedback.reason}));
         await answerTelegramCallback(callback.id,feedback.message.slice(0,190),true);
