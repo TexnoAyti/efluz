@@ -136,7 +136,9 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
 export async function getLeagueAdminOverview(user: User, seasonId: string) {
   const { getAdminClubsFromReadModel, getAdminFixturesFromReadModel, getCompetitionFixturesFromReadModel, getCompetitionsFromReadModel } = await import('../readModel/readModelStore');
   if (canManageAllFixturesAndClubs(user)) {
-    const seasons=seasonId==='season-2027-28'?[seasonId,'season-2026-27']:[seasonId];
+    // Return only the selected season to avoid duplicate club IDs and cross-season assignments.
+    // Delegates can switch seasons in the admin panel to manage historic UEFA fixtures.
+    const seasons=[seasonId];
     const results=await Promise.all(seasons.map(async currentSeason=>{
       const [catalog,clubs,fixtures]=await Promise.all([
         getCompetitionsFromReadModel(currentSeason),
