@@ -21,7 +21,7 @@ export type CompetitionType =
 
 export type ScheduleMode = 'REAL_SCHEDULE' | 'OFFICIAL_IMPORT' | 'GENERATED_SCHEDULE';
 
-export interface AdminPermissions { scope: 'ALL' | 'LEAGUES'; leagueIds: string[]; }
+export interface AdminPermissions { scope: 'ALL' | 'LEAGUES'; leagueIds: string[]; manageAllFixturesAndClubs?: boolean; }
 
 export interface User {
   id: string;
