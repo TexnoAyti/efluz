@@ -18,6 +18,14 @@ export function permittedAdminLeagues(user: Pick<User, 'adminPermissions'>) {
   return ADMIN_LEAGUES.filter(league => Array.isArray(permissions?.leagueIds) && permissions.scope === 'LEAGUES' && permissions.leagueIds.includes(league.id));
 }
 
+/** Delegated match and club operations across every competition and season.
+ * This is not a superadmin role; the server still restricts all other paths. */
+export function canManageAllFixturesAndClubs(user?: Pick<User,'isAdmin'|'isSuspended'|'adminPermissions'> | null): boolean {
+  return Boolean(user?.isAdmin && !user.isSuspended &&
+    user.adminPermissions?.scope === 'LEAGUES' &&
+    user.adminPermissions.manageAllFixturesAndClubs === true);
+}
+
 export const MAIN_ADMIN_TELEGRAM_ID = '5209126900';
 export function canUseDangerZone(user?: Pick<User, 'id' | 'telegramId' | 'isAdmin' | 'isSuspended'> | null): boolean {
   return Boolean(user?.isAdmin && !user.isSuspended && String(user.telegramId) === MAIN_ADMIN_TELEGRAM_ID && user.id === `user-${MAIN_ADMIN_TELEGRAM_ID}`);
@@ -35,6 +43,6 @@ export function permittedAdminCompetitionIds(user: Pick<User, 'adminPermissions'
 export function canManageFixture(user: Pick<User, 'id' | 'telegramId' | 'isAdmin' | 'isSuspended' | 'adminPermissions'> | null | undefined,
   competitionId: string): boolean {
   if (!user?.isAdmin || user.isSuspended || !competitionId) return false;
-  if (canUseDangerZone(user)) return true;
+  if (canUseDangerZone(user) || canManageAllFixturesAndClubs(user)) return true;
   return isLeagueAdmin(user) && permittedAdminCompetitionIds(user).includes(competitionId);
 }

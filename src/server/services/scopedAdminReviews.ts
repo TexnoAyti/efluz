@@ -1,16 +1,24 @@
 import type { User } from '../../types';
 import { createHash } from 'node:crypto';
-import { permittedAdminCompetitionIds } from '../../lib/adminPermissions';
+import { canManageAllFixturesAndClubs, permittedAdminCompetitionIds } from '../../lib/adminPermissions';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 import { firestoreCircuitBreaker } from '../firebase/circuitBreaker';
 import { getLocalDisputes, getLocalSubmissions, trackFirestoreRead, recordFallbackUsage } from '../firebase/firestoreStore';
-import { getCompetitionFixturesFromReadModel } from '../readModel/readModelStore';
+import { getCompetitionFixturesFromReadModel, getCompetitionsFromReadModel } from '../readModel/readModelStore';
 import { readSharedAdminReview } from './adminReviewCache';
 
 export async function getScopedAdminReviews(user: User, seasonId: string, includeArchive = false) {
-  const competitionIds = new Set(permittedAdminCompetitionIds(user));
-  const snapshots = await Promise.all([...competitionIds].map(competitionId => getCompetitionFixturesFromReadModel(competitionId, { seasonId })));
+  const fullDelegate=canManageAllFixturesAndClubs(user);
+  const ids=fullDelegate
+    ? (await getCompetitionsFromReadModel(seasonId)).competitions.map(c=>c.id)
+    : permittedAdminCompetitionIds(user);
+  const competitionIds = new Set(ids);
+  const snapshots: Awaited<ReturnType<typeof getCompetitionFixturesFromReadModel>>[]=[];
+  // Bound concurrent read-model requests for larger cross-competition scope.
+  for(let i=0;i<ids.length;i+=4){
+    snapshots.push(...await Promise.all(ids.slice(i,i+4).map(competitionId=>getCompetitionFixturesFromReadModel(competitionId,{seasonId}))));
+  }
   const fixtures = snapshots.flatMap(snapshot => snapshot.fixtures).filter(fixture => fixture.seasonId === seasonId && competitionIds.has(fixture.competitionId));
   const signature = createHash('sha256').update(JSON.stringify([seasonId, [...competitionIds].sort(), includeArchive, fixtures.map(f => [f.id, f.status, f.homeScore, f.awayScore, (f as any).updatedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))])).digest('hex');
   const reviews = await readSharedAdminReview('efluz:v1:admin:reviews:' + signature, async () => {

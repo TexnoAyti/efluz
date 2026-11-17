@@ -1,7 +1,7 @@
 import { trackFirestoreRead } from '../firebase/firestoreStore';
 import type { Request, Response, NextFunction } from 'express';
 import type { User } from '../../types';
-import { isLeagueAdmin, permittedAdminLeagues, permittedAdminCompetitionIds } from '../../lib/adminPermissions';
+import { canManageAllFixturesAndClubs, isLeagueAdmin, permittedAdminLeagues, permittedAdminCompetitionIds } from '../../lib/adminPermissions';
 import { getFirestoreDb } from '../firebase/admin';
 import { COLLECTIONS } from '../firebase/collections';
 
@@ -12,6 +12,51 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
   const competitionIds = new Set(permittedAdminCompetitionIds(req.user!));
   const cupIds = new Set(allowed.map(league => league.cupCompetitionId).filter(Boolean));
   const path = new URL(req.originalUrl, 'https://efluz.invalid').pathname;
+  if (canManageAllFixturesAndClubs(req.user!)) {
+    // Explicit, finite grant. Never return next() for arbitrary admin paths:
+    // role changes, user bans, global resets, deletion of matches and finance
+    // operations remain owner-controlled by default.
+    const method=req.method;
+    const reads = new Set([
+      '/api/admin/access','/api/admin/scoped/overview','/api/admin/scoped/users',
+      '/api/admin/scoped/reviews','/api/admin/clubs','/api/admin/fixtures',
+      '/api/admin/cups','/api/admin/results/pending','/api/admin/submissions',
+    ]);
+    const safeRead = method==='GET' && (reads.has(path) ||
+      /^\/api\/admin\/competitions\/[^/]+\/matchday\/control$/.test(path) ||
+      /^\/api\/admin\/competitions\/[^/]+\/bulk-results\/preview$/.test(path) ||
+      /^\/api\/admin\/cups\/[^/]+(?:\/(?:health))?$/.test(path));
+    const fixtureMutation = method==='POST' &&
+      /^\/api\/admin\/(?:fixtures\/[^/]+\/(?:result|delete-result|reopen|deadline|remind)|results\/[^/]+\/(?:approve|reject))$/.test(path);
+    const clubMutation = method==='POST' && /^\/api\/admin\/clubs\/[^/]+\/(?:assign|release)$/.test(path);
+    const matchdayMutation = method==='POST' &&
+      /^\/api\/admin\/competitions\/[^/]+\/(?:bulk-results\/apply|rebuild-standings|matchday\/(?:override|advance|open-now|set-timer|remind|control))$/.test(path);
+    const cupMutation = (method==='POST' &&
+      /^\/api\/admin\/cups\/[^/]+\/(?:reconcile|round|round\/advance|bracket\/preview)$/.test(path)) ||
+      (method==='PATCH' && /^\/api\/admin\/cups\/[^/]+\/bracket\/fixture\/[^/]+$/.test(path)) ||
+      (method==='POST' && /^\/api\/admin\/cups\/matches\/[^/]+\/advance$/.test(path));
+    if (safeRead || fixtureMutation || clubMutation || matchdayMutation || cupMutation) {
+      if (fixtureMutation || cupMutation || clubMutation) {
+        // The target resource must exist; otherwise an unvalidated alias could
+        // be used to affect a different or invented record.
+        const fixtureId = path.match(/^\/api\/admin\/(?:fixtures|results)\/([^/]+)/)?.[1];
+        if (fixtureId) {
+          const target=await getFirestoreDb().collection(COLLECTIONS.FIXTURES).doc(decodeURIComponent(fixtureId)).get();
+          trackFirestoreRead(COLLECTIONS.FIXTURES,1,'enforceAllFixtureDelegate');
+          if (!target.exists) { res.status(404).json({error:'FIXTURE_NOT_FOUND'}); return; }
+        }
+        const clubId=path.match(/^\/api\/admin\/clubs\/([^/]+)\//)?.[1];
+        if (clubId) {
+          const target=await getFirestoreDb().collection(COLLECTIONS.CLUBS).doc(decodeURIComponent(clubId)).get();
+          trackFirestoreRead(COLLECTIONS.CLUBS,1,'enforceAllClubDelegate');
+          if (!target.exists) { res.status(404).json({error:'CLUB_NOT_FOUND'}); return; }
+        }
+      }
+      return next();
+    }
+    res.status(403).json({error:'ADMIN_SCOPE_FORBIDDEN',message:'Faqat uchrashuv va klub boshqaruvi uchun ruxsat berilgan.'});
+    return;
+  }
   const deny = () => { res.status(403).json({ error: 'ADMIN_SCOPE_FORBIDDEN', message: 'Sizda bu liga yoki amal uchun ruxsat yo‘q.' }); };
   if (req.method === 'GET' && path === '/api/admin/access') return next();
   if (req.method === 'POST' && /^\/api\/admin\/image-exports\/?$/.test(path)) return next();
@@ -89,7 +134,29 @@ export async function enforceLeagueAdminScope(req: Request, res: Response, next:
 }
 
 export async function getLeagueAdminOverview(user: User, seasonId: string) {
-  const { getAdminClubsFromReadModel, getCompetitionFixturesFromReadModel, getCompetitionsFromReadModel } = await import('../readModel/readModelStore');
+  const { getAdminClubsFromReadModel, getAdminFixturesFromReadModel, getCompetitionFixturesFromReadModel, getCompetitionsFromReadModel } = await import('../readModel/readModelStore');
+  if (canManageAllFixturesAndClubs(user)) {
+    // Return only the selected season to avoid duplicate club IDs and cross-season assignments.
+    // Delegates can switch seasons in the admin panel to manage historic UEFA fixtures.
+    const seasons=[seasonId];
+    const results=await Promise.all(seasons.map(async currentSeason=>{
+      const [catalog,clubs,fixtures]=await Promise.all([
+        getCompetitionsFromReadModel(currentSeason),
+        getAdminClubsFromReadModel(currentSeason),
+        getAdminFixturesFromReadModel({seasonId:currentSeason,limit:100}),
+      ]);
+      return {catalog,clubs,fixtures};
+    }));
+    return {
+      leagues:permittedAdminLeagues(user),
+      competitions:results.flatMap(r=>r.catalog.competitions),
+      clubs:results.flatMap(r=>r.clubs.clubs),
+      fixtures:results.flatMap(r=>r.fixtures.fixtures),
+      hasMoreFixtures:results.some(r=>r.fixtures.hasMore),
+      stale:results.some(r=>r.catalog.stale||r.clubs.stale||r.fixtures.stale),
+      degraded:results.some(r=>r.catalog.degraded||r.clubs.degraded||r.fixtures.degraded),
+    };
+  }
   const allowed = permittedAdminLeagues(user);
   const competitionIds = new Set(permittedAdminCompetitionIds(user));
   const catalog = await getCompetitionsFromReadModel(seasonId);
