@@ -99,11 +99,11 @@ export async function applyGroupResultBacklog(admin:User,tokens:string[]){
      new Set(tokens).size!==tokens.length||tokens.some(t=>!(/^[a-f0-9]{24}$/.test(t))))
     throw Error('INVALID_BACKLOG_SELECTION');
   const results:Array<{fixtureId:string;outcome:'saved'|'skipped'|'failed';reason?:string}>=[];
+  const initial=await previewGroupResultBacklog(100);
   for(const token of tokens){
     let fixtureId='unknown';
     try{
-      const current=await previewGroupResultBacklog(100);
-      const item=current.items.find(i=>i.token===token);
+      const item=initial.items.find(i=>i.token===token);
       if(!item){results.push({fixtureId,outcome:'skipped',reason:'Proposal changed, expired or unavailable'});continue;}
       fixtureId=item.fixtureId;
       const db=getFirestoreDb(),client=getTopicResultStateClient(AbortSignal.timeout(23000));
@@ -113,6 +113,7 @@ export async function applyGroupResultBacklog(admin:User,tokens:string[]){
       const freshDoc=await db.collection('fixtures').doc(fixtureId).get();
       const fresh=safeFixtureSnapshotForTopicRetry(p.plan as any,freshDoc.data());
       if(!fresh)throw Error('FIXTURE_CHANGED');
+      if(!await readBacklogResultAccess(freshDoc.data()))throw Error('RESULT_ENTRY_NOT_OPEN');
       const lease=leaseKey(fixtureId),held=await client.get<string>(lease);
       if(held&&held!==token){
         const previous=await client.get<CandidateProposal&{receipt?:{status:number}}>(proposalKey(held));
@@ -120,8 +121,9 @@ export async function applyGroupResultBacklog(admin:User,tokens:string[]){
           ['done','rejected'].includes(previous.state)&&previous.receipt?.status===409)
           await client.eval(TOPIC_RESULT_RELEASE,[lease],[held]);
       }
-      await client.eval(TOPIC_RESULT_REBASE,
+      const rebased=await client.eval(TOPIC_RESULT_REBASE,
         [proposalKey(token),sourceKey(p),lease],[token,JSON.stringify(fresh),Date.now(),TTL]);
+      if(Number(rebased)!==1)throw Error('PROPOSAL_NO_LONGER_CURRENT');
       const claimed=await client.eval(TOPIC_RESULT_CLAIM,
         [proposalKey(token),lease,sourceKey(p),
           `${PREFIX}source:${p.chat}:${p.thread}:${p.originalSourceMessage||p.sourceMessage}`],
@@ -143,9 +145,10 @@ export async function applyGroupResultBacklog(admin:User,tokens:string[]){
         const replyGate=await client.set(`${PREFIX}backlog-reply:${token}`,1,{nx:true,ex:604800});
         if(replyGate==='OK'){
           try{
-            await sendTelegramMessage(p.chat,
+            const posted=await sendTelegramMessage(p.chat,
               `Natija tasdiqlandi va Web App bazasiga saqlandi.\nHisob: ${p.plan.body.homeScore}:${p.plan.body.awayScore}.\nUchrashuv: ${fixtureId}`,
               {parse_mode:null,message_thread_id:p.thread,reply_to_message_id:p.sourceMessage});
+            if(!posted.ok)console.warn('[TOPIC_BACKLOG_REPLY_REJECTED]',{fixtureId,thread:p.thread});
           }catch(error:any){console.warn('[TOPIC_BACKLOG_REPLY_UNCONFIRMED]',String(error?.message||error).slice(0,120));}
         }
         results.push({fixtureId,outcome:'saved'});
