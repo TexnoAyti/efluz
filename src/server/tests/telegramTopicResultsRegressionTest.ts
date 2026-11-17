@@ -24,6 +24,8 @@ assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'CONFIRMED'
 assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'CONFIRMED',homeScore:0,awayScore:3},feedbackPlan.token,null).reason,'saved_conflict');
 assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'SCHEDULED'},'other',null).reason,'superseded');
 assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'PENDING_CONFIRMATION'},feedbackPlan.token,'b'.repeat(24)).reason,'other_approval');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'PENDING_CONFIRMATION'},feedbackPlan.token,null).reason,'pending_approval');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'DISPUTED'},feedbackPlan.token,null).reason,'dispute');
 assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'executing'},null,feedbackPlan.token,feedbackPlan.token).reason,'in_progress');
 assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'unknown'},null,feedbackPlan.token,feedbackPlan.token).reason,'unknown_outcome');
 assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'rejected',receipt:{status:400}},null,feedbackPlan.token,null).reason,'previously_rejected');
