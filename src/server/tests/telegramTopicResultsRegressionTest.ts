@@ -160,13 +160,51 @@ try {
   assert.equal((await handleTopicResultUpdate(callback(captionReply,rejectToken))).result,'cancelled');
   assert.equal(executions,2); assert.equal(games.at(-1).status,'SCHEDULED');
   assert.equal((await handleTopicResultUpdate(callback(captionReply,captionReply.reply_markup.inline_keyboard[0][0].callback_data))).result,'already_processed');
+  // A real 400 validation error must not strand subsequent approval buttons.
+  // The first click fails; a new result proposal for the same unsaved fixture
+  // must then be independently confirmable exactly once.
+  let validationFails = true;
+  setTestTopicResultDependencies({
+    reader,
+    ownership: async () => ({ data:clubs,available:true,stale:false }),
+    authorize: async id => id === 5209126900,
+    execute: async plan => {
+      if (validationFails) {
+        validationFails = false;
+        return { status:400, data:{ success:false,error:'VALIDATION_ERROR',message:'validation error' } };
+      }
+      executions++;
+      const found = games.find(f=>f.id===plan.targetId)!;
+      assertTopicResultCurrent(found,plan.body.expectedFixture as any);
+      Object.assign(found,plan.body,{updatedAt:'v3'});
+      return {status:200,data:{success:true,fixture:{...found}}};
+    },
+  });
+  const rejectedSource=update('Real Madrid 1-2 Barca');
+  assert.equal((await handleTopicResultUpdate(rejectedSource)).result,'proposal_sent');
+  const rejectedPrompt=sent.at(-1);
+  const rejectedToken=rejectedPrompt.reply_markup.inline_keyboard[0][0].callback_data;
+  assert.equal((await handleTopicResultUpdate(callback(rejectedPrompt,rejectedToken))).result,'executing');
+  assert.match(sent.at(-1).text,/Natija saqlanmadi: validation error/);
+  const retriedSource=update('Real Madrid 1-2 Barca');
+  assert.equal((await handleTopicResultUpdate(retriedSource)).result,'proposal_sent');
+  const retryPrompt=sent.at(-1);
+  const retryToken=retryPrompt.reply_markup.inline_keyboard[0][0].callback_data;
+  assert.equal((await handleTopicResultUpdate(callback(retryPrompt,retryToken))).result,'executing');
+  assert.match(sent.at(-1).text,/Natija saqlandi:/);
+  assert.equal((await handleTopicResultUpdate(callback(retryPrompt,retryToken))).result,'already_processed');
+  assert.equal(executions,3);
+
+  // Restore the mock fixture to an unsaved state for the unrelated delivery-failure test.
+  Object.assign(games[0], {status:'SCHEDULED', updatedAt:'v1'});
+  delete games[0].homeScore; delete games[0].awayScore;
   const failedDelivery=update('Real Madrid 3-1 Barca');
   global.fetch=async (_input: any, init?: any) => { const body=JSON.parse(init.body); sent.push({...body,botId:99999}); return new Response(JSON.stringify({ok:false,description:'mock delivery rejected'})); };
   assert.equal((await handleTopicResultUpdate(failedDelivery)).result,'delivery_unknown');
   const undelivered=sent.at(-1);
   global.fetch=async () => new Response(JSON.stringify({ok:true}));
   assert.equal((await handleTopicResultUpdate(callback(undelivered,undelivered.reply_markup.inline_keyboard[0][0].callback_data))).result,'invalid');
-  assert.equal(executions,2);
+  assert.equal(executions,3);
   // Guarded real document writes: two competing confirmations cannot overwrite each other.
   const live=fixture('atomic-result',liga);
   await db.collection('fixtures').doc(live.id).set(live);
