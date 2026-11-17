@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { initDatabase } from '../db';
 import { getFirestoreDb } from '../firebase/admin';
-import { handleTopicResultUpdate, planTopicResult, competitionResultTopic, topicResultSeason, setTestTopicResultDependencies } from '../services/telegramTopicResults';
+import { handleTopicResultUpdate, planTopicResult, competitionResultTopic, topicResultSeason, describeBlockedTopicResultApproval, setTestTopicResultDependencies } from '../services/telegramTopicResults';
 import { adminEditFixtureResultFirestore } from '../firebase/firestoreStore';
 import { assertTopicResultCurrent } from '../services/topicResultGuard';
 
@@ -19,6 +19,15 @@ const reader: any = { read: async (q: any) => {const all=q.dataset === 'competit
 let executions = 0;
 setTestTopicResultDependencies({ reader, ownership: async () => ({ data: clubs, available: true, stale: false }), authorize: async id => id === 5209126900,
   execute: async plan => { executions++; const f = games.find(f => f.id === plan.targetId); assertTopicResultCurrent(f, plan.body.expectedFixture as any); Object.assign(f, plan.body, {updatedAt:'v2'}); return {status:200,data:{success:true,fixture:{...f}}}; } });
+const feedbackPlan={state:'pending',token:'a'.repeat(24),plan:{action:'result_edit',targetId:'f',body:{homeScore:2,awayScore:1}}} as any;
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'CONFIRMED',homeScore:2,awayScore:1},feedbackPlan.token,null).reason,'already_saved');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'CONFIRMED',homeScore:0,awayScore:3},feedbackPlan.token,null).reason,'saved_conflict');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'SCHEDULED'},'other',null).reason,'superseded');
+assert.equal(describeBlockedTopicResultApproval(feedbackPlan,{status:'PENDING_CONFIRMATION'},feedbackPlan.token,'b'.repeat(24)).reason,'other_approval');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'executing'},null,feedbackPlan.token,feedbackPlan.token).reason,'in_progress');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'unknown'},null,feedbackPlan.token,feedbackPlan.token).reason,'unknown_outcome');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'rejected',receipt:{status:400}},null,feedbackPlan.token,null).reason,'previously_rejected');
+assert.equal(describeBlockedTopicResultApproval({...feedbackPlan,state:'done',receipt:{status:200}},null,feedbackPlan.token,feedbackPlan.token).reason,'processed');
 assert.equal(competitionResultTopic(competitions[0]), 3); assert.equal(competitionResultTopic(competitions[1]), 8);
 assert.equal(topicResultSeason(2),'season-2027-28','current domestic league must use Season 2');
 assert.equal(topicResultSeason(7),'season-2026-27','existing UEFA fixtures remain in Season 1');
