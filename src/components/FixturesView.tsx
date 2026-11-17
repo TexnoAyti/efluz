@@ -131,6 +131,11 @@ export const FixturesView: React.FC = () => {
       if (lock.overrideStatus === 'FORCE_OPEN' || lock.isOpen === true) return false;
     }
     if (activeComp.adminOverrideStatus === 'FORCE_LOCKED' || activeComp.adminOverrideStatus === 'PAUSED') return true;
+    // In Season 2 every scheduled league round is playable, regardless of the
+    // "current matchday" label. Exact forced admin/fixture locks above still win.
+    if (fixtureSeasonId === 'season-2027-28' && activeComp.type === 'LEAGUE' &&
+        activeComp.id.endsWith('-2027') && activeComp.isMatchdayOpen !== false &&
+        md >= 1 && md <= totalMatchdays) return false;
     if (activeComp.adminOverrideStatus === 'FORCE_OPEN') {
       if (isKnockout) return false;
       // Explicit opening of the UEFA competition also preserves reached rounds 1–8.
@@ -269,6 +274,19 @@ export const FixturesView: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {fixtureSeasonId === 'season-2027-28' && activeComp?.type === 'LEAGUE' && (
+        <div role="note" className="glass-panel rounded-xl p-3 sm:p-4 border border-emerald-500/25 bg-emerald-500/5">
+          <p className="text-sm font-black text-[var(--efl-text)]">
+            Barcha {totalMatchdays} turdagi o‘yinlarni oldindan o‘ynashingiz mumkin!
+          </p>
+          <p className="text-xs text-[var(--efl-text-2)] mt-1">
+            “Joriy tur” faqat liga jadvalining holati. Raqibingiz bilan kelishib,
+            istalgan ochiq turdagi o‘yinni o‘tkazing va hisobni kiriting.
+            Admin tomonidan alohida yopilgan o‘yinlar bundan mustasno.
+          </p>
+        </div>
+      )}
 
       {/* Matchday Stepper (For League competitions) */}
       {activeComp?.type === 'LEAGUE' && (
