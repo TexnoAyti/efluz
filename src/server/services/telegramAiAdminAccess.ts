@@ -6,7 +6,7 @@ const DELEGATED_AI_ADMIN_IDS = new Set(['7573478198', '8574301555', '6259134738'
 // League and match AI actions are delegated explicitly. Owner-only AI settings,
 // role administration and global mutations remain restricted.
 export function isAiAdminActor(id: string | number | undefined | null): boolean {
-  return isPrimaryOwner(id) || DELEGATED_AI_ADMIN_IDS.has(String(id)) || SCORE_APPROVAL_ASSISTANTS.has(String(id));
+  return isPrimaryOwner(id) || DELEGATED_AI_ADMIN_IDS.has(String(id));
 }
 const LEAGUE_OPERATIONS = new Set([
   'results_bulk_preview','results_bulk_apply','result_edit','result_clear','result_approve','result_reject',
