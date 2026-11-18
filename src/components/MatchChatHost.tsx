@@ -5,7 +5,7 @@ import {consumePendingMatchChat,matchChatApi,onMatchChatOpen,readMatchChatLaunch
 import type {MatchChatView} from '../types/matchChat';
 import {useAuth} from '../context/AuthContext';
 import {getAuthHeaders} from '../lib/customTournamentApi';
-import {isValidTelegramUsername,openTelegramChat} from '../lib/telegramUtils';
+
 
 
 // Adapt the original chat presentation to the current live room payload.
@@ -136,7 +136,7 @@ export function MatchChatHost(){
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
     <div className="match-chat-avatar"><MessageCircle size={20}/>{avatarBlobs.opponent&&<img key={avatarBlobs.opponent} src={avatarBlobs.opponent} alt="" onError={event=>{event.currentTarget.hidden=true;}}/>}</div>
     <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p><p className="text-[10px] text-amber-300/80">Xavfsizlik va nizolar uchun chatni asosiy admin ko‘rishi mumkin.</p></div>
-    {!target.adminSpectator&&chat&&isValidTelegramUsername(chat.opponentUsername)&&<button className="match-chat-icon" onClick={()=>openTelegramChat(chat.opponentUsername)} aria-label="Telegram profilini ochish" title="Telegram profilini ochish"><Send size={17}/></button>}
+    {!target.adminSpectator&&chat&&<span className="hidden sm:inline text-[10px] text-slate-400" title="EFLUZ o‘yin chati Telegram username o‘zgarsa ham foydalanuvchi ID orqali ishlaydi.">Username o‘zgarsa ham shu chat orqali yozing</span>}
     {target.adminSpectator?<button className="match-chat-icon" onClick={()=>void load()} aria-label="Chatni yangilash"><RefreshCw size={18}/></button>:<button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>}
     <button className="match-chat-icon match-chat-close" onClick={close} aria-label="Yopish"><X size={20}/></button>
     {menu&&chat&&<div className="match-chat-menu">
