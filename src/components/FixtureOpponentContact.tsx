@@ -16,7 +16,9 @@ export function FixtureOpponentContact({fixture, clubId}: {fixture: Fixture; clu
     en: {chat:'Chat with opponent', profile:'Opponent profile', missing:'Opponent contact is unavailable. Please contact an admin.'},
   }[language];
   const {owner} = opponent;
-  if (!owner.userId) return <p className="text-xs text-[var(--efl-text-2)]">{text.missing}</p>;
+  // The match ID, not a mutable Telegram username or a stale fixture owner
+  // display field, identifies the private opponent chat. The server resolves
+  // the current two owners from season occupancy and checks membership.
   const label = text.chat;
   return <button type="button" data-guide="opponent-chat" data-fixture-contact={fixture.id}
     aria-label={`${label} · ${opponent.clubName} · ${fixture.roundName || fixture.matchday}`}
