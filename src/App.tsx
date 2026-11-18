@@ -226,7 +226,7 @@ const AppContent: React.FC = () => {
     const helpText = accountNotImported
       ? 'Telegram orqali kirish aniqlandi, ammo bu akkauntning EFLUZ ma’lumotlari Serverless staging bazasiga hali ko‘chirilmagan.'
       : serverUnavailable
-      ? 'Ma’lumotlar bazasi yoki server vaqtincha javob bermayapti. Hisobingiz va klublaringiz o‘chirilmagan. Birozdan keyin qayta urinib ko‘ring.'
+      ? 'Ma’lumotlar bazasi yoki server vaqtincha javob bermayapti. Bu xabar hisobingiz yoki klublaringiz o‘chirilganini anglatmaydi. Qayta urinib ko‘ring.'
       : authStatus === 'AUTH_ERROR'
       ? 'Telegram orqali kirish tasdiqlanmadi. Mini Appni Telegram ichidan qayta oching.'
       : 'Bu turnir platformasi Telegram Mini App orqali ishlaydi. Davom etish uchun uni Telegram ichidan oching.';
