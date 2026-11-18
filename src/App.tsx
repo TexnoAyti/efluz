@@ -58,7 +58,7 @@ function getInitialTab(): TabType {
 }
 
 const AppContent: React.FC = () => {
-  const { isLoading, user, toastMessage, authStatus, authError, activeSeasonId, currentClub } = useAuth();
+  const { isLoading, user, toastMessage, authStatus, authError, telegramDiagnostics, activeSeasonId, currentClub } = useAuth();
   const { t } = useI18n();
   const [activeTab, setActiveTabState] = useState<TabType>(getInitialTab);
   useEffect(() => {
@@ -218,7 +218,32 @@ const AppContent: React.FC = () => {
   if (isLoading) return <AppLoading mode="screen" />;
 
   if(isAndroidApp&&(authStatus==='AUTH_ANONYMOUS'||authStatus==='AUTH_ERROR'))return <AndroidLoginView/>;
-  if (authStatus === 'AUTH_ANONYMOUS' || authStatus === 'AUTH_ERROR') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-5"><div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-7 text-center shadow-2xl"><div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-emerald-400 text-slate-950 flex items-center justify-center text-2xl font-black">eF</div><h1 className="text-2xl font-black mb-2">EFL UZ</h1><p className="text-slate-300 text-sm leading-6">{authError === 'SERVERLESS_ACCOUNT_NOT_IMPORTED' ? 'Telegram orqali kirish aniqlandi, ammo bu akkauntning EFLUZ ma’lumotlari Serverless staging bazasiga hali ko‘chirilmagan.' : authStatus === 'AUTH_ERROR' ? 'Telegram orqali kirish tasdiqlanmadi. Mini Appni Telegram ichidan qayta oching.' : 'Bu turnir platformasi Telegram Mini App orqali ishlaydi. Davom etish uchun uni Telegram ichidan oching.'}</p>{authError && authError !== 'SERVERLESS_ACCOUNT_NOT_IMPORTED' && <p className="mt-3 text-xs text-rose-300">{authError}</p>}<a href="https://t.me/efleagueuz" target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-emerald-300">Telegram kanaliga o‘tish</a></div></div>;
+  if (authStatus === 'AUTH_ANONYMOUS' || authStatus === 'AUTH_ERROR') {
+    const accountNotImported = authError === 'SERVERLESS_ACCOUNT_NOT_IMPORTED';
+    const serverUnavailable = authStatus === 'AUTH_ERROR' && !accountNotImported &&
+      (Number(telegramDiagnostics.authHttpStatus) >= 500 ||
+        /firestore|postgres|database|initial error|failed to fetch|couldn't connect|timed out|timeout|unavailable|resource_exhausted/i.test(authError || ''));
+    const helpText = accountNotImported
+      ? 'Telegram orqali kirish aniqlandi, ammo bu akkauntning EFLUZ ma’lumotlari Serverless staging bazasiga hali ko‘chirilmagan.'
+      : serverUnavailable
+      ? 'Ma’lumotlar bazasi yoki server vaqtincha javob bermayapti. Hisobingiz va klublaringiz o‘chirilmagan. Birozdan keyin qayta urinib ko‘ring.'
+      : authStatus === 'AUTH_ERROR'
+      ? 'Telegram orqali kirish tasdiqlanmadi. Mini Appni Telegram ichidan qayta oching.'
+      : 'Bu turnir platformasi Telegram Mini App orqali ishlaydi. Davom etish uchun uni Telegram ichidan oching.';
+    return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-5">
+      <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-7 text-center shadow-2xl">
+        <div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-emerald-400 text-slate-950 flex items-center justify-center text-2xl font-black">eF</div>
+        <h1 className="text-2xl font-black mb-2">EFL UZ</h1>
+        <p className="text-slate-300 text-sm leading-6">{helpText}</p>
+        {authStatus === 'AUTH_ERROR' && <button type="button" onClick={() => window.location.reload()}
+          className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-emerald-300">
+          Qayta urinish
+        </button>}
+        <a href="https://t.me/efleagueuz" target="_blank" rel="noopener noreferrer"
+          className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-slate-600 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800">Telegram kanaliga o‘tish</a>
+      </div>
+    </div>;
+  }
 
   if (user && !welcomeCompleted) return <WelcomeScreen seasonId={activeSeasonId} theme={theme} onThemeChange={changeTheme} onStart={completeWelcome} />;
 
