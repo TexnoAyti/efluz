@@ -1,7 +1,7 @@
 import {Router} from 'express';
 import {z} from 'zod';
 import {requireAuth} from '../middleware/authMiddleware';
-import {listMatchChatReports,listMatchChatRoomsForOwner,readMatchChatRoomForOwner,readMatchChatForOwnerByMatch,MatchChatError,readMatchChat,readMatchChatAvatar,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,pinMatchChatMessage,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
+import {listMatchChatReports,listMatchChatRoomsForOwner,readMatchChatRoomForOwner,readMatchChatForOwnerByMatch,MatchChatError,readMatchChat,readMatchChatAvatar,getVerifiedOpponentTelegramLink,reportMatchChat,resolveMatchChatReport,sendMatchChatMessage,pinMatchChatMessage,setMatchChatAdminBlock,setMatchChatBlock} from '../services/matchChatService';
 import type {MatchChatKind} from '../../types/matchChat';
 
 export const matchChatRouter=Router();
@@ -14,6 +14,14 @@ matchChatRouter.get('/admin/rooms/:roomId',async(req,res)=>{try{res.json({ok:tru
 matchChatRouter.get('/reports',async(req,res)=>{try{res.json({ok:true,reports:await listMatchChatReports(req.user!)});}catch(e){fail(res,e);}});
 matchChatRouter.post('/reports/:roomId/:reportId/resolve',async(req,res)=>{try{await resolveMatchChatReport(req.user!,req.params.roomId,req.params.reportId);res.json({ok:true});}catch(e){fail(res,e);}});
 matchChatRouter.post('/reports/:roomId/block',async(req,res)=>{try{const body=z.object({blocked:z.boolean()}).parse(req.body);await setMatchChatAdminBlock(req.user!,req.params.roomId,body.blocked);res.json({ok:true});}catch(e){fail(res,e);}});
+// The URL is returned only after Telegram verifies the opponent's current ID.
+matchChatRouter.get('/:kind/:matchId/opponent-telegram',async(req,res)=>{
+ try{
+  res.setHeader('Cache-Control','private, no-store');
+  const p=target.parse(req.params);
+  res.json({ok:true,...await getVerifiedOpponentTelegramLink(p.kind as MatchChatKind,p.matchId,req.user!)});
+ }catch(e){fail(res,e);}
+});
 matchChatRouter.get('/:kind/:matchId/avatar/:side',async(req,res)=>{
   try{
     const p=target.extend({side:z.enum(['me','opponent'])}).parse(req.params);
