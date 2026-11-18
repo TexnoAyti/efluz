@@ -18,4 +18,14 @@ assert.equal(fixtureOpponent({...league,awayOwner:{userId:'new-owner',username:n
 assert.equal(fixtureOpponent({...league,awayOwner:{userId:'owner-away',username:'https://bad.example',displayName:'Away'}},'mine')?.owner.username,null);
 assert.equal(fixtureOpponent({...league,awayOwner:{userId:'owner-away',username:'tg_123456',displayName:'Away'}},'mine')?.owner.username,null);
 assert.equal(fixtureOpponent({...league,awayOwner:null,awayUser:{id:'hydrated-away',username:'hydrated_player',displayName:'Hydrated'}},'mine')?.owner.username,'hydrated_player');
+
+// A mutable Telegram username (or a missing fixture owner projection) must
+// not determine whether the match-ID-backed EFLUZ chat button is available.
+import {readFileSync} from 'node:fs';
+const contactSource=readFileSync(new URL('../../components/FixtureOpponentContact.tsx',import.meta.url),'utf8');
+assert.match(contactSource,/openMatchChat\(\{kind:'fixture',matchId:fixture\.id/);
+assert.doesNotMatch(contactSource,/if\s*\(!owner\.userId\)/);
+const hostSource=readFileSync(new URL('../../components/MatchChatHost.tsx',import.meta.url),'utf8');
+assert.doesNotMatch(hostSource,/openTelegramChat\(chat\.opponentUsername\)/);
+
 console.log('PASS selected-fixture contacts: historical league/cup, both sides, closed rounds, unrelated clubs, current-owner profile fallback and unsafe/synthetic usernames');
