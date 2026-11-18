@@ -5,6 +5,7 @@ on:
       - 'tgcloud/lib/importBatch.js'
       - 'tgcloud/lib/importEngine.js'
       - 'tgcloud/lib/migrationReadback.js'
+      - 'src/server/services/telegramAiAdminService.ts'
       - 'tgcloud/endpoints/migrationReadback.js'
       - 'tgcloud/lib/resultProposal.js'
       - 'tgcloud/lib/clubClaim.js'
@@ -215,6 +216,8 @@ jobs:
         run: bun run build:tgcloud
       - name: Verify no Node server or private assets enter Telegram CDN
         run: node scripts/verifyTgcloudStatic.mjs
+      - name: Typecheck staging source and UI
+        run: bun run lint
       - name: Build production-shaped EFLUZ React UI for Serverless (no deploy)
         run: |
           bun run build:tgcloud:real-ui
