@@ -5,6 +5,12 @@ export const ADMIN_LEAGUES = [
   { id: 'league-serie-a', name: 'Serie A', competitionId: 'comp-serie-a-2026', cupCompetitionId: 'comp-coppa-italia-2026' },
   { id: 'league-bundesliga', name: 'Bundesliga', competitionId: 'comp-bundesliga-2026', cupCompetitionId: 'comp-dfb-pokal-2026' },
   { id: 'league-ligue-1', name: 'Ligue 1', competitionId: 'comp-ligue-1-2026', cupCompetitionId: 'comp-coupe-de-france-2026' },
+  // Season 2 catalog entries. Planned Asian competitions must not be reported
+  // as live until an authoritative competition record exists.
+  { id: 'league-uzbekistan-superliga', name: 'O‘zbekiston Superligasi', competitionId: 'comp-uzbekistan-superliga-2027', cupCompetitionId: '' },
+  { id: 'league-saudi-pro-league', name: 'Saudi Pro League', competitionId: 'comp-saudi-pro-league-2027', cupCompetitionId: '' },
+  { id: 'league-j1', name: 'J1 League', competitionId: 'comp-j1-2027', cupCompetitionId: '' },
+  { id: 'league-turkey-super-lig', name: 'Süper Lig', competitionId: 'comp-turkey-super-lig-2027', cupCompetitionId: '' },
 ];
 export function isLeagueAdmin(user: Pick<User, 'adminPermissions'>): boolean {
   return user.adminPermissions != null && user.adminPermissions.scope !== 'ALL';
@@ -20,5 +26,9 @@ export function canUseDangerZone(user?: Pick<User, 'id' | 'telegramId' | 'isAdmi
   return Boolean(user?.isAdmin && !user.isSuspended && String(user.telegramId) === MAIN_ADMIN_TELEGRAM_ID && user.id === `user-${MAIN_ADMIN_TELEGRAM_ID}`);
 }
 export function permittedAdminCompetitionIds(user: Pick<User, 'adminPermissions'>): string[] {
-  return permittedAdminLeagues(user).flatMap(league => [league.competitionId, league.cupCompetitionId]);
+  return permittedAdminLeagues(user).flatMap(league => [
+    league.competitionId,
+    league.competitionId.replace(/-2026$/, '-2027'),
+    league.cupCompetitionId,
+  ].filter(Boolean));
 }
