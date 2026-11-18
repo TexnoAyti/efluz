@@ -3,7 +3,7 @@ import { isSeasonCompetitionEnabled } from '../../lib/seasonParticipationPolicy'
 import { previewBulkLeagueResults, applyBulkLeagueResults } from '../services/bulkLeagueResults';
 import { createHash } from 'node:crypto';
 import { readSharedAdminData } from '../services/adminReviewCache';
-import { canUseDangerZone, isLeagueAdmin, permittedAdminLeagues } from '../../lib/adminPermissions';
+import { ADMIN_LEAGUES, canUseDangerZone, isLeagueAdmin, permittedAdminLeagues } from '../../lib/adminPermissions';
 import { matchesUserSearch } from '../../lib/userSearch';
 import { getAdminUserDirectory, resolveAdminUserReference } from '../services/adminUserDirectory';
 import { Router, Request, Response } from 'express';
@@ -665,7 +665,7 @@ adminRouter.get('/users/:id/detail', async (req: Request, res: Response) => {
 // User role management (Make/Remove Admin)
 const adminSetRoleSchema = z.object({
   isAdmin: z.boolean(),
-  adminPermissions: z.object({ scope: z.enum(['ALL', 'LEAGUES']), leagueIds: z.array(z.enum(['league-premier-league', 'league-la-liga', 'league-serie-a', 'league-bundesliga', 'league-ligue-1'])).max(5) }).optional(),
+  adminPermissions: z.object({ scope: z.enum(['ALL', 'LEAGUES']), leagueIds: z.array(z.string().refine(id => ADMIN_LEAGUES.some(league => league.id === id), 'UNKNOWN_ADMIN_LEAGUE')).max(ADMIN_LEAGUES.length) }).optional(),
 }).refine(value => !value.isAdmin || Boolean(value.adminPermissions && (value.adminPermissions.scope === 'ALL' || value.adminPermissions.leagueIds.length)), { message: 'Admin uchun ruxsat turini va kamida bitta ligani tanlang.' });
 
 adminRouter.post('/users/:id/role', validateBody(adminSetRoleSchema), async (req: Request, res: Response) => {
