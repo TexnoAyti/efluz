@@ -5873,6 +5873,11 @@ export async function adminReleaseClubFirestore(
     await db.runTransaction(async batch => {
     const clubOccDoc = await batch.get(clubOccRef);
     const previousUserId = clubOccDoc.exists ? clubOccDoc.data()?.userId : null;
+    // A repeated click must never release an already vacant club a second time.
+    // Require a real current owner before any membership or club writes.
+    if (!previousUserId || clubOccDoc.data()?.status === 'released') {
+      throw new ClubConflictError('Klub allaqachon bo‘sh. Hech qanday o‘zgarish qilinmadi.');
+    }
     if (options?.expectedOwnerUserId && previousUserId !== options.expectedOwnerUserId)
       throw new ClubConflictError('Klub egasi reja tuzilgandan keyin o‘zgargan. Amal bajarilmadi; yangi reja tuzing.');
     const previousUserMem = previousUserId
