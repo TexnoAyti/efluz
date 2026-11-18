@@ -451,9 +451,13 @@ telegramRouter.get('/admin/group-club-owners-left', requireAdmin, async (req, re
   res.setHeader('Cache-Control','private, no-store');
   const actor=req.user;
   const authoritative=actor?await getAuthoritativeUserForAuthorization(actor.id):null;
-  if(!authoritative||!isPrimaryOwner(authoritative.telegramId)||!authoritative.isAdmin||authoritative.isSuspended||
+  // This is a read-only report about currently assigned club owners.
+  // Full administrators may inspect it; no group-removal or club-release
+  // mutation is exposed through this endpoint.
+  if(!authoritative||!authoritative.isAdmin||authoritative.isSuspended||
+     authoritative.adminPermissions?.scope === 'LEAGUES'||
      String(authoritative.telegramId)!==String(actor?.telegramId)){
-    res.status(403).json({ok:false,error:'PRIMARY_OWNER_REQUIRED'});return;
+    res.status(403).json({ok:false,error:'FULL_ADMIN_REQUIRED'});return;
   }
   res.json({ok:true,...await listSeasonGroupedClubOwnerExits()});
  } catch (error) {
