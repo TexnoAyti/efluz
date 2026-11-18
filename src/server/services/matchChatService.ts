@@ -57,6 +57,40 @@ async function context(kind:MatchChatKind,rawId:string,user:User){
  return value;
 }
 
+/**
+ * Resolve the opponent's *current* public username from Telegram, not the
+ * possibly stale fixture/club/chat snapshot. The requester must be one of the
+ * current match participants. Fail closed if Telegram cannot confirm the user.
+ */
+export async function getVerifiedOpponentTelegramLink(kind:MatchChatKind,matchId:string,user:User):
+  Promise<{url:string|null;reason:'OK'|'NO_PUBLIC_USERNAME'|'UNAVAILABLE'}> {
+ const match=await context(kind,matchId,user);
+ const opponent=match.participants.find(p=>p.id!==user.id);
+ if(!opponent)throw new MatchChatError('Raqib aniqlanmadi.',404,'OPPONENT_UNAVAILABLE');
+ const db=getFirestoreDb();
+ const record=await db.collection(COLLECTIONS.USERS).doc(opponent.id).get();
+ const tgId=String(record.data()?.telegramId||'');
+ const token=process.env.TELEGRAM_BOT_TOKEN?.trim();
+ if(!/^[1-9][0-9]{3,19}$/.test(tgId)||!token)return {url:null,reason:'UNAVAILABLE'};
+ try {
+   const response=await fetch(`https://api.telegram.org/bot${token}/getChat`,{
+     method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({chat_id:tgId}),
+     signal:AbortSignal.timeout(4500),
+   });
+   if(!response.ok)return {url:null,reason:'UNAVAILABLE'};
+   const payload=await response.json() as any;
+   if(payload?.ok!==true||String(payload?.result?.id)!==tgId)
+     return {url:null,reason:'UNAVAILABLE'};
+   const username=String(payload.result.username||'').trim();
+   if(!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(username))
+     return {url:null,reason:'NO_PUBLIC_USERNAME'};
+   return {url:`https://t.me/${username}`,reason:'OK'};
+ } catch {
+   return {url:null,reason:'UNAVAILABLE'};
+ }
+}
+
 /** Read-only authorization for the exhibition penalty scoreboard; does not create chat rooms. */
 export async function authorizePenaltyFixture(matchId:string,user:User){
  const match=await context('fixture',matchId,user);
