@@ -5843,6 +5843,14 @@ export async function adminReleaseClubFirestore(
     
     await db.runTransaction(async batch => {
     const clubOccDoc = await batch.get(clubOccRef);
+    const clubDoc = await batch.get(clubRef);
+    // Season 2 may have an authoritative occupancy but no global base club
+    // record yet. Only allow this for a club present in the curated season
+    // roster, and only when its occupancy already exists.
+    if (!clubDoc.exists && (!clubOccDoc.exists ||
+      !seasonClubs(seasonId).some(club => club.id === clubId))) {
+      throw new ClubNotFoundError(`Club with ID '${clubId}' not found.`);
+    }
     const previousUserId = clubOccDoc.exists ? clubOccDoc.data()?.userId : null;
     if (options?.expectedOwnerUserId && previousUserId !== options.expectedOwnerUserId)
       throw new ClubConflictError('Klub egasi reja tuzilgandan keyin o‘zgargan. Amal bajarilmadi; yangi reja tuzing.');
@@ -5878,8 +5886,9 @@ export async function adminReleaseClubFirestore(
 
     batch.set(db.collection(COLLECTIONS.CLUB_MEMBERSHIPS).doc(`${seasonId}_${clubId}`), { status: 'released', updatedAt: now }, { merge: true });
 
-    // Update club record
-    batch.update(clubRef, {
+    // Do not update a missing base record. The season occupancy is the
+    // authority for clubs that exist only in the Season 2 prepared roster.
+    if (clubDoc.exists) batch.update(clubRef, {
       isTaken: false,
       claimedByUserId: null,
       updatedAt: now,
