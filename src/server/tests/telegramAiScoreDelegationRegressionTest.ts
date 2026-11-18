@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import {isAiAdminActor,assertAiAdminActionAllowed} from '../services/telegramAiAdminAccess';
 
-const assistant=8574301555;
-assert.equal(isAiAdminActor(assistant),true,'Verified user is a delegated AI actor');
-assert.doesNotThrow(()=>assertAiAdminActionAllowed(assistant,{action:'result_approve',targetId:'result-test',body:{homeScore:1,awayScore:0}} as any));
-assert.doesNotThrow(()=>assertAiAdminActionAllowed(assistant,{action:'result_reject',targetId:'result-test',body:{}} as any));
-for(const action of ['club_release','matchday_advance','results_bulk_apply','user_role','fixture_delete','result_edit','result_clear']){
- assert.throws(()=>assertAiAdminActionAllowed(assistant,{action,targetId:'test',body:{}} as any),'Delegation cannot grant '+action);
+const delegates=[8574301555,6259134738,8713569435];
+for(const assistant of delegates){
+  assert.equal(isAiAdminActor(assistant),true,'Verified full admin is a delegated AI actor');
+  for(const action of ['result_approve','result_reject','club_release','club_assign',
+    'matchday_advance','results_bulk_apply','result_edit','result_clear','cup_reconcile']){
+    assert.doesNotThrow(()=>assertAiAdminActionAllowed(assistant,{action,targetId:'test',body:{}} as any));
+  }
+  for(const action of ['user_role','fixture_delete','broadcast','user_suspend']){
+    assert.throws(()=>assertAiAdminActionAllowed(assistant,{action,targetId:'test',body:{}} as any),
+      'Owner-only AI operation remains restricted: '+action);
+  }
 }
 assert.equal(isAiAdminActor(123456789),false,'Unlisted Telegram ID is not an AI admin');
-console.log('PASS verified assistant may use AI and confirm/reject results only');
+console.log('PASS verified AI delegates manage league actions without owner-only privileges');
