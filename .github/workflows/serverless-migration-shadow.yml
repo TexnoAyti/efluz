@@ -179,6 +179,8 @@ on:
       - 'scripts/checkTgcloudModules.mjs'
       - 'tgcloud/endpoints/standings.js'
       - 'tgcloud.jsonc'
+      - 'src/App.tsx'
+      - 'src/context/AuthContext.tsx'
       - 'vite.config.ts'
       - 'tgcloud-staging/**'
       - 'package.json'
