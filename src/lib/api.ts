@@ -621,10 +621,10 @@ export const api = {
     return request(`/api/admin/overview?seasonId=${seasonId}`, { cacheTtlMs: 15000, skipCache });
   },
 
-  async adminReleaseClub(clubId: string, seasonId = 'season-2026-27'): Promise<{ success: boolean; message: string; club: Club }> {
+  async adminReleaseClub(clubId: string, seasonId = 'season-2026-27', expectedOwnerUserId?: string): Promise<{ success: boolean; message: string; club: Club }> {
     const res = await request<{ success: boolean; message: string; club: Club }>(`/api/admin/clubs/${clubId}/release`, {
       method: 'POST',
-      body: JSON.stringify({ seasonId }),
+      body: JSON.stringify({ seasonId, expectedOwnerUserId }),
     });
     invalidateClientCache('/api/admin/clubs');
     invalidateClientCache('/api/clubs');
