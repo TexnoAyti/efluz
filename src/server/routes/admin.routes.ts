@@ -1140,6 +1140,15 @@ adminRouter.post('/clubs/:id/release', async (req: Request, res: Response) => {
   if (expectedOwnerUserId !== undefined && (typeof expectedOwnerUserId !== 'string' || !/^user-\d+$/.test(expectedOwnerUserId))) {
     res.status(400).json({ error: 'INVALID_EXPECTED_OWNER' }); return;
   }
+  // Delegated admins must confirm the immutable owner ID seen on screen.
+  // This prevents stale or repeated requests from silently releasing a club.
+  if (!canUseDangerZone(req.user) && !expectedOwnerUserId) {
+    res.status(400).json({
+      error: 'EXPECTED_OWNER_REQUIRED',
+      message: 'Klub egasining tasdiqlangan ID raqami talab qilinadi. Ro‘yxatni yangilang.',
+    });
+    return;
+  }
 
   try {
     const result = await adminReleaseClubFirestore(adminUserId, clubId, seasonId, { expectedOwnerUserId });
