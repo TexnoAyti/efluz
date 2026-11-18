@@ -25,9 +25,43 @@ function restoreChatView(raw:MatchChatView):MatchChatView{
 export function MatchChatHost(){
  const {user,notifications,markNotificationAsRead}=useAuth(),[target,setTarget]=useState<MatchChatTarget|null>(null),[chat,setChat]=useState<MatchChatView|null>(null),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[menu,setMenu]=useState(false),[reporting,setReporting]=useState(false),[reportReason,setReportReason]=useState(''),[replyTo,setReplyTo]=useState<string|null>(null),[hasNewMessages,setHasNewMessages]=useState(false),[gameOpen,setGameOpen]=useState(false);
  const [avatarBlobs,setAvatarBlobs]=useState<{me?:string;opponent?:string}>({});
+ const [telegramContact,setTelegramContact]=useState<{url:string|null;checked:boolean}>({url:null,checked:false});
  const gameFullscreenRequested=useRef(false);
   const input=useRef<HTMLTextAreaElement>(null),loading=useRef(false),messages=useRef<HTMLDivElement>(null),backdrop=useRef<HTMLDivElement>(null),stickToBottom=useRef(true),typingSentAt=useRef(0),typingIdleTimer=useRef<number|null>(null),lastMessageId=useRef<string|null>(null);
  const inTelegram=typeof window!=='undefined'&&Boolean((window as any).Telegram?.WebApp?.initData);
+
+ // Resolve Telegram contact from the bot by immutable opponent ID, never
+ // trust the username in a previously cached match view.
+ useEffect(()=>{
+   let cancelled=false;
+   setTelegramContact({url:null,checked:false});
+   if(!target||target.adminSpectator||!chat?.opponentId)return;
+   const controller=new AbortController();
+   void (async()=>{
+     try{
+       const response=await fetch(`/api/match-chat/${target.kind}/${encodeURIComponent(target.matchId)}/opponent-telegram`,{
+         headers:getAuthHeaders(),cache:'no-store',signal:controller.signal,
+       });
+       const data=await response.json();
+       if(cancelled)return;
+       const url=typeof data.url==='string'&&/^https:\/\/t\.me\/[A-Za-z][A-Za-z0-9_]{4,31}$/.test(data.url)?data.url:null;
+       setTelegramContact({url,checked:true});
+     }catch{if(!cancelled)setTelegramContact({url:null,checked:true});}
+   })();
+   return ()=>{cancelled=true;controller.abort();};
+ },[target?.kind,target?.matchId,target?.adminSpectator,chat?.opponentId]);
+
+ const openOpponentTelegram=()=>{
+   if(!telegramContact.url){
+     setError(telegramContact.checked
+       ? 'Telegram lichkasi ochilmadi: raqibning joriy username’i tasdiqlanmadi. EFLUZ chatidan yozing.'
+       : 'Telegram profili tekshirilmoqda. Hozircha EFLUZ chatidan yozing.');
+     return;
+   }
+   const tg=(window as any).Telegram?.WebApp;
+   if(typeof tg?.openTelegramLink==='function')tg.openTelegramLink(telegramContact.url);
+   else window.open(telegramContact.url,'_blank','noopener,noreferrer');
+ };
 
  const stopTyping=()=>{if(typingIdleTimer.current!==null){window.clearTimeout(typingIdleTimer.current);typingIdleTimer.current=null;}
   if(typingSentAt.current&&target){typingSentAt.current=0;void Promise.resolve().catch(()=>{});}
@@ -136,7 +170,10 @@ export function MatchChatHost(){
     <button className="match-chat-icon" onClick={close} aria-label="Chatni yopish"><ArrowLeft size={20}/></button>
     <div className="match-chat-avatar"><MessageCircle size={20}/>{avatarBlobs.opponent&&<img key={avatarBlobs.opponent} src={avatarBlobs.opponent} alt="" onError={event=>{event.currentTarget.hidden=true;}}/>}</div>
     <div className="min-w-0 flex-1"><h2>{chat?.opponentName||target.opponentName||'Raqib bilan chat'}</h2><p>{chat?.subtitle||target.title||'O‘yin chati'}</p><p className="text-[10px] text-amber-300/80">Xavfsizlik va nizolar uchun chatni asosiy admin ko‘rishi mumkin.</p></div>
-    {!target.adminSpectator&&chat&&<span className="hidden sm:inline text-[10px] text-slate-400" title="EFLUZ o‘yin chati Telegram username o‘zgarsa ham foydalanuvchi ID orqali ishlaydi.">Username o‘zgarsa ham shu chat orqali yozing</span>}
+    {!target.adminSpectator&&chat&&<button type="button" className="match-chat-icon" onClick={openOpponentTelegram}
+      aria-label="Telegram lichkasiga o‘tish" title="Raqibning hozirgi Telegram profili tasdiqlanganda ochiladi">
+      <Send size={17}/>
+    </button>}
     {target.adminSpectator?<button className="match-chat-icon" onClick={()=>void load()} aria-label="Chatni yangilash"><RefreshCw size={18}/></button>:<button className="match-chat-icon" onClick={()=>setMenu(!menu)} aria-label="Chat amallari"><MoreVertical size={20}/></button>}
     <button className="match-chat-icon match-chat-close" onClick={close} aria-label="Yopish"><X size={20}/></button>
     {menu&&chat&&<div className="match-chat-menu">
