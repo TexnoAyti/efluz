@@ -281,6 +281,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
 }) => {
   const { t } = useI18n();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const targetIsAdmin = true;
   const [scope, setScope] = useState<'ALL' | 'LEAGUES'>(user.isAdmin && !user.adminPermissions ? 'ALL' : user.adminPermissions?.scope || 'LEAGUES');
   const [leagueIds, setLeagueIds] = useState<string[]>(user.adminPermissions?.leagueIds || []);
@@ -288,12 +289,13 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
   if (!isOpen) return null;
 
   const handleAction = async (grant = true) => {
+    setSubmitError(null);
     setIsSubmitting(true);
     try {
       await onConfirm(grant, { scope, leagueIds: scope === 'ALL' ? [] : leagueIds });
       onClose();
     } catch (err) {
-      console.error(err);
+      setSubmitError(err instanceof Error ? err.message : 'Admin ruxsatlarini saqlashda xato yuz berdi.');
     } finally {
       setIsSubmitting(false);
     }
@@ -340,6 +342,7 @@ export const AdminSetRoleModal: React.FC<SetRoleModalProps> = ({
           <label className="flex gap-2"><input type="radio" name="admin-scope" checked={scope === 'ALL'} onChange={() => setScope('ALL')} />Barcha admin ruxsatlari</label>
           <p className="text-xs text-slate-400">Liga admini faqat tanlangan ligalarning klublari, o‘yinlari va turlarini boshqaradi.</p>
         </fieldset>
+        {submitError && <div role="alert" className="rounded-lg border border-rose-400/40 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">{submitError}</div>}
         {user.isAdmin && <button type="button" disabled={isSubmitting} onClick={() => handleAction(false)} className="text-sm text-rose-400">Adminlikni olib tashlash</button>}
         <div className="flex items-center justify-end gap-2 pt-2">
           <button
