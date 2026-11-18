@@ -772,6 +772,13 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
 
   const assignableUsers = useMemo(() => users.filter(user => matchesUserSearch(user, assignUserSearch)).slice(0, assignUserSearch.trim() ? 20 : 15), [users, assignUserSearch]);
 
+  // Planned leagues are visible to the owner, but never presented as live or
+  // actionable before an authoritative season-scoped competition exists.
+  const unprovisionedLeagues = activeSeasonId === 'season-2027-28' && !isScoped
+    ? allowedLeagues.filter(league => !competitions.some(comp =>
+        comp.type === 'LEAGUE' && comp.leagueId === league.id && comp.seasonId === activeSeasonId))
+    : [];
+
   // Clean, official competition categorization
   const groupedCompetitions = useMemo(() => {
     // Season 1 is now a residual view: only European cups and Super Cups remain.
@@ -2087,6 +2094,22 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
       {/* ========================================================================= */}
       {activeAdminTab === 'competitions' && (
         <div className="space-y-6">
+          {loadedTabs.has('competitions') && unprovisionedLeagues.length > 0 && (
+            <div role="status" className="rounded-xl border border-amber-500/30 bg-slate-900 p-4 text-sm text-slate-200">
+              <p className="font-bold text-amber-300">2-mavsum: hali ishga tushirilmagan ligalar ({unprovisionedLeagues.length})</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Bular reja katalogida mavjud, ammo joriy bazada musobaqa yozuvi yo‘q.
+                O‘yinlar va klublar yaratilmaguncha natija yoki tur boshqaruvi ochilmaydi.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {unprovisionedLeagues.map(league => (
+                  <span key={league.id} className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold">
+                    {league.name} · tayyorlanmoqda
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="glass-panel p-4 space-y-1">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
