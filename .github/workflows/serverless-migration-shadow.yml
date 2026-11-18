@@ -180,6 +180,7 @@ on:
       - 'tgcloud/endpoints/standings.js'
       - 'tgcloud.jsonc'
       - 'src/lib/adminPermissions.ts'
+      - 'src/server/firebase/firestoreStore.ts'
       - 'src/components/AdminView.tsx'
       - 'src/App.tsx'
       - 'src/context/AuthContext.tsx'
