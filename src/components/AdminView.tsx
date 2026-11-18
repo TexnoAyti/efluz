@@ -207,6 +207,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
   const [assignTargetUserId, setAssignTargetUserId] = useState<string>('');
   const [assignUserSearch, setAssignUserSearch] = useState<string>('');
   const [selectedClubForRelease, setSelectedClubForRelease] = useState<Club | null>(null);
+  const [releaseClubConfirmation, setReleaseClubConfirmation] = useState('');
 
   // Results Management Modals
   const [selectedPendingForApprove, setSelectedPendingForApprove] = useState<PendingFixtureItem | null>(null);
@@ -489,9 +490,16 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
     if (!selectedClubForRelease) return;
     setIsProcessing(true);
     try {
-      const res = await api.adminReleaseClub(selectedClubForRelease.id, activeSeasonId);
+      if (releaseClubConfirmation.trim() !== selectedClubForRelease.name) {
+        showToast('Tasdiqlash uchun klub nomini to‘liq kiriting.', 'error');return;
+      }
+      if (!selectedClubForRelease.claimedByUserId) {
+        showToast('Klub egasining ID raqami aniqlanmadi. Ro‘yxatni yangilang.', 'error');return;
+      }
+      const res = await api.adminReleaseClub(selectedClubForRelease.id, activeSeasonId, selectedClubForRelease.claimedByUserId);
       showToast(res.message || `Club '${selectedClubForRelease.name}' has been released.`, 'success');
       setSelectedClubForRelease(null);
+      setReleaseClubConfirmation('');
       await loadAllAdminData(true);
     } catch (err: any) {
       showToast(err.message || 'Failed to release club.', 'error');
@@ -3024,6 +3032,12 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
               {loc('Klub darhol boshqa o‘yinchilar uchun ochiladi.', 'Клуб сразу станет доступен другим игрокам.', 'The club will immediately become available to other players.')}
             </p>
 
+            <label className="block text-xs font-bold text-slate-300">
+              Tasdiqlash uchun klub nomini yozing: <strong className="text-white">{selectedClubForRelease.name}</strong>
+              <input value={releaseClubConfirmation} onChange={event=>setReleaseClubConfirmation(event.target.value)}
+                autoComplete="off" className="mt-2 w-full rounded-lg border border-rose-500/40 bg-slate-950 px-3 py-2 text-white"
+                placeholder={selectedClubForRelease.name}/>
+            </label>
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
               <button
                 type="button"
@@ -3035,7 +3049,7 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
               <button
                 type="button"
                 onClick={handleReleaseClub}
-                disabled={isProcessing}
+                disabled={isProcessing || releaseClubConfirmation.trim() !== selectedClubForRelease.name || !selectedClubForRelease.claimedByUserId}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition-all disabled:opacity-50"
               >
                 {isProcessing ? loc('Bo‘shatilmoqda…', 'Освобождается…', 'Releasing...') : loc('Bo‘shatishni tasdiqlash', 'Подтвердить освобождение', 'Confirm Release')}
