@@ -1,4 +1,5 @@
 name: EFLUZ Season 2 guide one-time delivery wake
+# Retry once after the persisted recipient directory was verified and reuse enabled.
 on:
   push:
     branches: [main]
