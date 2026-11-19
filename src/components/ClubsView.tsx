@@ -103,6 +103,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
     if (activeSeasonId === EFL_SECOND_SEASON.id) return 'league-premier-league';
     try { return EFL_2_DESIGN_ENABLED && sessionStorage.getItem('efl:preview-league') || 'league-premier-league'; } catch { return 'league-premier-league'; }
   });
+  // Keep the latest selection available to asynchronous catalog requests.
+  // Selecting a league must not restart the season catalog request.
+  const selectedLeagueRef = useRef(selectedLeagueId);
+  selectedLeagueRef.current = selectedLeagueId;
   const [activeLeagueTab, setActiveLeagueTab] = useState<'CLUBS' | 'MATCHES' | 'STANDINGS'>(() => {
     if (!EFL_2_DESIGN_ENABLED) return 'CLUBS';
     try {
@@ -255,39 +259,45 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
     }
   }, [activeSeasonId]);
 
-  // 2. Load fixtures & standings for selected league on demand
+  // 2. Only the most recently selected league may update the current view.
+  const standingsRequestVersion = useRef(0);
+  const fixturesRequestVersion = useRef(0);
   const loadLeagueStandings = useCallback(async (leagueId: string, compsList?: Competition[]) => {
+    const version = ++standingsRequestVersion.current;
     const list = compsList || leagueCompetitions;
-    const matchingComp = list.find((c) => c.leagueId === leagueId && c.type === 'LEAGUE');
-    if (!matchingComp) return;
+    const matchingComp = list.find(c => c.leagueId === leagueId && c.type === 'LEAGUE');
+    setLeagueStandings([]);
+    if (!matchingComp) { setIsLoadingStandings(false); return; }
 
     setIsLoadingStandings(true);
     try {
       const standRes = await api.getCompetitionStandings(matchingComp.id, false, activeSeasonId);
-      setLeagueStandings(standRes.standings || []);
+      if (version === standingsRequestVersion.current && selectedLeagueRef.current === leagueId)
+        setLeagueStandings(standRes.standings || []);
     } catch (err) {
-      console.error('Failed to load league standings:', err);
+      if (version === standingsRequestVersion.current) console.error('Failed to load league standings:', err);
     } finally {
-      setIsLoadingStandings(false);
+      if (version === standingsRequestVersion.current) setIsLoadingStandings(false);
     }
   }, [leagueCompetitions, activeSeasonId]);
 
   const loadLeagueFixtures = useCallback(async (leagueId: string, matchday?: number, compsList?: Competition[]) => {
+    const version = ++fixturesRequestVersion.current;
     const list = compsList || leagueCompetitions;
-    const matchingComp = list.find((c) => c.leagueId === leagueId && c.type === 'LEAGUE');
-    if (!matchingComp) return;
+    const matchingComp = list.find(c => c.leagueId === leagueId && c.type === 'LEAGUE');
+    setLeagueFixtures([]);
+    if (!matchingComp) { setIsLoadingFixtures(false); return; }
 
     setIsLoadingFixtures(true);
     try {
       const targetMd = matchday ?? selectedMatchday;
       const fixRes = await api.getCompetitionFixtures(matchingComp.id, targetMd, undefined, false, activeSeasonId);
-      if (fixRes.fixtures) {
-        setLeagueFixtures(fixRes.fixtures);
-      }
+      if (version === fixturesRequestVersion.current && selectedLeagueRef.current === leagueId)
+        setLeagueFixtures(fixRes.fixtures || []);
     } catch (err) {
-      console.error('Failed to load league fixtures:', err);
+      if (version === fixturesRequestVersion.current) console.error('Failed to load league fixtures:', err);
     } finally {
-      setIsLoadingFixtures(false);
+      if (version === fixturesRequestVersion.current) setIsLoadingFixtures(false);
     }
   }, [leagueCompetitions, selectedMatchday, activeSeasonId]);
 
@@ -319,10 +329,14 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
         // State updater functions must stay pure. Starting another state
         // update/request from inside an updater can crash React rendering
         // on Telegram WebView (the entire Leagues page appears blank).
-        const target = domesticLeagues.some((league) => league.id === selectedLeagueId)
-          ? selectedLeagueId
+        const currentSelection = selectedLeagueRef.current;
+        const target = domesticLeagues.some(league => league.id === currentSelection)
+          ? currentSelection
           : domesticLeagues[0].id;
-        if (target !== selectedLeagueId) setSelectedLeagueId(target);
+        if (target !== currentSelection) {
+          selectedLeagueRef.current = target;
+          setSelectedLeagueId(target);
+        }
         if (activeSeasonId !== EFL_SECOND_SEASON.id) void loadClubsForLeague(target);
       }
     } catch (err: any) {
@@ -339,14 +353,13 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
         isQuota,
       });
     }
-  }, [activeSeasonId, selectedLeagueId, loadClubsForLeague]);
+  }, [activeSeasonId, loadClubsForLeague]);
 
   useEffect(() => {
-    if (activeSeasonId === EFL_SECOND_SEASON.id) {
-      // Fetch prepared-season club availability without waiting for the
-      // competitions endpoint, which can be considerably slower.
-      void loadClubsForLeague('league-premier-league');
-    }
+    // Fetch selected clubs immediately. Never force Premier League while another
+    // league is selected, and never restart catalog fetching on every click.
+    if (activeSeasonId === EFL_SECOND_SEASON.id)
+      void loadClubsForLeague(selectedLeagueRef.current);
     void loadLeaguesAndComps();
   }, [activeSeasonId, loadClubsForLeague, loadLeaguesAndComps]);
 
@@ -360,14 +373,16 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
   }, [activeLeagueTab, selectedLeagueId, selectedMatchday, loadLeagueFixtures, loadLeagueStandings]);
 
   const handleSelectLeague = (leagueId: string) => {
+    if (selectedLeagueRef.current === leagueId) return;
+    selectedLeagueRef.current = leagueId;
     setSelectedLeagueId(leagueId);
+    setSelectedMatchday(1);
+    setClubs([]);
+    setLeagueFixtures([]);
+    setLeagueStandings([]);
     if (EFL_2_DESIGN_ENABLED) try { sessionStorage.setItem('efl:preview-league', leagueId); } catch { /* storage may be unavailable in a WebView */ }
-    loadClubsForLeague(leagueId);
-    if (activeLeagueTab === 'MATCHES') {
-      loadLeagueFixtures(leagueId, selectedMatchday);
-    } else if (activeLeagueTab === 'STANDINGS') {
-      loadLeagueStandings(leagueId);
-    }
+    void loadClubsForLeague(leagueId);
+    // Fixture/standings requests are dispatched once by the tab effect.
   };
 
   const handleClaimClub = async (targetClub?: Club) => {
