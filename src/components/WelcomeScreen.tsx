@@ -8,7 +8,7 @@ const copy = {
   uz: {
     eyebrow: 'EFOOTBALL HAMJAMIYATI', title: ['Sizning klubingiz.', 'Sizning', 'mavsumingiz.'],
     description: 'Klub tanlang. O‘ynang. Natijangizni tasdiqlang.',
-    europe: 'YEVROPA LIGALARI', asia: 'OSIYO LIGALARI',
+    leagues: '2-MAVSUM LIGALARI',
     secondEyebrow: 'EFLUZ · 2-MAVSUM', secondTitle: 'Yangi mavsum. Yangi imkoniyatlar.',
     secondDescription: 'Yangi ligalar, yangi raqobat va mavsum yakunidagi individual sovrinlar.',
     goldenBall: 'Oltin To‘p', goldenBallNote: 'Eng yaxshi futbolchi · klub egalari ovozi',
@@ -21,7 +21,7 @@ const copy = {
   ru: {
     eyebrow: 'СООБЩЕСТВО EFOOTBALL', title: ['Ваш клуб.', 'Ваш', 'сезон.'],
     description: 'Выберите клуб. Играйте. Подтверждайте результат.',
-    europe: 'ЕВРОПЕЙСКИЕ ЛИГИ', asia: 'АЗИАТСКИЕ ЛИГИ',
+    leagues: 'ЛИГИ ВТОРОГО СЕЗОНА',
     secondEyebrow: 'EFLUZ · СЕЗОН 2', secondTitle: 'Новый сезон. Новые возможности.',
     secondDescription: 'Новые лиги, новые соперники и индивидуальные награды сезона.',
     goldenBall: 'Золотой мяч', goldenBallNote: 'Лучший игрок · голосование владельцев клубов',
@@ -34,7 +34,7 @@ const copy = {
   en: {
     eyebrow: 'EFOOTBALL COMMUNITY', title: ['Your club.', 'Your', 'season.'],
     description: 'Choose a club. Play. Confirm your result.',
-    europe: 'EUROPEAN LEAGUES', asia: 'ASIAN LEAGUES',
+    leagues: 'SEASON 2 LEAGUES',
     secondEyebrow: 'EFLUZ · SEASON 2', secondTitle: 'New season. New possibilities.',
     secondDescription: 'New leagues, new competition, and individual season awards.',
     goldenBall: 'Golden Ball', goldenBallNote: 'Best player · voted by club owners',
@@ -46,18 +46,13 @@ const copy = {
   },
 };
 
-const europe = [
+const displayLeagues = [
   { name: 'Premier League', icon: 'premier-league' },
   { name: 'La Liga', icon: 'la-liga' },
   { name: 'Serie A', icon: 'serie-a' },
   { name: 'Bundesliga', icon: 'bundesliga' },
   { name: 'Ligue 1', icon: 'ligue-1' },
-];
-const asia = [
   { name: 'O‘zbekiston Superligasi', icon: 'uzbekistan-superliga' },
-  { name: 'Saudi Pro League', icon: 'saudi-pro-league' },
-  { name: 'J1 League', icon: 'j1-league' },
-  { name: 'Turkiya Superligasi', icon: 'turkey-super-lig' },
 ];
 
 interface WelcomeScreenProps {
@@ -107,18 +102,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ theme, onThemeChan
                 <path d="M1 1h318v68H1zM160 1v68M1 14h30v42H1M319 14h-30v42h30M1 25h5v20H1M319 25h-5v20h5" />
                 <circle cx="160" cy="35" r="21" />
               </svg>
-              <section className="welcome-leagues" aria-labelledby="welcome-europe-title">
-                <h2 id="welcome-europe-title">{c.europe}</h2>
+              <section className="welcome-leagues" aria-labelledby="welcome-leagues-title">
+                <h2 id="welcome-leagues-title">{c.leagues}</h2>
                 <ul className="welcome-league-icons">
-                  {europe.map(league => <li key={league.icon}>
-                    <img src={`/welcome/${league.icon}.svg`} alt={league.name} width="40" height="44" />
-                  </li>)}
-                </ul>
-              </section>
-              <section className="welcome-leagues welcome-asia" aria-labelledby="welcome-asia-title">
-                <h2 id="welcome-asia-title">{c.asia}</h2>
-                <ul className="welcome-league-icons welcome-asian-icons">
-                  {asia.map(league => <li key={league.icon}>
+                  {displayLeagues.map(league => <li key={league.icon}>
                     <img src={`/welcome/${league.icon}.svg`} alt={league.name} width="40" height="44" />
                   </li>)}
                 </ul>
