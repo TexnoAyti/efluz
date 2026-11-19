@@ -8,10 +8,6 @@ export const ADMIN_LEAGUES = [
   // The Superliga has an active 2027/28 competition but no domestic cup in
   // the live catalog. Never invent a cup permission or competition.
   { id: 'league-uzbekistan-superliga', name: 'O‘zbekiston Superligasi', competitionId: 'comp-uzbekistan-superliga-2027', cupCompetitionId: '' },
-  // Season-two planned competitions. Catalog access does NOT imply live fixture or owner data.
-  { id: 'league-saudi-pro-league', name: 'Saudi Pro League', competitionId: 'comp-saudi-pro-league-2027', cupCompetitionId: '' },
-  { id: 'league-j1', name: 'J1 League', competitionId: 'comp-j1-2027', cupCompetitionId: '' },
-  { id: 'league-turkey-super-lig', name: 'Süper Lig', competitionId: 'comp-turkey-super-lig-2027', cupCompetitionId: '' },
 ];
 export function isLeagueAdmin(user: Pick<User, 'adminPermissions'>): boolean {
   return user.adminPermissions != null && user.adminPermissions.scope !== 'ALL';
