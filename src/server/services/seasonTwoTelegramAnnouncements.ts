@@ -26,7 +26,10 @@ async function queueAnnouncement(item: Announcement): Promise<boolean> {
   if (await getBroadcastDetails(broadcastId)) return false;
   // All registered users, NOT just existing club owners and NOT just the
   // active league. Recipient IDs remain private inside the delivery worker.
-  await syncRecipientDirectory(SEASON_ID);
+  // The approved round-guide uses the already persisted recipient directory.
+  // Refreshing 400+ users in a serverless request can hit the Postgres RPC
+  // statement timeout before any broadcast job is enqueued.
+  if (item.eventId !== ROUND_GUIDE_EVENT) await syncRecipientDirectory(SEASON_ID);
   await enqueueTelegramBroadcast({
     adminUserId: SYSTEM_ID,
     adminUsername: OWNER,
