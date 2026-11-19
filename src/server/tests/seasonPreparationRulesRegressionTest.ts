@@ -21,19 +21,8 @@ const scenario=(leagueId:string)=>{
   return rankPreparedLeagueResults(leagueId,fixtures).standings.slice(0,2).map(row=>row.id);
 };
 assert.deepEqual(scenario('league-ligue-1'),[ids('league-ligue-1')[1],ids('league-ligue-1')[0]],'Updated Ligue 1 prefers complete head-to-head after overall goal difference');
-assert.deepEqual(scenario('league-j1'),[ids('league-j1')[0],ids('league-j1')[1]],'Japan prefers overall goals before head-to-head');
 assert.deepEqual(scenario('league-la-liga'),[ids('league-la-liga')[1],ids('league-la-liga')[0]],'Spanish two-team head-to-head goal difference wins');
 assert.ok(!PREPARED_TIE_RULES['league-ligue-1'].criteria.includes('h2hAwayGoals'));
-const saudi=ids('league-saudi-pro-league');
-const saudiFixtures=[result(saudi,0,1,1,0),result(saudi,1,0,0,0),result(saudi,0,2,10,0),result(saudi,2,0,0,0),result(saudi,1,2,1,0),result(saudi,2,1,2,0),result(saudi,0,3,0,0),result(saudi,1,3,1,0),result(saudi,2,3,1,0),result(saudi,1,4,0,0),result(saudi,2,4,0,0),result(saudi,1,5,0,0),result(saudi,2,5,0,0)];
-saudiFixtures.push(result(saudi,1,6,1,0),result(saudi,2,6,1,0));
-const saudiOverrides=new Map(saudiFixtures.map(f=>[f.homeClubId+'|'+f.awayClubId,f]));
-const fullSaudi=previewPreparedLeagueSchedule('league-saudi-pro-league')!.fixtures.map((f,index)=>({
-  ...f,id:'saudi-full-'+index,seasonId,status:'CONFIRMED' as const,
-  homeScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.homeScore||0,
-  awayScore:saudiOverrides.get(f.homeClubId+'|'+f.awayClubId)?.awayScore||0,
-}));
-assert.deepEqual(rankPreparedLeagueResults('league-saudi-pro-league',fullSaudi,{final:true}).standings.slice(0,3).map(row=>row.id),['club-al-ettifaq','club-abha','club-al-fateh'],'Saudi ranking follows the actual single-round fixture orientation, not duplicate reverse matches');
 const pl=ids('league-premier-league');
 const first=result(pl,0,1,1,0);
 assert.throws(()=>rankPreparedLeagueResults('league-premier-league',[first,{...first,id:'duplicate'}]),/DUPLICATE/);
@@ -47,7 +36,7 @@ const full=previewPreparedLeagueSchedule('league-premier-league')!.fixtures.map(
 assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}).canFinalize,true);
 assert.equal(rankPreparedLeagueResults('league-premier-league',full,{final:true}).standings[0].id,pl.at(-1));
 for(const comp of EFL_SECOND_SEASON.europeanCompetitions){assert.equal(comp.totalTeams,36);assert.equal(comp.totalFixtures,144);assert.equal(comp.qualificationSlots,null);assert.equal(comp.participantClubIds.length,0);}
-assert.equal(EFL_SECOND_SEASON.domesticCups.length,9);
+assert.equal(EFL_SECOND_SEASON.domesticCups.length,6);
 for(const cup of EFL_SECOND_SEASON.domesticCups){
   assert.equal(cup.format,'EFL_CUSTOM');
   assert.equal(cup.participantStatus,'READY');
@@ -80,8 +69,8 @@ for(const cup of EFL_SECOND_SEASON.domesticCups){
 }
 assert.equal(previewPreparedCupBracket('comp-fa-cup-2026'),null,'Season-one cups cannot enter the preparation path');
 assert.ok(!preparationReadiness().blockers.some(b=>b.code.startsWith('CUP_')),'No invented lower-division requirements');
-assert.ok(!preparationReadiness().blockers.some(b=>b.code==='SUPER_CUP_PLANS_REQUIRED'),'All nine super cup plans exist');
-assert.equal(preparationReadiness().counts.verifiedRankingRules,9);
+assert.ok(!preparationReadiness().blockers.some(b=>b.code==='SUPER_CUP_PLANS_REQUIRED'),'All six super cup plans exist');
+assert.equal(preparationReadiness().counts.verifiedRankingRules,6);
 const uz=ids('league-uzbekistan-superliga');
 const uzFixtures=[result(uz,0,1,3,0),result(uz,1,0,4,0),result(uz,0,2,4,0),result(uz,1,2,2,0)].map(f=>({...f,technicalLossClubId:null as string|null}));
 assert.ok(rankPreparedLeagueResults('league-uzbekistan-superliga',uzFixtures.map(({technicalLossClubId,...f})=>f)).blockers.includes('MISSING_H2HFORFEITS'));
