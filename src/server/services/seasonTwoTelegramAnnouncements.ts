@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { EFL_SECOND_SEASON } from '../../lib/seasonPreparation';
 import { S2_OPENS_AT, S2_PUBLIC_AT } from '../../lib/seasonTwoAdmissionWindow';
 import { seasonLeagues } from './seasonCatalog';
+import { getFirestoreDb } from '../firebase/admin';
+import { sendTelegramMessage } from './telegramBotService';
 import { enqueueTelegramBroadcast, getBroadcastDetails, syncRecipientDirectory } from './telegramNotificationQueue';
 
 const SEASON_ID = EFL_SECOND_SEASON.id;
@@ -38,9 +40,77 @@ async function queueAnnouncement(item: Announcement): Promise<boolean> {
   return true;
 }
 
+/**
+ * One approved, immutable Season 2 help announcement. The existing public
+ * status poll wakes this background job; no user-supplied text can be sent.
+ * Both delivery paths use a durable, deterministic one-time identifier.
+ */
+const ROUND_GUIDE_EVENT = 'season2-any-round-guide-20261120';
+const ROUND_GUIDE_TITLE = 'EFLUZ 2-mavsum: 19 turni navbat bilan kutish shart emas';
+const ROUND_GUIDE_BODY = [
+  'MUHIM: EFLUZ 2-MAVSUM O‘YIN TARTIBI',
+  '',
+  '19 ta turdagi uchrashuvlar oldindan belgilangan. 1-turni hamma tugatishini kutish shart emas!',
+  'Masalan, 1-tur davom etayotgan bo‘lsa ham, 5-, 10- yoki 19-turdagi raqibingiz bilan kelishib o‘ynashingiz mumkin.',
+  '',
+  'RAQIBGA QANDAY YOZILADI?',
+  'Mini App → Ligalar → O‘z ligangiz → O‘yinlar → kerakli tur va uchrashuv → Raqibga yozish.',
+  'Telegram username o‘zgargan bo‘lsa ham, EFLUZ ichidagi uchrashuv chatidan foydalaning.',
+  '',
+  'HISOBNI QANDAY KIRITISH KERAK?',
+  '1) Mini App → O‘yinlar → o‘ynalgan uchrashuv → hisobni kiritish.',
+  '2) Yoki guruhga raqiblar va natijani aniq ko‘rsatib yuboring; EFLUZ AI hisobni aniqlashga yordam beradi.',
+  'Bir tomon hisobni kiritgach, ikkinchi tomon tasdiqlaydi.',
+  '',
+  'Faqat haqiqatda o‘ynalgan uchrashuv natijasini yuboring. Noto‘g‘ri hisobda adminga murojaat qiling.',
+  '',
+  'Raqibingiz tayyormi? Navbat kutmang — uchrashuvni o‘tkazing!',
+  'Mini App: https://efluz.vercel.app',
+  'Kanal: @efl_uz',
+].join('\n');
+
+export async function announceSeasonTwoRoundGuide(): Promise<{broadcast:string;channel:string}> {
+  if (process.env.VERCEL_ENV !== 'production' || process.env.DATABASE_PROVIDER !== 'supabase')
+    return {broadcast:'NOT_PRODUCTION',channel:'NOT_PRODUCTION'};
+
+  // A single broadcast ID prevents duplicated personal and in-app messages.
+  let broadcast = 'ALREADY_QUEUED';
+  try {
+    const queued = await queueAnnouncement({
+      eventId: ROUND_GUIDE_EVENT, title: ROUND_GUIDE_TITLE, body: ROUND_GUIDE_BODY,
+    });
+    broadcast = queued ? 'QUEUED' : 'ALREADY_QUEUED';
+  } catch (error:any) {
+    broadcast = 'QUEUE_ERROR';
+    console.warn('[SEASON2_ROUND_GUIDE_BROADCAST]', String(error?.message||error));
+  }
+
+  // Channel delivery is separate and deliberately fail-closed on uncertain
+  // Telegram outcomes, to avoid accidentally posting the guide twice.
+  let channel = 'ALREADY_ATTEMPTED';
+  const ref = getFirestoreDb().collection('runtime_settings').doc('channel-post-' + ROUND_GUIDE_EVENT);
+  try {
+    await ref.create({eventId:ROUND_GUIDE_EVENT, state:'SENDING',createdAt:new Date().toISOString()});
+    const message = '<b>'+ROUND_GUIDE_TITLE+'</b>\n\n'+ROUND_GUIDE_BODY.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const result = await sendTelegramMessage('@efl_uz',message,{parse_mode:'HTML'});
+    channel = result.ok ? 'SENT' : 'FAILED';
+    await ref.set({state:channel,telegramMessageId:result.ok?result.result?.message_id:null,
+      updatedAt:new Date().toISOString(),error:result.ok?null:String(result.error||'UNKNOWN').slice(0,240)},{merge:true});
+  } catch (error:any) {
+    if (!/already exists|already_exists|ALREADY_EXISTS|6:/.test(String(error?.message||error))) {
+      channel = 'ERROR';
+      console.warn('[SEASON2_ROUND_GUIDE_CHANNEL]',String(error?.message||error));
+    }
+  }
+  console.info('[SEASON2_ROUND_GUIDE_RESULT]',{broadcast,channel});
+  return {broadcast,channel};
+}
+
 /** Cron trigger at 20:30 and 20:45 Asia/Tashkent; safely retryable. */
 export async function announceDueSeasonTwoMilestones(now = Date.now()): Promise<string> {
   if (now < openTime) return 'NOT_DUE';
+  // One-shot explanation requested for every bot user and @efl_uz.
+  await announceSeasonTwoRoundGuide();
   if (now < publicTime) {
     const queued = await queueAnnouncement({
       eventId: 'season2-priority-20261106',
