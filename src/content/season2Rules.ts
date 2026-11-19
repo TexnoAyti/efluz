@@ -32,9 +32,6 @@ export const PREPARED_DOMESTIC_CUPS = [
   {id:'comp-dfb-pokal-2027',leagueId:'league-bundesliga',name:'DFB-Pokal'},
   {id:'comp-coupe-de-france-2027',leagueId:'league-ligue-1',name:'Coupe de France'},
   {id:'comp-uzbekistan-cup-2027',leagueId:'league-uzbekistan-superliga',name:'O‘zbekiston kubogi'},
-  {id:'comp-king-cup-2027',leagueId:'league-saudi-pro-league',name:'King Cup'},
-  {id:'comp-emperors-cup-2027',leagueId:'league-j1',name:'Emperor’s Cup'},
-  {id:'comp-turkey-cup-2027',leagueId:'league-turkey-super-lig',name:'Türkiye Kupası'},
 ].map(cup=>{
   const clubs=SEASON_TWO_ROSTERS[cup.leagueId].clubs;
   const total=clubs.length;
