@@ -91,7 +91,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
   // League & Data states
   // Render the prepared second-season navigation immediately; never briefly
   // display the previous season while waiting for the API response.
-  const [continent, setContinent] = useState<'EUROPE' | 'ASIA'>('EUROPE');
   const [leagues, setLeagues] = useState<League[]>(() =>
     activeSeasonId === EFL_SECOND_SEASON.id
       ? EFL_SECOND_SEASON.leagues.map(league => ({
@@ -491,15 +490,10 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
   }, [activeSeasonId, leagues.length]);
 
   const isSecondSeason = activeSeasonId === EFL_SECOND_SEASON.id;
+  // One unified Season 2 league picker; no continent split.
   const visibleLeagues = isSecondSeason
-    ? leagues.filter(league => EFL_SECOND_SEASON.leagues.some(item => item.id === league.id && item.group === continent))
+    ? leagues.filter(league => EFL_SECOND_SEASON.leagues.some(item => item.id === league.id))
     : leagues;
-  const changeContinent = (next: 'EUROPE' | 'ASIA') => {
-    if (continent === next) return;
-    setContinent(next);
-    const first = EFL_SECOND_SEASON.leagues.find(item => item.group === next);
-    if (first) handleSelectLeague(first.id);
-  };
 
   const currentLeague = leagues.find((l) => l.id === selectedLeagueId) || leagues[0];
 
@@ -548,7 +542,7 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
 
   return (
     <div className={`space-y-6 animate-in fade-in duration-300 pb-20 ${activeSeasonId === EFL_SECOND_SEASON.id ? 'efl-season-two-page' : ''} ${EFL_2_DESIGN_ENABLED && activeLeagueTab === 'STANDINGS' ? 'efl-standings-page' : ''}`}>
-      {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3.5 text-[var(--efl-text)] shadow-sm dark:shadow-black/20"><div className="min-w-0"><strong className="text-sm font-black text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="mt-1 text-xs text-[var(--efl-text-2)]">Klub tanlovi ochiq. Yevropa ligalarida 2-mavsum o‘yinlari boshlandi.</p></div></div>}
+      {activeSeasonId === 'season-2027-28' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface)] p-3.5 text-[var(--efl-text)] shadow-sm dark:shadow-black/20"><div className="min-w-0"><strong className="text-sm font-black text-[var(--efl-text)]">EFL · 2-mavsum (2027/28)</strong><p className="mt-1 text-xs text-[var(--efl-text-2)]">Klub tanlovi ochiq. 2-mavsumning barcha 6 ta ligasi bitta ro‘yxatda.</p></div></div>}
       {/* Category Quick Switcher Hub (Legacy Normal Players only) */}
       {!EFL_2_DESIGN_ENABLED && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -604,22 +598,6 @@ export const ClubsView: React.FC<ClubsViewProps> = ({ onNavigateTab, onOpenClub 
           </button>
         </div>
 
-        {isSecondSeason && (
-          <div role="group" aria-label="Qitani tanlash" className="efl-season-two-tabs grid grid-cols-2 gap-2 rounded-2xl border border-[var(--efl-border)] bg-[var(--efl-surface-2)] p-1.5 text-[var(--efl-text)] dark:shadow-inner dark:shadow-black/15">
-            {([
-              { id: 'EUROPE' as const, label: 'Yevropa', count: 5 },
-              { id: 'ASIA' as const, label: 'Osiyo', count: 4 },
-            ]).map(item => (
-              <button type="button" key={item.id} aria-pressed={continent === item.id}
-                onClick={() => changeContinent(item.id)}
-                className={`flex min-h-[45px] items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-extrabold transition-colors ${continent === item.id
-                  ? 'border border-[var(--efl-primary)]/30 bg-[var(--efl-primary-soft)] text-[var(--efl-primary)] shadow-sm dark:border-blue-400/30 dark:bg-blue-400/10 dark:text-blue-300'
-                  : 'border border-transparent text-[var(--efl-text-2)] hover:bg-[var(--efl-surface)] hover:text-[var(--efl-text)]'}`}>
-                {item.label}<span className="text-[10px] tabular-nums opacity-60">{item.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
 
         {leagues.length > 0 && (
           <div id={activeSeasonId === 'season-2027-28' ? 'efl-season-two-league-picker' : undefined} data-munfiz-control="league-picker" className={activeSeasonId === EFL_SECOND_SEASON.id && EFL_2_DESIGN_ENABLED
