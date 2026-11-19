@@ -1,0 +1,36 @@
+name: EFLUZ Season 2 guide one-time delivery wake
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/season2-round-guide-trigger.yml'
+permissions:
+  contents: read
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Trigger production Season 2 admission status (approved one-time guide)
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --max-time 20 --retry 1 \
+                 --header 'Cache-Control: no-store' \
+                 'https://efluz.vercel.app/api/season-two-admission/status' > /tmp/efluz-status.json; then
+              python3 - <<'PY'
+          import json
+          with open('/tmp/efluz-status.json',encoding='utf-8') as f:
+              response=json.load(f)
+          if response.get('seasonId') != 'season-2027-28':
+              raise SystemExit('WRONG_SEASON: '+str(response.get('seasonId')))
+          if response.get('registrationOpen') is not True:
+              raise SystemExit('SEASON2_REGISTRATION_CLOSED')
+          print('PRODUCTION_SEASON2_STATUS_OK: one-time guide background delivery triggered')
+          PY
+              exit 0
+            fi
+            sleep 12
+          done
+          echo 'PRODUCTION_STATUS_UNAVAILABLE'
+          exit 1
