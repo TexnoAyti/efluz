@@ -146,6 +146,12 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
   const [pendingResults, setPendingResults] = useState<PendingFixtureItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  // Display planned leagues without pretending fixtures or owners exist.
+  const plannedWithoutCompetition = activeSeasonId === 'season-2027-28'
+    ? allowedLeagues.filter(league => !competitions.some(comp =>
+        comp.seasonId === activeSeasonId && comp.type === 'LEAGUE' && comp.leagueId === league.id))
+    : [];
+
   const [users, setUsers] = useState<User[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
@@ -2136,6 +2142,22 @@ const FullAdminView: React.FC<{ managementSeason?: string; permissions?: AdminPe
       {/* ========================================================================= */}
       {activeAdminTab === 'competitions' && (
         <div className="space-y-6">
+          {loadedTabs.has('competitions') && plannedWithoutCompetition.length > 0 && (
+            <div role="status" className="rounded-xl border border-amber-500/30 bg-slate-900 p-4 text-sm text-slate-200">
+              <p className="font-bold text-amber-300">2-mavsumda hali faollashtirilmagan ligalar</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Bu ligalar rejalashtirilgan, lekin bazada uchrashuv va musobaqa ma’lumotlari hali yo‘q.
+                Ularga natija kiritish yoki tur ochish mavjud bo‘lmaguncha ishlamaydi.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {plannedWithoutCompetition.map(league => (
+                  <span key={league.id} className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold">
+                    {league.name} · tayyorlanmoqda
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="glass-panel p-4 space-y-1">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
