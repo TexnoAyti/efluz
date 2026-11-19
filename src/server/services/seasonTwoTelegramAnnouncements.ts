@@ -48,8 +48,8 @@ async function queueAnnouncement(item: Announcement): Promise<boolean> {
  * status poll wakes this background job; no user-supplied text can be sent.
  * Both delivery paths use a durable, deterministic one-time identifier.
  */
-const ROUND_GUIDE_EVENT = 'season2-any-round-guide-20261120';
-const ROUND_GUIDE_TITLE = 'EFLUZ 2-mavsum: 19 turni navbat bilan kutish shart emas';
+const ROUND_GUIDE_EVENT = 'season2-any-round-guide-telegram-link-fix-20261120';
+const ROUND_GUIDE_TITLE = 'EFLUZ 2-mavsum: to‘g‘ri o‘yin tartibi (yangilangan)';
 const ROUND_GUIDE_BODY = [
   'MUHIM: EFLUZ 2-MAVSUM O‘YIN TARTIBI',
   '',
@@ -68,7 +68,7 @@ const ROUND_GUIDE_BODY = [
   'Faqat haqiqatda o‘ynalgan uchrashuv natijasini yuboring. Noto‘g‘ri hisobda adminga murojaat qiling.',
   '',
   'Raqibingiz tayyormi? Navbat kutmang — uchrashuvni o‘tkazing!',
-  'Mini App: https://efluz.vercel.app',
+  'Mini App’ni ochish: Telegramdagi EFLUZ botiga kiring va «Ilovani ochish» tugmasini bosing.',
   'Kanal: @efl_uz',
 ].join('\n');
 
