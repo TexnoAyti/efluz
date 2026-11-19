@@ -29,3 +29,13 @@ export function permittedAdminCompetitionIds(user: Pick<User, 'adminPermissions'
     league.cupCompetitionId,
   ].filter(Boolean));
 }
+
+/** Restrict fixture editing to the primary owner or an explicitly scoped admin. */
+export function canManageFixture(
+  user: Pick<User, 'id' | 'telegramId' | 'isAdmin' | 'isSuspended' | 'adminPermissions'> | null | undefined,
+  competitionId: string,
+): boolean {
+  if (!user?.isAdmin || user.isSuspended || !competitionId) return false;
+  if (canUseDangerZone(user)) return true;
+  return isLeagueAdmin(user) && permittedAdminCompetitionIds(user).includes(competitionId);
+}
