@@ -45,7 +45,7 @@ test('private bot fetches only signed sender club, never another user data',asyn
   const banned=await handleReadOnlyBotCommand(db,msg(789,'/myclub'));
   assert.match(banned.text,/cheklangan/);
   const start=await handleReadOnlyBotCommand(db,msg(123,'/start'));
-  assert.match(start.text,/sinov boti/);
+  assert.match(start.text,/EFL UZ/);
   assert.ok(Array.isArray(start.reply_markup.inline_keyboard));
   const buttons=start.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
   assert.ok(buttons.includes('efl:uzeflife'));
