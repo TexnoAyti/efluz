@@ -1,7 +1,15 @@
 import {getAuthHeaders} from './customTournamentApi';
 import type {MatchChatAdminReport,MatchChatKind,MatchChatView} from '../types/matchChat';
 
-export interface MatchChatTarget {kind:MatchChatKind;matchId:string;title?:string;opponentName?:string}
+export interface MatchChatTarget {
+  kind: MatchChatKind;
+  matchId: string;
+  title?: string;
+  opponentName?: string;
+  /** Admins may inspect a fixture chat without gaining player permissions. */
+  adminSpectator?: boolean;
+  matchInfo?: NonNullable<MatchChatView['matchInfo']>;
+}
 const eventName='efluz:open-match-chat';
 // When the chat UI is in a deferred bundle, the initial click must not be lost.
 let pendingOpen:MatchChatTarget|null=null;

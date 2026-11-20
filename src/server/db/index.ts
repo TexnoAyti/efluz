@@ -146,14 +146,16 @@ export async function initDatabase(): Promise<Database> {
     SQL = await initSqlJs({
       locateFile: () => wasmPath,
       wasmBinary,
+      useOldExtensionFunctions: false,
     });
   } catch (err1) {
     try {
       SQL = await initSqlJs({
         locateFile: () => wasmPath,
+        useOldExtensionFunctions: false,
       });
     } catch (err2) {
-      SQL = await initSqlJs({});
+      SQL = await initSqlJs({ useOldExtensionFunctions: false });
     }
   }
 

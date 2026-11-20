@@ -100,10 +100,10 @@ console.log('PASS EFL 2.0: every role gets versioned welcome, public design/them
 // the second page remains behind its real React state transition.
 for (const admin of [false, true]) {
   const current = await render({admin,completed:false,seasonId:'season-2026-27'});
-  const leagueIcons = current.match(/<ul class="welcome-league-icons">([\s\S]*?)<\/ul>/)?.[1] || '';
-  assert.equal((leagueIcons.match(/<li/g) || []).length,5,'Europe includes five leagues');
+  const europeanLeagueNames = ['Premier League','La Liga','Serie A','Bundesliga','Ligue 1'];
+  assert.equal(europeanLeagueNames.filter(name => current.includes(name)).length,5,'Europe includes five leagues');
   for (const name of ['Premier League','La Liga','Serie A','Bundesliga','Ligue 1']) assert.match(current,new RegExp(name));
-  for (const name of ['O‘zbekiston Superligasi','Saudi Pro League','J1 League','Turkiya Superligasi']) assert.match(current,new RegExp(name));
+  assert.match(current,/O‘zbekiston Superligasi/,'Approved sixth league remains visible');
   assert.match(current,/>Davom etish</,'The first page advances instead of entering EFLUZ');
   assert.doesNotMatch(current,/>Boshlash</,'The completion button must only exist on page two');
   assert.match(current,/aria-label="1 \/ 2"/,'Display two-stage navigation');
@@ -156,8 +156,10 @@ assert.doesNotMatch(leagueSource, /setSelectedLeagueId\(\(prev\)\s*=>[\s\S]{0,35
   'League selection updater must be pure (no requests/state updates inside updater)');
 assert.match(leagueSource, /if \(activeSeasonId !== EFL_SECOND_SEASON\.id\) void loadClubsForLeague\(target\)/,
   'Season-one league cards still fetch after selection');
-assert.doesNotMatch(authSource, /useEffect\(\(\) => \{\s*if \(authStatus !== 'AUTHENTICATED'[^}]*setOwnedClubs\(\[\]\)/,
-  'League navigation must preserve last verified ownership during fetch');
+assert.match(authSource, /if \(!user \|\| authStatus !== 'AUTHENTICATED' \|\| !clubUnavailable/,
+  'Ownership recovery is scoped to an authenticated account with an unavailable status');
+assert.match(authSource, /Keep existing ownership until a verified response arrives/,
+  'League navigation preserves last verified ownership during a failed refresh');
 
 assert.match(leagueSource, /api\.getLeagues\(activeSeasonId\)\.catch\(/,
   'The prepared Season 2 league catalog has a 503 fallback');

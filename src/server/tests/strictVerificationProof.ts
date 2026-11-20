@@ -25,7 +25,7 @@ async function runStrictVerification() {
 
   const wasmPath = path.resolve(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
   const wasmBinary = fs.readFileSync(wasmPath);
-  const SQL = await initSqlJs({ wasmBinary });
+  const SQL = await initSqlJs({ wasmBinary, useOldExtensionFunctions: false });
 
   // Helper to read directly from the physical disk file using an isolated SQL.js instance
   function readDirectFromDisk(): Database {
