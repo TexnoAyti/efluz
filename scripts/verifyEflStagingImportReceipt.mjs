@@ -7,11 +7,20 @@ import {resolve} from 'node:path';
 export function parseImportReceipt(output) {
   if(typeof output!=='string'||output.length>3_000_000)
     throw Error('STAGING_IMPORT_OUTPUT_INVALID');
-  const raw=output.trim();
-  const options=[raw,...raw.split(/\r?\n/).map(s=>s.trim()).filter(s=>s.startsWith('{')).reverse()];
+  // tgcloud CLI versions differ slightly in whether they prefix the JSON
+  // response with a transport/status line or ANSI colour codes. Keep the
+  // validator strict about the receipt fields, but tolerate those wrappers.
+  const clean=output.replace(/\u001b\[[0-?]*[ -\/]*[@-~]/g,'');
+  const raw=clean.trim();
+  const options=[raw,...clean.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).reverse()];
   for(const candidate of options) {
-    try {
-      const obj=JSON.parse(candidate);
+    const starts=[0];
+    for(let i=candidate.indexOf('{');i>=0&&i<candidate.length;){
+      if(i!==0)starts.push(i);
+      i=candidate.indexOf('{',i+1);
+    }
+    for(const start of starts)try {
+      const obj=JSON.parse(candidate.slice(start));
       const receipt=obj?.result??obj;
       if(receipt&&typeof receipt==='object'&&!Array.isArray(receipt)&&
          receipt.ok===true&&receipt.status==='COMPLETE'&&
