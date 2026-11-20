@@ -25,9 +25,12 @@ export async function deliverQueuedNotificationsOnUpdate(db,api,message){
     try{
       const notice=await claimNotificationForWorker(db,{notificationId:String(row.notificationId),leaseToken,now,leaseMs:120000});
       const isGuide=String(notice.notificationId).startsWith(ROUND_GUIDE_ID+'-');
-      await api.sendMessage({chat_id:chat.id,
+      const response=await api.sendMessage({chat_id:chat.id,
         text:isGuide?ROUND_GUIDE_BODY:`${notice.title}\n\n${notice.message}`.slice(0,4096),
         ...(isGuide?{reply_markup:ROUND_GUIDE_BUTTON}:{})});
+      const receipt=response?.result??response;
+      if(response?.ok===false||!Number.isSafeInteger(receipt?.message_id)||receipt.message_id<=0)
+        throw new Error('TELEGRAM_RECEIPT_UNVERIFIED');
       await finishNotificationForWorker(db,{notificationId:notice.notificationId,leaseToken,now:Date.now(),success:true});
       sent++;
     }catch(error){
