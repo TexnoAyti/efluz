@@ -16,6 +16,6 @@ jobs:
         with:
           node-version: '24'
       - name: Verify immutable guide and bounded delivery
-        run: node --test scripts/serverlessRoundGuideBroadcast.test.mjs
+        run: node --test scripts/serverlessRoundGuideBroadcast.test.mjs scripts/serverlessRoundGuideOnUpdate.test.mjs
       - name: Verify Telegram Cloud source structure
         run: node scripts/checkTgcloudModules.mjs
