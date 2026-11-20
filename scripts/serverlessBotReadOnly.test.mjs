@@ -47,10 +47,9 @@ test('private bot fetches only signed sender club, never another user data',asyn
   const start=await handleReadOnlyBotCommand(db,msg(123,'/start'));
   assert.match(start.text,/EFL UZ/);
   assert.ok(Array.isArray(start.reply_markup.inline_keyboard));
-  const buttons=start.reply_markup.inline_keyboard.flat().map(x=>x.callback_data);
-  assert.ok(buttons.includes('efl:uzeflife'));
-  assert.ok(buttons.includes('efl:teams'));
-  assert.ok(buttons.includes('efl:myfixtures'));
-  assert.ok(buttons.includes('efl:inbox'));
+  const buttons=start.reply_markup.inline_keyboard.flat();
+  assert.equal(buttons.length,2);
+  assert.equal(buttons[0].web_app.url,'https://efluz1.vercel.app/');
+  assert.equal(buttons[1].url,'https://t.me/efleagueuz');
  }finally{sql.close();}
 });
