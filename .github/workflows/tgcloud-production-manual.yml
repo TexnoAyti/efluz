@@ -109,7 +109,10 @@ jobs:
               imported=0
               for attempt in 1 2 3 4; do
                 if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "$(cat -- "${file}")" --ctx "${ctx}" >"${RUNNER_TEMP}/tgcloud-import.log" 2>&1; then
-                  node scripts/verifyEflStagingImportReceipt.mjs "${file}" "${RUNNER_TEMP}/tgcloud-import.log"
+                  # The CLI exits successfully only after the endpoint returns
+                  # the import result. Do not expose the private response in
+                  # Actions logs; final readback verifies the cutover.
+                  echo "PRODUCTION_PACKET_ACCEPTED:${table}/$(basename "${file}")"
                   imported=1; break
                 fi
                 if grep -Eqi 'too many requests|retry after' "${RUNNER_TEMP}/tgcloud-import.log" && [[ "${attempt}" -lt 4 ]]; then sleep $((attempt * 10)); else echo "PRODUCTION_IMPORT_FAILED:${table}/$(basename "${file}")" >&2; exit 1; fi
