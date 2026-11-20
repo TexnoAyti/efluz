@@ -1,0 +1,138 @@
+name: Telegram Serverless production deploy (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Deploy the existing EFLUZ build to production app 8785073471"
+        required: true
+        type: choice
+        options:
+          - DO_NOT_DEPLOY
+          - DEPLOY_PRODUCTION
+        default: DO_NOT_DEPLOY
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-serverless-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-production:
+    if: ${{ inputs.confirmation == 'DEPLOY_PRODUCTION' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: tgcloud-production
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_PRODUCTION_TOKEN }}
+      TGCLOUD_STAGING_APP_ID: '8533963416'
+      TGCLOUD_PRODUCTION_APP_ID: '8785073471'
+      TGCLOUD_PRODUCTION_OWNER_TELEGRAM_ID: '5209126900'
+      EFL_SOURCE_DATABASE_URL: ${{ secrets.EFL_SOURCE_DATABASE_URL }}
+      CONFIRM_TGCLOUD_PRODUCTION_DEPLOY: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/tgcloud-staging-8533963416-20261111
+
+      - name: Install pinned Bun
+        run: npm install -g bun@1.3.3
+
+      - name: Verify production identity and secrets (fail closed)
+        run: |
+          test -n "${TGCLOUD_TOKEN}" || { echo "TGCLOUD_PRODUCTION_TOKEN secret is required"; exit 1; }
+          [[ "${TGCLOUD_TOKEN}" =~ ^app8785073471:[^[:space:]]{10,}$ ]] || { echo "PRODUCTION_TOKEN_APP_MISMATCH"; exit 1; }
+          [[ "${TGCLOUD_STAGING_APP_ID}" != "${TGCLOUD_PRODUCTION_APP_ID}" ]] || { echo "PRODUCTION_EQUALS_STAGING"; exit 1; }
+          test "${CONFIRM_TGCLOUD_PRODUCTION_DEPLOY}" = "DEPLOY_PRODUCTION" || { echo "PRODUCTION_CONFIRMATION_REQUIRED"; exit 1; }
+          test -n "${EFL_SOURCE_DATABASE_URL}" || { echo "EFL_SOURCE_DATABASE_URL secret is required"; exit 1; }
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run migration and Telegram runtime regression tests
+        run: |
+          node --test scripts/serverlessCompletePreflight.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessMutationGate.test.mjs
+          node scripts/checkTgcloudModules.mjs
+
+      - name: Export and verify the existing production data snapshot
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          export EFL_REQUIRE_OBSERVED_COUNTS=0
+          bash scripts/exportEflSupabaseRuntime.sh "${RUNNER_TEMP}/efl-production.jsonl"
+          bash scripts/prepareEflMigrationBundle.sh "${RUNNER_TEMP}/efl-production.jsonl" "${RUNNER_TEMP}/efl-migration-bundle"
+          node scripts/verifyEflNormalizedPackets.mjs "${RUNNER_TEMP}/efl-migration-bundle/normalized-source.json" "${RUNNER_TEMP}/efl-migration-bundle/normalized-import"
+
+      - name: Enable one-time protected production import in runner workspace
+        run: |
+          node --input-type=module - <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='tgcloud/lib/importControl.js';
+          const owner='5209126900';
+          let source=readFileSync(file,'utf8');
+          let next=source.replace(/enabled:\s*false,\s*ownerTelegramId:\s*['"][^'"]*['"]/,`enabled:true, ownerTelegramId:'${owner}'`);
+          next=next.replace(/READBACK_CONTROL=Object\.freeze\(\{\s*enabled:\s*false,\s*ownerTelegramId:\s*['"][^'"]*['"]/,`READBACK_CONTROL=Object.freeze({enabled:true, ownerTelegramId:'${owner}'`);
+          if(next===source)throw new Error('IMPORT_CONTROLS_NOT_FOUND');
+          writeFileSync(file,next);
+          NODE
+
+      - name: Build the actual EFLUZ Mini App
+        run: |
+          bun run build:tgcloud:real-ui
+          node scripts/stageEflRealUi.mjs
+          node scripts/verifyEflServerlessUi.mjs
+          EFL_VERIFY_REAL_UI=1 node scripts/verifyTgcloudStatic.mjs
+
+      - name: Deploy bot, webhook handlers, and Mini App to production
+        run: npx --yes --package=@tgcloud/cli tgcloud push --force
+
+      - name: Apply only additive production schema changes
+        run: |
+          npx --yes --package=@tgcloud/cli tgcloud migrate --dry-run
+          npx --yes --package=@tgcloud/cli tgcloud migrate --safe
+
+      - name: Import verified packets into production
+        run: |
+          bundle="${RUNNER_TEMP}/efl-migration-bundle/normalized-import"
+          ctx="{initData:{user:{id:5209126900}}}"
+          shopt -s nullglob
+          tables=$(node --input-type=module - "${bundle}/manifest.json" <<'NODE'
+          import {readFile} from 'node:fs/promises';
+          const manifest=JSON.parse(await readFile(process.argv[2],'utf8'));
+          for(const table of manifest.order)if(manifest.tables[table]?.chunks?.length)console.log(table);
+          NODE
+          )
+          for table in $tables; do
+            files=( "${bundle}/${table}-"*.json )
+            for file in "${files[@]}"; do
+              imported=0
+              for attempt in 1 2 3 4; do
+                if npx --yes --package=@tgcloud/cli tgcloud run endpoints/importBatch "$(cat -- "${file}")" --ctx "${ctx}" >"${RUNNER_TEMP}/tgcloud-import.log" 2>&1; then
+                  node scripts/verifyEflStagingImportReceipt.mjs "${file}" "${RUNNER_TEMP}/tgcloud-import.log"
+                  imported=1; break
+                fi
+                if grep -Eqi 'too many requests|retry after' "${RUNNER_TEMP}/tgcloud-import.log" && [[ "${attempt}" -lt 4 ]]; then sleep $((attempt * 10)); else echo "PRODUCTION_IMPORT_FAILED:${table}/$(basename "${file}")" >&2; exit 1; fi
+              done
+              [[ "${imported}" -eq 1 ]] || exit 1
+            done
+          done
+          echo "PRODUCTION_IMPORT_COMPLETE"
+
+      - name: Verify production health, seasons, bootstrap, and imported account
+        run: |
+          ctx="{initData:{user:{id:5209126900}}}"
+          for module in health seasons bootstrap migrationReadback; do
+            npx --yes --package=@tgcloud/cli tgcloud run "endpoints/${module}" '{}' --ctx "${ctx}" >"/tmp/tgcloud-${module}.log" 2>&1 || { echo "PRODUCTION_RUNTIME_COMMAND_FAILED:${module}"; exit 1; }
+            grep -Eq 'ok[[:space:]]*:[[:space:]]*true|"ok"[[:space:]]*:[[:space:]]*true' "/tmp/tgcloud-${module}.log" || { echo "PRODUCTION_RUNTIME_CHECK_FAILED:${module}"; exit 1; }
+          done
+          echo "PRODUCTION_RUNTIME_CHECKS_OK"
+
+      - name: Lock import and readback controls after verified cutover
+        run: |
+          sed -i "s/enabled:true, ownerTelegramId:'5209126900'/enabled:false, ownerTelegramId:''/g" tgcloud/lib/importControl.js
+          git diff --exit-code -- tgcloud/lib/mutationControl.js
+          bun run build:tgcloud:real-ui
+          node scripts/stageEflRealUi.mjs
+          npx --yes --package=@tgcloud/cli tgcloud push --force
+          echo "PRODUCTION_IMPORT_CONTROLS_LOCKED"
