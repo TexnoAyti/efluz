@@ -22,8 +22,9 @@ export async function deliverQueuedNotificationsOnUpdate(db,api,message){
   for(const row of rows){
     const now=Date.now();
     const leaseToken=`update_${String(message.message_id??message.update_id??now)}_${now}`;
+    let notice=null;
     try{
-      const notice=await claimNotificationForWorker(db,{notificationId:String(row.notificationId),leaseToken,now,leaseMs:120000});
+      notice=await claimNotificationForWorker(db,{notificationId:String(row.notificationId),leaseToken,now,leaseMs:120000});
       const isGuide=String(notice.notificationId).startsWith(ROUND_GUIDE_ID+'-');
       const response=await api.sendMessage({chat_id:chat.id,
         text:isGuide?ROUND_GUIDE_BODY:`${notice.title}\n\n${notice.message}`.slice(0,4096),
@@ -34,9 +35,17 @@ export async function deliverQueuedNotificationsOnUpdate(db,api,message){
       await finishNotificationForWorker(db,{notificationId:notice.notificationId,leaseToken,now:Date.now(),success:true});
       sent++;
     }catch(error){
-      // A failed or ambiguous send is fenced by the worker state machine.
-      // Never retry from this update after a lease has been acquired.
-      if(String(error?.message||'').includes('DELIVERY_ACK_CONFLICT')) reviewed++;
+      // After a lease has been acquired, an ambiguous Telegram outcome must
+      // be quarantined immediately; waiting for another private update to
+      // discover the expired lease may leave the queue deceptively PENDING.
+      if(!notice)continue;
+      const code=Number(error?.error_code)===403||Number(error?.error_code)===400
+        ? 'TELEGRAM_REJECTED':'NETWORK_UNCERTAIN';
+      try{
+        await finishNotificationForWorker(db,{notificationId:notice.notificationId,
+          leaseToken,now:Date.now(),success:false,errorCode:code});
+      }catch{}
+      reviewed++;
     }
   }
   return {sent,reviewed};
