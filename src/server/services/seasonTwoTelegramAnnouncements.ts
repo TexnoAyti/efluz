@@ -69,7 +69,7 @@ const ROUND_GUIDE_BODY = [
   '',
   'Raqibingiz tayyormi? Navbat kutmang — uchrashuvni o‘tkazing!',
   'Mini App’ni ochish: Telegramdagi EFLUZ botiga kiring va «Ilovani ochish» tugmasini bosing.',
-  'Kanal: @efl_uz',
+  'O‘yinga kirish 👉 @efluzbot',
 ].join('\n');
 
 export async function announceSeasonTwoRoundGuide(): Promise<{broadcast:string;channel:string}> {
@@ -109,11 +109,48 @@ export async function announceSeasonTwoRoundGuide(): Promise<{broadcast:string;c
   return {broadcast,channel};
 }
 
+/** Correct existing channel message 1048 in place; do not repost to everyone. */
+async function updateSeasonTwoGuideBotLinkInChannel(): Promise<void> {
+  if (process.env.VERCEL_ENV !== 'production' || process.env.DATABASE_PROVIDER !== 'supabase') return;
+  const db=getFirestoreDb();
+  const original=await db.collection('runtime_settings').doc('channel-post-'+ROUND_GUIDE_EVENT).get();
+  if (original.data()?.state!=='SENT' || !Number.isInteger(Number(original.data()?.telegramMessageId))) return;
+  const edit= db.collection('runtime_settings').doc('channel-post-round-guide-bot-handle-edit-20261120');
+  try {
+    await edit.create({state:'ATTEMPTED',updatedAt:new Date().toISOString()});
+  } catch(error:any) {
+    if (/already exists|already_exists|ALREADY_EXISTS|6:/.test(String(error?.message||error))) return;
+    throw error;
+  }
+  const token=process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) {
+    await edit.set({state:'FAILED',error:'BOT_TOKEN_UNAVAILABLE'}, {merge:true});
+    return;
+  }
+  const plain=ROUND_GUIDE_BODY.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const message='<b>'+ROUND_GUIDE_TITLE+'</b>\\n\\n'+plain;
+  try {
+    const response=await fetch('https://api.telegram.org/bot'+token+'/editMessageText',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({chat_id:'@efl_uz',message_id:Number(original.data()!.telegramMessageId),
+        text:message,parse_mode:'HTML'}),signal:AbortSignal.timeout(9000),
+    });
+    const data:any=await response.json();
+    await edit.set({state:data.ok?'SENT':'FAILED',error:data.ok?null:String(data.description||'REJECTED').slice(0,180),
+      updatedAt:new Date().toISOString()}, {merge:true});
+    console.info('[SEASON2_GUIDE_BOT_HANDLE_EDIT]', {ok:Boolean(data.ok)});
+  } catch(error:any) {
+    await edit.set({state:'UNCERTAIN',error:String(error?.message||error).slice(0,180),
+      updatedAt:new Date().toISOString()}, {merge:true});
+  }
+}
+
 /** Cron trigger at 20:30 and 20:45 Asia/Tashkent; safely retryable. */
 export async function announceDueSeasonTwoMilestones(now = Date.now()): Promise<string> {
   if (now < openTime) return 'NOT_DUE';
   // One-shot explanation requested for every bot user and @efl_uz.
   await announceSeasonTwoRoundGuide();
+  await updateSeasonTwoGuideBotLinkInChannel();
   if (now < publicTime) {
     const queued = await queueAnnouncement({
       eventId: 'season2-priority-20261106',
