@@ -1,0 +1,64 @@
+name: Telegram Cloud staging runtime diagnostics (read-only)
+on:
+  push:
+    branches:
+      - feat/tgcloud-round-guide-broadcast-20261120
+    paths:
+      - .github/workflows/tgcloud-staging-live-diagnostics.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tgcloud-staging-readonly-diagnostics
+  cancel-in-progress: false
+jobs:
+  diagnose-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: tgcloud-staging
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_STAGING_TOKEN }}
+      TGCLOUD_STAGING_OWNER_TELEGRAM_ID: ${{ secrets.TGCLOUD_STAGING_OWNER_TELEGRAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate staging credentials without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${TGCLOUD_TOKEN:-}" =~ ^app8533963416:.{10,}$ ]] || {
+            echo 'STAGING_TGCLOUD_TOKEN_MISSING_OR_WRONG_APP'; exit 1;
+          }
+          [[ "${TGCLOUD_STAGING_OWNER_TELEGRAM_ID:-}" =~ ^[1-9][0-9]{0,19}$ ]] || {
+            echo 'STAGING_OWNER_ID_MISSING'; exit 1;
+          }
+          echo 'STAGING_IDENTITY_OK: 8533963416; production 8785073471 untouched'
+      - name: Verify isolated tgcloud module imports
+        run: node scripts/checkTgcloudModules.mjs
+      - name: Probe existing staging health and bootstrap (NO deployment, NO writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctx="{initData:{user:{id:${TGCLOUD_STAGING_OWNER_TELEGRAM_ID}}}}"
+          for endpoint in health bootstrap; do
+            log="$(mktemp)"
+            if npx --yes --package=@tgcloud/cli tgcloud run "endpoints/${endpoint}" '{}' --ctx "${ctx}" >"${log}" 2>&1; then
+              if grep -Eq 'ok[[:space:]]*:[[:space:]]*true|"ok"[[:space:]]*:[[:space:]]*true' "${log}"; then
+                echo "STAGING_${endpoint^^}_OK"
+              else
+                echo "STAGING_${endpoint^^}_RESPONSE_NOT_OK"
+                rm -f "${log}"
+                exit 1
+              fi
+            else
+              echo "STAGING_${endpoint^^}_COMMAND_FAILED (output withheld for privacy)"
+              rm -f "${log}"
+              exit 1
+            fi
+            rm -f "${log}"
+          done
+          echo 'READ_ONLY_STAGING_CHECKS_COMPLETE; production and webhook unchanged'
