@@ -43,6 +43,43 @@ function args(input,maximum){
    throw Error('INVALID_ROUND_GUIDE_REQUEST');
  return {cursor,limit};
 }
+// Read-only readiness diagnostics: never returns IDs or Telegram destinations.
+// Operators can verify import/eligibility and queued campaign progress before
+// lifting the separate production cutover gate.
+export async function inspectRoundGuideReadiness(db,actor,input={}){
+ await requireAdmin(db,actor);
+ if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)
+  throw Error('INVALID_ROUND_GUIDE_REQUEST');
+ const recipients=await db.get(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN is_banned=0 AND telegram_id IS NOT NULL
+    AND telegram_id<>'' THEN 1 ELSE 0 END),0) AS eligible
+  FROM efl_users`);
+ const deliveries=await db.get(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN d.status='PENDING' THEN 1 ELSE 0 END),0) AS pending,
+  COALESCE(SUM(CASE WHEN d.status='SENT' THEN 1 ELSE 0 END),0) AS sent,
+  COALESCE(SUM(CASE WHEN d.status='FAILED' THEN 1 ELSE 0 END),0) AS failed,
+  COALESCE(SUM(CASE WHEN d.status='REVIEW' THEN 1 ELSE 0 END),0) AS review,
+  COALESCE(SUM(CASE WHEN d.status='LEASED' THEN 1 ELSE 0 END),0) AS leased
+  FROM efl_notification_deliveries d
+  WHERE d.notification_id LIKE :prefix`,
+  {':prefix':ROUND_GUIDE_ID+'-%'});
+ const count=value=>{
+  const n=Number(value??0);
+  if(!Number.isSafeInteger(n)||n<0)throw Error('ROUND_GUIDE_AUDIT_INCONSISTENT');
+  return n;
+ };
+ const total=count(recipients?.total),eligible=count(recipients?.eligible);
+ const stats={total:count(deliveries?.total),pending:count(deliveries?.pending),
+  sent:count(deliveries?.sent),failed:count(deliveries?.failed),
+  review:count(deliveries?.review),leased:count(deliveries?.leased)};
+ if(eligible>total||stats.total>eligible||
+  stats.pending+stats.sent+stats.failed+stats.review+stats.leased!==stats.total)
+  throw Error('ROUND_GUIDE_AUDIT_INCONSISTENT');
+ return {ok:true,campaign:ROUND_GUIDE_ID,readOnly:true,recipientTotal:total,
+  eligibleRecipients:eligible,deliveries:stats,
+  complete:stats.sent+stats.failed+stats.review===stats.total&&stats.total===eligible};
+}
+
 // Paginated, admin-only, and idempotent on notification ID and delivery ID.
 // Only the immutable guide is inserted. No user-supplied message/recipient.
 export async function prepareRoundGuideBatch(db,actor,input={}){
