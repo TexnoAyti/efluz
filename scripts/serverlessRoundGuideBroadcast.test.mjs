@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {ROUND_GUIDE_BODY,ROUND_GUIDE_BUTTON,ROUND_GUIDE_ID,
- prepareRoundGuideBatch,dispatchRoundGuideBatch} from '../tgcloud/lib/roundGuideBroadcast.js';
+ prepareRoundGuideBatch,dispatchRoundGuideBatch,inspectRoundGuideReadiness} from '../tgcloud/lib/roundGuideBroadcast.js';
 function setup(){
  const sql=new DatabaseSync(':memory:');
  sql.exec(`
@@ -95,5 +95,26 @@ test('resolved Telegram API with no positive message ID goes to review, not SENT
   assert.equal(r.sent,0);
   assert.equal(r.review,3);
   assert.equal(sql.prepare("SELECT count(*) n FROM efl_notification_deliveries WHERE status='SENT'").get().n,0);
+ }finally{sql.close();}
+});
+
+test('readiness audit is admin-only, read-only and counts safe recipients',async()=>{
+ const {sql,db}=setup();
+ try{
+  await assert.rejects(inspectRoundGuideReadiness(db,'111'),/ROUND_GUIDE_FORBIDDEN/);
+  await assert.rejects(inspectRoundGuideReadiness(db,'999',{recipientId:'a'}),/INVALID_ROUND_GUIDE_REQUEST/);
+  const before=await inspectRoundGuideReadiness(db,'999');
+  assert.equal(before.recipientTotal,7);
+  assert.equal(before.eligibleRecipients,4);
+  assert.deepEqual(before.deliveries,{total:0,pending:0,sent:0,failed:0,review:0,leased:0});
+  assert.equal(before.complete,false);
+  assert.doesNotMatch(JSON.stringify(before),/telegramId|userId|111|222/);
+  await prepareRoundGuideBatch(db,'999',{limit:20});
+  const ready=await inspectRoundGuideReadiness(db,'999');
+  assert.equal(ready.deliveries.total,4);
+  assert.equal(ready.deliveries.pending,4);
+  assert.equal(ready.complete,false);
+  const after=await inspectRoundGuideReadiness(db,'999');
+  assert.deepEqual(after,ready);
  }finally{sql.close();}
 });
