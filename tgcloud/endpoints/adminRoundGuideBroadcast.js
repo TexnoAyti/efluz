@@ -6,7 +6,7 @@ import {prepareRoundGuideBatch,dispatchRoundGuideBatch} from '../lib/roundGuideB
 // staging database; actual Telegram sends remain disabled until the owner
 // has verified SDK behavior AND stopped the legacy production dispatcher.
 export const ROUND_GUIDE_CONTROL=Object.freeze({
- prepareEnabled:true,
+ prepareEnabled:false,
  sendEnabled:false,
  productionReady:false,
 });
