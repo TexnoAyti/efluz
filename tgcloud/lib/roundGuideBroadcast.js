@@ -95,8 +95,13 @@ export async function dispatchRoundGuideBatch(db,api,actor,input={}){
   try{
    const response=await api.sendMessage({chat_id:notice.telegramId,text:ROUND_GUIDE_BODY,
     reply_markup:ROUND_GUIDE_BUTTON});
+   // Telegram's successful sendMessage result must identify the sent message.
+   // A resolved promise without a receipt is ambiguous: never claim SENT.
    if(response?.ok===false)throw Object.assign(new Error('TELEGRAM_REJECTED'),
      {error_code:response.error_code});
+   const receipt=response?.result??response;
+   if(!Number.isSafeInteger(receipt?.message_id)||receipt.message_id<=0)
+     throw new Error('TELEGRAM_RECEIPT_UNVERIFIED');
    await finishNotificationForWorker(db,{notificationId:id,leaseToken,now:Date.now(),success:true});
    sent++;
   }catch(error){
