@@ -1,0 +1,36 @@
+name: EFLUZ Telegram notification sweep
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: efluz-telegram-notification-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: tgcloud-production
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_PRODUCTION_TOKEN }}
+      TGCLOUD_PRODUCTION_OWNER_TELEGRAM_ID: '5209126900'
+    steps:
+      - name: Verify production token identity
+        run: |
+          test -n "${TGCLOUD_TOKEN}" || { echo "TGCLOUD_PRODUCTION_TOKEN secret is required"; exit 1; }
+          [[ "${TGCLOUD_TOKEN}" =~ ^app8785073471:[^[:space:]]{10,}$ ]] || { echo "PRODUCTION_TOKEN_APP_MISMATCH"; exit 1; }
+      - name: Run bounded notification sweep
+        run: |
+          npx --yes --package=@tgcloud/cli tgcloud run endpoints/notificationSweep '{}' --ctx "{initData:{user:{id:${TGCLOUD_PRODUCTION_OWNER_TELEGRAM_ID}}}}" > /tmp/notification-sweep.log 2>&1 || {
+            echo "NOTIFICATION_SWEEP_FAILED"; exit 1;
+          }
+          grep -Eq 'ok[[:space:]]*:[[:space:]]*true|\"ok\"[[:space:]]*:[[:space:]]*true' /tmp/notification-sweep.log || {
+            echo "NOTIFICATION_SWEEP_UNCONFIRMED"; exit 1;
+          }
+          echo "NOTIFICATION_SWEEP_OK"
