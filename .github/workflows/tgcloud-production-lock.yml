@@ -1,0 +1,66 @@
+name: Telegram Serverless production lock and smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Deploy the locked production runtime to app 8785073471"
+        required: true
+        type: choice
+        options:
+          - DO_NOT_DEPLOY
+          - LOCK_PRODUCTION
+        default: DO_NOT_DEPLOY
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-serverless-production
+  cancel-in-progress: false
+
+jobs:
+  lock-production:
+    if: ${{ inputs.confirmation == 'LOCK_PRODUCTION' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: tgcloud-production
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_PRODUCTION_TOKEN }}
+      TGCLOUD_STAGING_APP_ID: '8533963416'
+      TGCLOUD_PRODUCTION_APP_ID: '8785073471'
+      CONFIRM_TGCLOUD_PRODUCTION_LOCK: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/tgcloud-staging-8533963416-20261111
+      - name: Install pinned Bun
+        run: npm install -g bun@1.3.3
+      - name: Verify production identity and lock controls
+        run: |
+          test -n "${TGCLOUD_TOKEN}" || { echo "TGCLOUD_PRODUCTION_TOKEN secret is required"; exit 1; }
+          [[ "${TGCLOUD_TOKEN}" =~ ^app8785073471:[^[:space:]]{10,}$ ]] || { echo "PRODUCTION_TOKEN_APP_MISMATCH"; exit 1; }
+          [[ "${TGCLOUD_STAGING_APP_ID}" != "${TGCLOUD_PRODUCTION_APP_ID}" ]] || { echo "PRODUCTION_EQUALS_STAGING"; exit 1; }
+          test "${CONFIRM_TGCLOUD_PRODUCTION_LOCK}" = "LOCK_PRODUCTION" || { echo "PRODUCTION_LOCK_CONFIRMATION_REQUIRED"; exit 1; }
+          grep -q "enabled: false" tgcloud/lib/importControl.js
+      - name: Install dependencies and run runtime tests
+        run: |
+          bun install --frozen-lockfile
+          node --test scripts/serverlessCompletePreflight.test.mjs scripts/serverlessImportBoundaries.test.mjs scripts/serverlessMutationGate.test.mjs
+          node scripts/checkTgcloudModules.mjs
+      - name: Build and verify the real Mini App
+        run: |
+          bun run build:tgcloud:real-ui
+          node scripts/stageEflRealUi.mjs
+          node scripts/verifyEflServerlessUi.mjs
+          EFL_VERIFY_REAL_UI=1 node scripts/verifyTgcloudStatic.mjs
+      - name: Deploy locked production runtime
+        run: npx --yes --package=@tgcloud/cli tgcloud push --force
+      - name: Verify production webhook runtime and imported data
+        run: |
+          ctx="{initData:{user:{id:5209126900}}}"
+          for module in health seasons bootstrap; do
+            npx --yes --package=@tgcloud/cli tgcloud run "endpoints/${module}" '{}' --ctx "${ctx}" >"/tmp/tgcloud-${module}.log" 2>&1 || { echo "PRODUCTION_RUNTIME_COMMAND_FAILED:${module}"; exit 1; }
+            grep -Eq 'ok[[:space:]]*:[[:space:]]*true|"ok"[[:space:]]*:[[:space:]]*true' "/tmp/tgcloud-${module}.log" || { echo "PRODUCTION_RUNTIME_CHECK_FAILED:${module}"; exit 1; }
+          done
+          echo "PRODUCTION_LOCKED_RUNTIME_OK"
