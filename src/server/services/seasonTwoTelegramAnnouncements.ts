@@ -12,7 +12,7 @@ const OWNER = 'EFLUZ';
 const openTime = Date.parse(S2_OPENS_AT);
 const publicTime = Date.parse(S2_PUBLIC_AT);
 
-type Announcement = { eventId: string; title: string; body: string };
+type Announcement = { eventId: string; title: string; body: string; replyMarkup?: { inline_keyboard: Array<Array<{text:string;url:string}>> } };
 
 /**
  * The existing durable Telegram queue publishes BOTH bot-chat messages and
@@ -39,6 +39,7 @@ async function queueAnnouncement(item: Announcement): Promise<boolean> {
     type: 'COMPETITION_UPDATE',
     targetAudience: 'ALL_USERS',
     requestId: item.eventId,
+    replyMarkup: item.replyMarkup,
   });
   return true;
 }
@@ -48,7 +49,7 @@ async function queueAnnouncement(item: Announcement): Promise<boolean> {
  * status poll wakes this background job; no user-supplied text can be sent.
  * Both delivery paths use a durable, deterministic one-time identifier.
  */
-const ROUND_GUIDE_EVENT = 'season2-any-round-guide-telegram-link-fix-20261120';
+const ROUND_GUIDE_EVENT = 'season2-guide-inline-button-20261120';
 const ROUND_GUIDE_TITLE = 'EFLUZ 2-mavsum: to‘g‘ri o‘yin tartibi (yangilangan)';
 const ROUND_GUIDE_BODY = [
   'MUHIM: EFLUZ 2-MAVSUM O‘YIN TARTIBI',
@@ -68,45 +69,26 @@ const ROUND_GUIDE_BODY = [
   'Faqat haqiqatda o‘ynalgan uchrashuv natijasini yuboring. Noto‘g‘ri hisobda adminga murojaat qiling.',
   '',
   'Raqibingiz tayyormi? Navbat kutmang — uchrashuvni o‘tkazing!',
-  'Mini App’ni ochish: Telegramdagi EFLUZ botiga kiring va «Ilovani ochish» tugmasini bosing.',
-  'O‘yinga kirish 👉 @efluzbot',
 ].join('\n');
 
 export async function announceSeasonTwoRoundGuide(): Promise<{broadcast:string;channel:string}> {
   if (process.env.VERCEL_ENV !== 'production' || process.env.DATABASE_PROVIDER !== 'supabase')
     return {broadcast:'NOT_PRODUCTION',channel:'NOT_PRODUCTION'};
-
-  // A single broadcast ID prevents duplicated personal and in-app messages.
   let broadcast = 'ALREADY_QUEUED';
   try {
     const queued = await queueAnnouncement({
       eventId: ROUND_GUIDE_EVENT, title: ROUND_GUIDE_TITLE, body: ROUND_GUIDE_BODY,
+      replyMarkup: {inline_keyboard:[[{
+        text: '🎮 O‘yinga kirish', url: 'https://t.me/efluzbot?start=app',
+      }]]},
     });
     broadcast = queued ? 'QUEUED' : 'ALREADY_QUEUED';
-  } catch (error:any) {
+  } catch(error:any) {
     broadcast = 'QUEUE_ERROR';
-    console.warn('[SEASON2_ROUND_GUIDE_BROADCAST]', String(error?.message||error));
+    console.warn('[SEASON2_ROUND_GUIDE_BROADCAST]',String(error?.message||error));
   }
-
-  // Channel delivery is separate and deliberately fail-closed on uncertain
-  // Telegram outcomes, to avoid accidentally posting the guide twice.
-  let channel = 'ALREADY_ATTEMPTED';
-  const ref = getFirestoreDb().collection('runtime_settings').doc('channel-post-' + ROUND_GUIDE_EVENT);
-  try {
-    await ref.create({eventId:ROUND_GUIDE_EVENT, state:'SENDING',createdAt:new Date().toISOString()});
-    const message = '<b>'+ROUND_GUIDE_TITLE+'</b>\n\n'+ROUND_GUIDE_BODY.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const result = await sendTelegramMessage('@efl_uz',message,{parse_mode:'HTML'});
-    channel = result.ok ? 'SENT' : 'FAILED';
-    await ref.set({state:channel,telegramMessageId:result.ok?result.result?.message_id:null,
-      updatedAt:new Date().toISOString(),error:result.ok?null:String(result.error||'UNKNOWN').slice(0,240)},{merge:true});
-  } catch (error:any) {
-    if (!/already exists|already_exists|ALREADY_EXISTS|6:/.test(String(error?.message||error))) {
-      channel = 'ERROR';
-      console.warn('[SEASON2_ROUND_GUIDE_CHANNEL]',String(error?.message||error));
-    }
-  }
-  console.info('[SEASON2_ROUND_GUIDE_RESULT]',{broadcast,channel});
-  return {broadcast,channel};
+  console.info('[SEASON2_ROUND_GUIDE_RESULT]',{broadcast,channel:'NOT_REQUESTED'});
+  return {broadcast,channel:'NOT_REQUESTED'};
 }
 
 /** Correct existing channel message 1048 in place; do not repost to everyone. */
@@ -150,7 +132,6 @@ export async function announceDueSeasonTwoMilestones(now = Date.now()): Promise<
   if (now < openTime) return 'NOT_DUE';
   // One-shot explanation requested for every bot user and @efl_uz.
   await announceSeasonTwoRoundGuide();
-  await updateSeasonTwoGuideBotLinkInChannel();
   if (now < publicTime) {
     const queued = await queueAnnouncement({
       eventId: 'season2-priority-20261106',
