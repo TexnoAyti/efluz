@@ -26,8 +26,9 @@ export async function handleReadOnlyBotCommand(db,message){
   if(command==='/serverless-check')
     return {chat_id:chatId,text:'EFLUZ Serverless sinov kanali ishlayapti. Production bot hali eski tizimda.'};
   if(command==='/start'||command==='/help')
-    return {chat_id:chatId,text:'EFLUZ Serverless sinov boti. Quyidagi bo‘limlarni faqat o‘qish mumkin. Klub tanlash, natija kiritish va tur almashishi o‘chirilgan.',
+    return {chat_id:chatId,text:'EFLUZ’ga xush kelibsiz! ⚽️\\n\\nMini App orqali klubingiz, ligalar, uchrashuvlar va turnir jadvallarini ko‘ring.',
       reply_markup:{inline_keyboard:[
+        [{text:'EFLUZ Mini App’ni ochish',web_app:{url:'https://efluz1.vercel.app/'}}],
         [{text:'Klubim',callback_data:'efl:myclub'},
          {text:'Uchrashuvlarim',callback_data:'efl:myfixtures'}],
         [{text:'Ligalar',callback_data:'efl:leagues'},
