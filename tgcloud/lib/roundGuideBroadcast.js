@@ -88,13 +88,15 @@ export async function dispatchRoundGuideBatch(db,api,actor,input={}){
   const id=String(jobs[i].notificationId);
   // Only prepared guide records, never other queued notifications.
   if(!id.startsWith(ROUND_GUIDE_ID+'-'))continue;
-  const now=Date.now(),leaseToken='roundguide_'+now+'_'+i+'_'+id.slice(-30);
+  const now=Date.now(),leaseToken='roundguide_'+now+'_'+i+'_'+id.slice(-30).replace(/[^A-Za-z0-9_-]/g,'_');
   let notice;
   try{notice=await claimNotificationForWorker(db,{notificationId:id,leaseToken,now,leaseMs:120000});}
   catch{continue;}
   try{
-   await api.sendMessage({chat_id:notice.telegramId,text:ROUND_GUIDE_BODY,
+   const response=await api.sendMessage({chat_id:notice.telegramId,text:ROUND_GUIDE_BODY,
     reply_markup:ROUND_GUIDE_BUTTON});
+   if(response?.ok===false)throw Object.assign(new Error('TELEGRAM_REJECTED'),
+     {error_code:response.error_code});
    await finishNotificationForWorker(db,{notificationId:id,leaseToken,now:Date.now(),success:true});
    sent++;
   }catch(error){
