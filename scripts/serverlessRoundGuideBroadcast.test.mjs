@@ -55,7 +55,7 @@ test('Telegram dispatch sends only queued guide and records accepted messages',a
  try{
   await prepareRoundGuideBatch(db,'999',{limit:20});
   const sent=[];
-  const api={sendMessage:async payload=>{sent.push(payload);return {ok:true};}};
+  const api={sendMessage:async payload=>{sent.push(payload);return {message_id:100+sent.length};}};
   const r=await dispatchRoundGuideBatch(db,api,'999',{limit:3});
   assert.deepEqual({sent:r.sent,review:r.review,failed:r.failed},{sent:3,review:0,failed:0});
   assert.equal(sent.length,3);
@@ -83,5 +83,17 @@ test('ambiguous send is held for review, not automatically sent again',async()=>
   assert.equal(third.attempted,0);
   assert.equal(calls,4);
   assert.equal(sql.prepare("SELECT count(*) n FROM efl_notification_deliveries WHERE status='REVIEW'").get().n,4);
+ }finally{sql.close();}
+});
+
+test('resolved Telegram API with no positive message ID goes to review, not SENT',async()=>{
+ const {sql,db}=setup();
+ try{
+  await prepareRoundGuideBatch(db,'999',{limit:20});
+  const api={sendMessage:async()=>({ok:true})};
+  const r=await dispatchRoundGuideBatch(db,api,'999',{limit:3});
+  assert.equal(r.sent,0);
+  assert.equal(r.review,3);
+  assert.equal(sql.prepare("SELECT count(*) n FROM efl_notification_deliveries WHERE status='SENT'").get().n,0);
  }finally{sql.close();}
 });
