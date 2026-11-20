@@ -8,6 +8,8 @@ import { useI18n } from '../i18n';
 import { api, invalidateClientCache } from '../lib/api';
 import { Competition, Fixture } from '../types';
 import { ResultSubmissionModal } from './ResultSubmissionModal';
+import { isDesignPreview } from '../designPreview';
+import { guidePreviewCompetition, guidePreviewFixtures, guidePreviewOpponentFixture, guidePreviewPendingFixture, guidePreviewConfirmedFixture } from '../lib/resultGuidePreviewData';
 import { ClubCrest } from './ClubCrest';
 import { PremiumClubBadge } from './PremiumClubBadge';
 import { MatchdayCountdown } from './MatchdayCountdown';
@@ -50,10 +52,26 @@ export const FixturesView: React.FC = () => {
   const [selectedAdminFixture, setSelectedAdminFixture] = useState<Fixture | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [lockStates, setLockStates] = useState<Record<string, Record<number, { isOpen: boolean; isLocked: boolean; overrideStatus: string }>>>({});
+  // Screenshot automation only: open the real result modal with a synthetic
+  // sample fixture. Outside Vercel Preview/local dev this has no effect.
+  useEffect(()=>{
+    if(isDesignPreview && new URLSearchParams(window.location.search).get('guideModal')==='1'){
+      setSelectedFixtureForSubmit(
+        new URLSearchParams(window.location.search).get('guideStep')==='opponent'
+          ? guidePreviewOpponentFixture : guidePreviewFixtures[0]
+      );
+    }
+  },[]);
+
 
   // Reset selected matchday to active competition's currentMatchday when switching competitions
   const prevCompIdRef = useRef<string>(selectedCompetitionId);
   useEffect(() => {
+    if (isDesignPreview) {
+      // Screenshot the 7th-round example while the actual competition remains at round 1.
+      prevCompIdRef.current = selectedCompetitionId;
+      return;
+    }
     if (selectedCompetitionId && selectedCompetitionId !== prevCompIdRef.current) {
       prevCompIdRef.current = selectedCompetitionId;
       const comp = competitions.find((c) => c.id === selectedCompetitionId);
@@ -65,6 +83,10 @@ export const FixturesView: React.FC = () => {
 
   // Fetch isolated locks for selected competition
   useEffect(() => {
+    if (isDesignPreview) {
+      setLockStates({[guidePreviewCompetition.id]:{}});
+      return;
+    }
     if (!selectedCompetitionId) return;
     let isMounted = true;
     api.getCompetitionLocks(selectedCompetitionId, fixtureSeasonId)
@@ -88,6 +110,13 @@ export const FixturesView: React.FC = () => {
   useEffect(() => {
     async function loadComps() {
       setIsLoading(true);
+      if(isDesignPreview){
+        setCompetitions([guidePreviewCompetition]);
+        setSelectedCompetitionId(guidePreviewCompetition.id);
+        setSelectedMatchday(7);
+        setIsLoading(false);
+        return;
+      }
       try {
         const res = await api.getCompetitions(fixtureSeasonId);
         setCompetitions(res.competitions || []);
@@ -162,6 +191,17 @@ export const FixturesView: React.FC = () => {
   };
 
   const loadFixtures = async (skipCache = false) => {
+    if(isDesignPreview){
+      const step = new URLSearchParams(window.location.search).get('guideStep');
+      const first=step==='opponent'?guidePreviewOpponentFixture:
+        step==='waiting'?guidePreviewPendingFixture:
+        step==='confirmed'?guidePreviewConfirmedFixture:guidePreviewFixtures[0];
+      setFixtures([first,...guidePreviewFixtures.slice(1)]
+        .filter(item=>item.matchday===selectedMatchday));
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
     if (!selectedCompetitionId) {
       setIsLoading(false);
       return;
@@ -726,9 +766,9 @@ export const FixturesView: React.FC = () => {
         </div>
       )}
 
-      <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />
+      {!isDesignPreview && <AdminTournamentImageExport competition={activeComp} kind="matchday" matchday={selectedMatchday} disabled={isLoading} />}
 
-      {selectedAdminFixture&&canManageFixture(user,selectedAdminFixture.competitionId)&&<AdminFixtureQuickActions
+      {!isDesignPreview&&selectedAdminFixture&&canManageFixture(user,selectedAdminFixture.competitionId)&&<AdminFixtureQuickActions
         fixture={selectedAdminFixture}
         onClose={()=>setSelectedAdminFixture(null)}
         onScoreSaved={()=>{invalidateClientCache('/api/fixtures');invalidateClientCache('/api/standings');void loadFixtures(true);}}

@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'package.json'));
 const React = require('react');
 const { renderToReadableStream } = require('react-dom/server');
-const views = ['MatchdayHomeView', 'CompetitionHubView', 'ClubHubView', 'PublicClubView', 'NotificationsView', 'AdminView', 'AdminMatchOperationsV4Panel', 'NotificationModal', 'TelegramDiagnosticsModal', 'OfflineSyncBanner', 'GlobalSearchModal', 'MatchOperationsV4Panel', 'SeasonLifecyclePanel'];
+const views = ['FixturesView', 'MatchdayHomeView', 'CompetitionHubView', 'ClubHubView', 'PublicClubView', 'NotificationsView', 'AdminView', 'AdminMatchOperationsV4Panel', 'NotificationModal', 'TelegramDiagnosticsModal', 'OfflineSyncBanner', 'GlobalSearchModal', 'MatchOperationsV4Panel', 'SeasonLifecyclePanel'];
 const result = await build({
   absWorkingDir: root, entryPoints: ['src/App.tsx'], bundle: true, write: false,
   platform: 'node', format: 'cjs', packages: 'external', loader: { '.css': 'empty' },

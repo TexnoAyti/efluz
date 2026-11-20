@@ -40,6 +40,8 @@ const TelegramDiagnosticsModal = lazy(() => import('./components/TelegramDiagnos
 const OfflineSyncBanner = lazy(() => import('./components/OfflineSyncBanner').then(module => ({ default: module.OfflineSyncBanner })));
 const CompetitionHubView = lazy(() => import('./components/CompetitionHubView').then(module => ({ default: module.CompetitionHubView })));
 const ClubHubView = lazy(() => import('./components/ClubHubView').then(module => ({ default: module.ClubHubView })));
+const FixturesView = lazy(() => import('./components/FixturesView').then(module => ({default:module.FixturesView})));
+
 const MatchOperationsV4Panel = lazy(() => import('./components/MatchOperationsV4Panel').then(module => ({ default: module.MatchOperationsV4Panel })));
 const SeasonLifecyclePanel = lazy(() => import('./components/SeasonLifecyclePanel').then(module => ({ default: module.SeasonLifecyclePanel })));
 const GlobalSearchModal = lazy(() => import('./components/GlobalSearchModal').then(module => ({ default: module.GlobalSearchModal })));
@@ -94,7 +96,7 @@ const AppContent: React.FC = () => {
     if (!user) return false;
     if (welcomeCompletedFor === user.id) return true;
     // Force only the existing, build-gated visual preview; never bypass Telegram auth.
-    if (isDesignPreview && new URLSearchParams(window.location.search).get('welcome') === '1') return false;
+    if (isDesignPreview) return new URLSearchParams(window.location.search).get('welcome') !== '1';
     try { return window.localStorage.getItem(`efluz-welcome-${WELCOME_STORAGE_VERSION}:${user.id}`) === 'done'; }
     catch { return false; }
   }, [user?.id, welcomeCompletedFor]);
@@ -309,8 +311,12 @@ const AppContent: React.FC = () => {
               />
             )}
 
+            {isDesignPreview && currentTab === 'my-matches' && (
+              <FixturesView />
+            )}
+
             {/* CLUB: Replaces Profile & Matches - Active Club, Switcher, Matches, Stats, Settings */}
-            {(currentTab === 'my-club' || currentTab === 'profile' || currentTab === 'my-matches') && (
+            {(currentTab === 'my-club' || currentTab === 'profile' || currentTab === 'my-matches') && !(isDesignPreview && currentTab === 'my-matches') && (
               <>
               {canSeeTeamPreview(user?.telegramId)&&<button type="button" onClick={openTeamDirectory} className="preview-surface w-full rounded-2xl border border-[var(--efl-border)] p-4 mb-4 flex items-center justify-between text-left"><span><strong className="text-sm text-[var(--efl-text)]">Teamlarim</strong><span className="block text-xs text-[var(--efl-text-2)] mt-1">Team profili · Tarkib · O‘yinlar · Turnirlar</span></span><span className="text-xs text-[var(--efl-primary)]">Faqat sizga →</span></button>}
               <ClubHubView

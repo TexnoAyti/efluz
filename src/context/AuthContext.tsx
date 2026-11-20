@@ -257,12 +257,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSessionToken(null);
         setUser({
           id: 'design-preview', telegramId: '', username: 'design_preview',
-          firstName: 'Design Preview', isAdmin: true, isSuspended: false,
+          firstName: 'Sinov o‘yinchi', isAdmin: false, isSuspended: false,
           createdAt: '', updatedAt: '',
         });
+        // Preview ownership exists only in local React state. It NEVER claims a
+        // production club and grants no server-side permissions.
+        const previewClub:Club={
+          id:'club-arsenal',name:'Arsenal',shortName:'ARS',country:'England',
+          leagueId:'league-premier-league',leagueName:'APL',
+          logoUrl:'',active:true,createdAt:'',
+        };
+        const opponentPreview = new URLSearchParams(window.location.search).get('guideStep')==='opponent';
+        const activePreviewClub:Club=opponentPreview?{
+          ...previewClub,id:'club-chelsea',name:'Chelsea',shortName:'CHE'
+        }:previewClub;
+        setOwnedClubs([activePreviewClub]);
+        setCurrentClub(activePreviewClub);
+        setActiveSeasonId('season-2027-28');
         const season: Season = {
-          id: 'season-2026-27', name: '2026/27', status: 'active',
-          startDate: '2026-08-01', createdAt: '',
+          id: 'season-2027-28', name: '2-mavsum', status: 'active',
+          startDate: '2026-11-01', createdAt: '',
         };
         setSeasons([season]);
         setCurrentSeason(season);
