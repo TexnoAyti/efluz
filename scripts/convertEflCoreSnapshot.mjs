@@ -128,9 +128,28 @@ if(collections.team_league_preview_teams.length){
 for(const table of Object.keys(IMPORT_TABLES)){
  if(!Object.prototype.hasOwnProperty.call(result.rows,table))result.rows[table]=[];
 }
+// Keep each packet below the serverless payload limit.  A fixed 100-row
+// chunk is unsafe for wide historical rows (especially raw JSON/archive
+// projections), so shrink a chunk only when the validator reports that its
+// serialized payload is too large.  The import packet identity remains tied
+// to the table and deterministic chunk index.
 for(const [table,rows] of Object.entries(result.rows)){
- for(let index=0;index<rows.length;index+=100)
-  validateImportBatch({table,batchId:table+':'+String(index/100).padStart(8,'0'),rows:rows.slice(index,index+100)});
+ let index=0, chunkIndex=0;
+ while(index<rows.length){
+  let size=Math.min(100,rows.length-index);
+  while(size>0){
+   const batchId=table+':'+String(chunkIndex).padStart(8,'0');
+   try{
+    validateImportBatch({table,batchId,rows:rows.slice(index,index+size)});
+    break;
+   }catch(error){
+    if(error?.message!=='INVALID_BATCH_BYTES'||size===1)throw error;
+    size=Math.max(1,Math.floor(size/2));
+   }
+  }
+  index+=size;
+  chunkIndex+=1;
+ }
 }
 await writeFile(resolve(dest),JSON.stringify(result.rows)+'\n',{flag:'wx',mode:0o600});
 console.log(JSON.stringify({ok:true,...result.report,
