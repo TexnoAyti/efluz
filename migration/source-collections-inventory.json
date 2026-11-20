@@ -40,6 +40,21 @@
       "observedDocuments": 158
     },
     {
+      "collection": "club_owner_group_exit_audit",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "club_owner_group_exit_controls",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "club_owner_group_exits",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
       "collection": "club_selection_ban_audit",
       "handling": "preserve",
       "observedDocuments": 7
@@ -194,6 +209,10 @@
       "observedDocuments": 3055
     },
     {
+      "collection": "ownership_repair_backups",
+      "handling": "review"
+    },
+    {
       "collection": "penalty_exhibition_races",
       "handling": "preserve",
       "observedDocuments": 6
@@ -246,9 +265,9 @@
       "handling": "review"
     },
     {
-      "collection": "season2_retention_decisions",
-      "handling": "preserve",
-      "observedDocuments": 5
+      "collection": "season2_all_rounds_preopen_backup_20261117",
+      "handling": "review",
+      "observedDocuments": 0
     },
     {
       "collection": "season2_one_round_backup_20261114_competitions",
@@ -269,6 +288,11 @@
       "collection": "season2_one_round_backup_20261114_matchday_locks",
       "handling": "review",
       "observedDocuments": 91
+    },
+    {
+      "collection": "season2_retention_decisions",
+      "handling": "preserve",
+      "observedDocuments": 5
     },
     {
       "collection": "seasons",
@@ -337,6 +361,11 @@
       "collection": "telegram_member_tags",
       "handling": "preserve",
       "observedDocuments": 95
+    },
+    {
+      "collection": "telegram_result_evidence",
+      "handling": "review",
+      "observedDocuments": 0
     },
     {
       "collection": "telegram_webhook_leases",
@@ -412,10 +441,6 @@
       "collection": "uzeflife_worker",
       "handling": "review",
       "observedDocuments": 1
-    },
-    {
-      "collection": "ownership_repair_backups",
-      "handling": "review"
     }
   ],
   "observedGeneration": null,
