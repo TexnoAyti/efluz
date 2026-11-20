@@ -370,6 +370,7 @@ export async function enqueueTelegramBroadcast(params: {
   selectedUserIds?: string[];
   seasonId?: string;
   requestId?: string;
+  replyMarkup?: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
 }): Promise<TelegramBroadcastRecord> {
   const seasonId = params.seasonId || 'season-2026-27';
   const durableClient = getNotificationStore();
@@ -431,6 +432,7 @@ export async function enqueueTelegramBroadcast(params: {
         title: params.title,
         body: params.body,
         type: params.type,
+        replyMarkup: params.replyMarkup,
         status: 'QUEUED',
         retryCount: 0,
         maxRetries: 3,
@@ -447,6 +449,7 @@ export async function enqueueTelegramBroadcast(params: {
     type: params.type,
     targetAudience: params.targetAudience,
     targetLeagueId: params.targetLeagueId,
+    replyMarkup: params.replyMarkup,
     createdById: params.adminUserId,
     createdByUsername: params.adminUsername,
     createdAt: now,
@@ -471,6 +474,7 @@ export async function enqueueTelegramBroadcast(params: {
     return ARGV[2]
   `, [BROADCASTS_KEY, QUEUE_KEY], [broadcastId, JSON.stringify(record), JSON.stringify(jobs)]);
   if (persistedRecord.title !== record.title || persistedRecord.body !== record.body || persistedRecord.seasonId !== seasonId ||
+      JSON.stringify(persistedRecord.replyMarkup || null) !== JSON.stringify(record.replyMarkup || null) ||
       JSON.stringify(persistedRecord.recipients.map(r => r.userId).sort()) !== JSON.stringify(targetUserIds.slice().sort())) throw new Error('REQUEST_ID_REUSED_WITH_DIFFERENT_CONTENT');
   memoryBroadcasts.set(broadcastId, persistedRecord);
 
