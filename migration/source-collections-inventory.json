@@ -50,6 +50,16 @@
       "observedDocuments": 0
     },
     {
+      "collection": "club_owner_group_exit_release_audit",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "club_owner_group_exit_release_controls",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
       "collection": "club_owner_group_exits",
       "handling": "review",
       "observedDocuments": 0
