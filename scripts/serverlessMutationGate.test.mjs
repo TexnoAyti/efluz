@@ -13,19 +13,19 @@ const expectedGated=new Map([
  ['approveTeamJoin.js','MUTATION_CONTROL.enabled'],
  ['rejectTeamJoin.js','MUTATION_CONTROL.enabled'],
  ['matchChat.js','MUTATION_CONTROL.enabled'],
- ['markNotificationRead.js','MUTATION_CONTROL.enabled'],
+ ['markNotificationRead.js','NOTIFICATION_READ_CONTROL.enabled'],
  ['advanceCupRound.js','MUTATION_CONTROL.enabled'],
  ['setLateScoreWindow.js','MUTATION_CONTROL.enabled'],
- ['queueNotificationDelivery.js','MUTATION_CONTROL.enabled'],
+ ['queueNotificationDelivery.js','NOTIFICATION_DELIVERY_CONTROL.enabled'],
  ['importBatch.js','IMPORT_CONTROL.enabled']
 ]);
-test('all staging mutation endpoints remain fail-closed before production parity',async()=>{
+test('staging domain mutations remain fail-closed while notification read-state is isolated',async()=>{
  const entries=await readdir(root);
  for(const [file,gate] of expectedGated){
   assert.ok(entries.includes(file),file+' missing');
   const source=await readFile(new URL(file,root),'utf8');
   assert.ok(source.includes(gate),file+' must enforce explicit mutation gate');
-  assert.ok(source.includes('SHADOW_WRITE_DISABLED')||
+  assert.ok(file==='markNotificationRead.js'||source.includes('SHADOW_WRITE_DISABLED')||
             (file==='importBatch.js'&&source.includes('IMPORT_DISABLED')),
     file+' must return a clear disabled status');
  }
@@ -44,4 +44,27 @@ test('staging deployment defaults forbid mutations and import even if routes are
  assert.match(migration,/ownerTelegramId\s*:\s*['"]['"]/);
  assert.doesNotMatch(mutation,/enabled\s*:\s*true/);
  assert.doesNotMatch(migration,/enabled\s*:\s*true/);
+});
+
+test('notification read-state is isolated from the domain mutation gate',async()=>{
+ const source=await readFile(new URL('markNotificationRead.js',root),'utf8');
+ const control=await readFile(new URL('notificationReadControl.js',controlRoot),'utf8');
+ assert.match(source,/NOTIFICATION_READ_CONTROL\.enabled/);
+ assert.match(control,/enabled\s*:\s*true/);
+ assert.match(source,/UPDATE efl_notifications/);
+});
+
+test('notification update delivery is private and bounded',async()=>{
+ const source=await readFile(new URL('../tgcloud/lib/notificationDeliveryOnUpdate.js',import.meta.url),'utf8');
+ assert.match(source,/chat\?\.type!=='private'/);
+ assert.match(source,/LIMIT 5/);
+ assert.match(source,/api\.sendMessage/);
+ assert.match(source,/finishNotificationForWorker/);
+});
+
+test('notification delivery queue is isolated from the domain mutation gate',async()=>{
+ const source=await readFile(new URL('queueNotificationDelivery.js',root),'utf8');
+ const control=await readFile(new URL('notificationDeliveryControl.js',controlRoot),'utf8');
+ assert.match(source,/NOTIFICATION_DELIVERY_CONTROL\.enabled/);
+ assert.match(control,/enabled\s*:\s*true/);
 });

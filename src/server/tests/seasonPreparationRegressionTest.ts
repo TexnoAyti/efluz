@@ -34,37 +34,22 @@ assert.equal(body.preparation.startDate, null);
 assert.equal(headers['Cache-Control'], 'public, max-age=60');
 assert.equal(request({ sourceSeasonId: 'season-2027-28' }).body.preparation, null);
 assert.equal(getSeasonPreparation('unknown'), null);
-assert.equal(new Set(body.preparation.leagues.map((league: any) => league.id)).size, 9);
-assert.deepEqual(body.preparation.leagues.filter((league: any) => league.group === 'ASIA').map((league: any) => league.country), ['Uzbekistan', 'Saudi Arabia', 'Japan', 'Turkey']);
+assert.equal(new Set(body.preparation.leagues.map((league: any) => league.id)).size, 6);
+assert.deepEqual(body.preparation.leagues.filter((league: any) => league.group === 'ASIA').map((league: any) => league.country), ['Uzbekistan']);
 assert.equal(body.preparation.leagues.filter((league: any) => league.group === 'EUROPE').length, 5);
 assert.equal(body.preparation.leagues.find((league: any) => league.id === 'league-ligue-1').change, 'OPENING');
-const acl = body.preparation.internationalCompetitions.find((competition: any) => competition.id === 'comp-asian-champions-league-2027');
-assert.ok(acl, 'Asian Champions League is part of the preparation API and rollover metadata');
-assert.equal(acl.sourceSeasonId, EFL_SECOND_SEASON.id, 'Qualification comes from season two, not ongoing season one');
-assert.equal(acl.group, 'ASIA');
-assert.equal(acl.registrationOpen, false);
-assert.equal(acl.status, 'PREPARATION');
-assert.equal(acl.format.templateCompetitionId, 'comp-champions-league-2026');
-assert.deepEqual(acl.format.config, SEED_COMPETITIONS.find(competition => competition.id === acl.format.templateCompetitionId)?.formatConfig, 'ACL must use the same approved 32-club format as EFL European UCL');
-assert.equal(acl.qualification.selection, 'TOP_RANKED');
-assert.equal(acl.qualification.fromPosition, 1);
-assert.equal(acl.qualification.totalTeams, 32);
-const asianIds = body.preparation.leagues.filter((league: any) => league.group === 'ASIA').map((league: any) => league.id);
-assert.deepEqual(acl.qualification.sourceLeagueIds, asianIds, 'Only the four organizer-selected Asian leagues qualify, including Turkey');
-assert.deepEqual(Object.keys(acl.qualification.slotsByLeague), asianIds);
-assert.ok(Object.values(acl.qualification.slotsByLeague).every(value => value === 8), 'The organizer approved eight places from each Asian league');
-assert.equal(Object.values(acl.qualification.slotsByLeague).reduce((sum: number, value: number) => sum + value, 0), acl.qualification.totalTeams);
+assert.deepEqual(body.preparation.internationalCompetitions, [], 'Asian international qualification is deferred until an authorized format exists');
 assert.equal(isSeasonLeagueEnabled('league-ligue-1', CURRENT_SEASON_ID), false, 'Preparation cannot reopen season-one Ligue 1');
 assert.equal(isSeasonLeagueEnabled('league-ligue-1', EFL_SECOND_SEASON.id), true);
 assert.deepEqual((await db.collection('seasons').doc(current.id).get()).data(), current);
 assert.deepEqual((await db.collection('clubs').doc(owner.id).get()).data(), owner);
 assert.equal((await db.collection('fixtures').doc('season-one-result').get()).data()?.homeScore, 2);
 assert.equal((await db.collection('seasons').doc(EFL_SECOND_SEASON.id).get()).exists, false, 'Viewing preparation must not create or activate a season');
-assert.equal((await db.collection('competitions').doc(acl.id).get()).exists, false, 'Preparing ACL cannot activate a competition');
+assert.equal((await db.collection('competitions').doc('comp-asian-champions-league-2027').get()).exists, false, 'Preparing six leagues cannot activate an Asian international competition');
 const expectedSizes: Record<string,number> = {
   'league-premier-league':20, 'league-la-liga':20, 'league-serie-a':20,
   'league-bundesliga':18, 'league-ligue-1':18, 'league-uzbekistan-superliga':16,
-  'league-saudi-pro-league':18, 'league-j1':20, 'league-turkey-super-lig':18,
+  
 };
 const allClubIds = new Set<string>();
 let fixtureTotal = 0;
@@ -80,8 +65,8 @@ for (const league of EFL_SECOND_SEASON.leagues) {
   const preview = previewPreparedLeagueSchedule(league.id)!;
   assert.equal(preview.seasonId, EFL_SECOND_SEASON.id);
   assert.equal(preview.persisted,false);
-  assert.equal(preview.fixtures.length,n*(n-1));
-  assert.equal(preview.totalMatchdays,2*(n-1));
+  assert.equal(preview.fixtures.length,n*(n-1)/2);
+  assert.equal(preview.totalMatchdays,n-1);
   assert.equal(league.format.totalFixtures,preview.fixtures.length);
   const homePairs = new Set<string>();
   const roundClubs = new Set<string>();
@@ -90,8 +75,8 @@ for (const league of EFL_SECOND_SEASON.leagues) {
   for (const fixture of preview.fixtures) {
     assert.ok(ids.has(fixture.homeClubId) && ids.has(fixture.awayClubId));
     assert.notEqual(fixture.homeClubId,fixture.awayClubId);
-    const pair = `${fixture.homeClubId}|${fixture.awayClubId}`;
-    assert.ok(!homePairs.has(pair),'Each ordered pair plays exactly once'); homePairs.add(pair);
+    const pair = [fixture.homeClubId,fixture.awayClubId].sort().join('|');
+    assert.ok(!homePairs.has(pair),'Each unordered pair plays exactly once'); homePairs.add(pair);
     for (const id of [fixture.homeClubId,fixture.awayClubId]) {
       const key = `${fixture.matchday}|${id}`;
       assert.ok(!roundClubs.has(key),'A club cannot play twice in one round'); roundClubs.add(key);
@@ -99,12 +84,12 @@ for (const league of EFL_SECOND_SEASON.leagues) {
     homes.set(fixture.homeClubId,(homes.get(fixture.homeClubId)||0)+1);
     aways.set(fixture.awayClubId,(aways.get(fixture.awayClubId)||0)+1);
   }
-  for (const club of ids) { assert.equal(homes.get(club),n-1); assert.equal(aways.get(club),n-1); }
+  for (const club of ids) { assert.equal((homes.get(club)||0)+(aways.get(club)||0),n-1); }
   fixtureTotal += preview.fixtures.length;
   assert.equal((await db.collection('competitions').doc(league.competitionId).get()).exists,false);
 }
-assert.equal(allClubIds.size,168);
-assert.equal(fixtureTotal,2984);
+assert.equal(allClubIds.size,112);
+assert.equal(fixtureTotal,996);
 assert.equal(previewPreparedLeagueSchedule('unknown'),null);
 const clubsIn = (leagueId:string) => EFL_SECOND_SEASON.leagues.find(league => league.id === leagueId)!.roster.clubs.map(club => club.id);
 for (const id of ['club-elche','club-espanyol','club-levante']) assert.ok(clubsIn('league-la-liga').includes(id));
@@ -119,11 +104,11 @@ const scheduleRoute = (seasonsRouter as any).stack.find((layer:any) => layer.rou
 let scheduleStatus = 200, scheduleBody:any;
 const response = { setHeader() {}, status(code:number) { scheduleStatus=code; return this; }, json(value:any) { scheduleBody=value; } };
 scheduleRoute.route.stack[0].handle({params:{leagueId:'league-uzbekistan-superliga'}},response);
-assert.equal(scheduleBody.fixtures.length,240);
+assert.equal(scheduleBody.fixtures.length,120);
 scheduleRoute.route.stack[0].handle({params:{leagueId:'bad-id'}},response);
 assert.equal(scheduleStatus,404);
 assert.equal(scheduleBody.error,'PREPARED_LEAGUE_NOT_FOUND');
 assert.deepEqual((await db.collection('seasons').doc(current.id).get()).data(),current);
 assert.deepEqual((await db.collection('clubs').doc(owner.id).get()).data(),owner);
 assert.equal((await db.collection('fixtures').doc('season-one-result').get()).data()?.homeScore,2);
-console.log('SEASON_PREPARATION_REGRESSION_PASS: nine verified rosters, 168 clubs, 2984 balanced draft fixtures, current season preserved');
+console.log('SEASON_PREPARATION_REGRESSION_PASS: six verified rosters, 112 clubs, 996 single-round draft fixtures, current season preserved');

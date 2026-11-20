@@ -1,4 +1,5 @@
 import { CURRENT_SEASON_ID } from '../../lib/seasonParticipationPolicy';
+import { getFirestoreDb } from '../firebase/admin';
 import { getSeasonPreparation } from '../../lib/seasonPreparation';
 import { previewPreparedLeagueSchedule, previewPreparedCupBracket } from '../services/seasonPreparationService';
 import { Router, Request, Response } from 'express';
@@ -10,8 +11,24 @@ export const seasonsRouter = Router();
 seasonsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const seasons = await getAllSeasonsFirestore();
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
-    res.json({ seasons });
+    // A read-only season catalog must stay reachable when live Season 2
+    // metadata is temporarily unavailable. Do not pretend Season 2 has a
+    // verified status: only return the canonical static Season 1 record,
+    // explicitly marked degraded, until the live database can be read.
+    let degraded = false;
+    try {
+      const second = await getFirestoreDb().collection('seasons').doc('season-2027-28').get();
+      if (second.exists) {
+        const index = seasons.findIndex(s => s.id === second.id);
+        const live = { ...second.data(), id: second.id } as (typeof seasons)[number];
+        if (index >= 0) seasons[index] = live; else seasons.push(live);
+      }
+    } catch (error) {
+      degraded = true;
+      console.warn('[SEASON_CATALOG_DEGRADED]', error instanceof Error ? error.message : String(error));
+    }
+    res.setHeader('Cache-Control', degraded ? 'no-store' : 'public, max-age=60, stale-while-revalidate=120');
+    res.json({ seasons, degraded });
   } catch (err: any) {
     handleFirestoreError(res, err, 'GET /api/seasons');
   }
@@ -19,7 +36,8 @@ seasonsRouter.get('/', async (req: Request, res: Response) => {
 
 seasonsRouter.get('/active', async (req: Request, res: Response) => {
   try {
-    const season = await getActiveSeasonFirestore();
+    const second = await getFirestoreDb().collection('seasons').doc('season-2027-28').get();
+    const season = second.data()?.status === 'active' ? { ...second.data(), id: second.id } : await getActiveSeasonFirestore();
     if (!season) {
       res.status(404).json({ error: 'Active season not found', code: 'NOT_FOUND', message: 'Active season not found' });
       return;
@@ -58,6 +76,12 @@ seasonsRouter.get('/preparation/cups/:cupId/bracket', (req: Request, res: Respon
 seasonsRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const seasons = await getAllSeasonsFirestore();
+    const second = await getFirestoreDb().collection('seasons').doc('season-2027-28').get();
+    if (second.exists) {
+      const index = seasons.findIndex(s => s.id === second.id);
+      const live = { ...second.data(), id: second.id } as (typeof seasons)[number];
+      if (index >= 0) seasons[index] = live; else seasons.push(live);
+    }
     const season = seasons.find((s) => s.id === req.params.id);
     if (!season) {
       res.status(404).json({ error: 'Season not found', code: 'NOT_FOUND', message: `Season '${req.params.id}' not found` });

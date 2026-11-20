@@ -23,8 +23,8 @@ export const TelegramDiagnosticsModal: React.FC<TelegramDiagnosticsModalProps> =
     setMigrationProbe('testing'); setMigrationProbeNote('');
     try {
       const response = await api.probeMigrationTransport('telegram-serverless');
-      if (!response?.ok || response.migrationMode !== 'shadow') throw new Error('SHADOW_CONTRACT_MISMATCH');
-      setMigrationProbe('ready'); setMigrationProbeNote('Shadow endpoint javob berdi. Production o‘zgarmadi.');
+      if (!response?.ok) throw new Error('SERVERLESS_HEALTH_CONTRACT_MISMATCH');
+      setMigrationProbe('ready'); setMigrationProbeNote('Serverless endpoint javob berdi.');
     } catch (error) {
       setMigrationProbe('unavailable');
       setMigrationProbeNote(error instanceof Error ? error.message : 'Serverless endpoint javob bermadi.');
@@ -191,8 +191,8 @@ export const TelegramDiagnosticsModal: React.FC<TelegramDiagnosticsModalProps> =
 
           {user?.isAdmin && (
             <div className="rounded-xl border border-slate-800 p-3.5 space-y-2 bg-slate-950/60">
-              <div className="text-slate-200 font-semibold">Serverless shadow diagnostikasi</div>
-              <p className="text-slate-400">Faqat o‘qish testi. Production API va webhook o‘zgarmaydi.</p>
+              <div className="text-slate-200 font-semibold">Serverless diagnostikasi</div>
+              <p className="text-slate-400">Faqat ulanish va health tekshiruvi.</p>
               <button type="button" onClick={checkShadow}
                 disabled={!telegramServerlessAvailable() || migrationProbe === 'testing'}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-slate-100 disabled:opacity-50">

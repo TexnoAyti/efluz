@@ -413,6 +413,13 @@ O‘zgarish uchun avval reja ko‘rsataman. “Tasdiqlash” tugmasini bosing yo
           }
           return `${outcome.message} ${record.description || describeAiAdminPlan(record.plan)}${followUp}`;
         }
+        const failureCode = String(result.data?.message || result.data?.error || result.data?.code || '');
+        // A database CAS conflict may occur after an earlier write was committed.
+        // The confirmation token is already consumed; never suggest blindly
+        // confirming again or automatically replaying a potentially non-idempotent action.
+        if (result.status >= 500 && failureCode === 'POSTGRES_TRANSACTION_CONFLICT') {
+          return 'Baza tranzaksiyalari to‘qnashdi (POSTGRES_TRANSACTION_CONFLICT). Amal bajarilgani yoki bajarilmagani tasdiqlanmadi. Admin paneldagi tegishli klub, o‘yin yoki turnir holatini va auditni tekshiring. Takror yuborishdan oldin natija saqlanmaganiga ishonch hosil qiling.';
+        }
         return `Bajarish tasdiqlanmadi (HTTP ${result.status}): ${String(result.data?.message || result.data?.error || result.data?.code || 'server rad etdi').slice(0, 400)}. Holatni admin panelda tekshiring.`;
       } catch (error: any) {
         if (error?.message === 'ADMIN_DATABASE_QUOTA') { await finish(record, { status: 503, data: { error: 'ADMIN_DATABASE_QUOTA' } }); return 'Baza limiti tugaganligi sababli amal bajarilmadi. Jadvalni ko‘rish mumkin; o‘zgarishlar uchun baza tiklanishi kerak.'; }

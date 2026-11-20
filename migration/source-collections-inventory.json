@@ -1,8 +1,8 @@
 {
-  "asOf": "2026-11-08",
+  "asOf": "2026-11-15",
   "source": "efl_runtime.documents:production read-only inventory",
-  "note": "Read-only counts from a single SQL statement on 2026-11-08; NOT a consistent export, live data keeps changing. New result_refresh_jobs is quarantined for review. Review collections and runtime sessions must never be blindly imported.",
-  "observedTotal": 26763,
+  "note": "Baseline inventory plus read-only classification of collections first observed on 2026-11-15. Live data keeps changing. Active penalty exhibition state is preserved in the verified raw archive; Season 2 rollback backups are quarantined for review and are never projected into active normalized tables.",
+  "observedTotal": 27755,
   "collections": [
     {
       "collection": "ai_community_sources",
@@ -38,6 +38,31 @@
       "collection": "club_occupancies",
       "handling": "preserve",
       "observedDocuments": 158
+    },
+    {
+      "collection": "club_owner_group_exit_audit",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "club_owner_group_exit_controls",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "club_owner_group_exit_release_audit",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "club_owner_group_exit_release_controls",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "club_owner_group_exits",
+      "handling": "review",
+      "observedDocuments": 0
     },
     {
       "collection": "club_selection_ban_audit",
@@ -130,6 +155,10 @@
       "observedDocuments": 1
     },
     {
+      "collection": "european_legacy_draw_archives",
+      "handling": "review"
+    },
+    {
       "collection": "fixtures",
       "handling": "preserve",
       "observedDocuments": 1266
@@ -190,6 +219,15 @@
       "observedDocuments": 3055
     },
     {
+      "collection": "ownership_repair_backups",
+      "handling": "review"
+    },
+    {
+      "collection": "penalty_exhibition_races",
+      "handling": "preserve",
+      "observedDocuments": 6
+    },
+    {
       "collection": "player_trophies",
       "handling": "preserve",
       "observedDocuments": 3
@@ -198,6 +236,10 @@
       "collection": "premium_entitlements",
       "handling": "preserve",
       "observedDocuments": 2
+    },
+    {
+      "collection": "qualification_applications",
+      "handling": "review"
     },
     {
       "collection": "recovery_backups",
@@ -225,6 +267,39 @@
       "observedDocuments": 302
     },
     {
+      "collection": "season_preparation_drafts",
+      "handling": "review"
+    },
+    {
+      "collection": "season_preparation_packages",
+      "handling": "review"
+    },
+    {
+      "collection": "season2_all_rounds_preopen_backup_20261117",
+      "handling": "review",
+      "observedDocuments": 0
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_competitions",
+      "handling": "review",
+      "observedDocuments": 5
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_durable_read_snapshots",
+      "handling": "review",
+      "observedDocuments": 14
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_fixtures",
+      "handling": "review",
+      "observedDocuments": 876
+    },
+    {
+      "collection": "season2_one_round_backup_20261114_matchday_locks",
+      "handling": "review",
+      "observedDocuments": 91
+    },
+    {
       "collection": "season2_retention_decisions",
       "handling": "preserve",
       "observedDocuments": 5
@@ -238,6 +313,14 @@
       "collection": "standings",
       "handling": "preserve",
       "observedDocuments": 14
+    },
+    {
+      "collection": "supercup_full_reset_archives",
+      "handling": "review"
+    },
+    {
+      "collection": "supercup_legacy_participant_archives",
+      "handling": "review"
     },
     {
       "collection": "team_creation_tickets",
@@ -288,6 +371,11 @@
       "collection": "telegram_member_tags",
       "handling": "preserve",
       "observedDocuments": 95
+    },
+    {
+      "collection": "telegram_result_evidence",
+      "handling": "review",
+      "observedDocuments": 0
     },
     {
       "collection": "telegram_webhook_leases",
@@ -366,6 +454,6 @@
     }
   ],
   "observedGeneration": null,
-  "observedCollectionPaths": 74,
-  "observedRootCollections": 72
+  "observedCollectionPaths": 79,
+  "observedRootCollections": 77
 }

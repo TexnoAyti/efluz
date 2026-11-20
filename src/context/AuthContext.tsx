@@ -1,6 +1,6 @@
 import { resolveTelegramContext } from '../lib/telegramContext';
 import {isAndroidApp} from '../lib/androidApp';
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { User, Club, Season, Notification } from '../types';
 import { api, getDevUserId, setDevUserId, getTelegramInitData, setTelegramInitData, setSessionToken, getSessionToken } from '../lib/api';
 import { resolveActiveClub, saveActiveClub } from '../lib/activeClub';
@@ -40,6 +40,8 @@ interface AuthContextType {
   user: User | null;
   currentClub: Club | null;
   ownedClubs: Club[];
+  /** Verified, season-one European/Super Cup ownership, independent of the Season 2 selection. */
+  retainedSeasonOneClubs: Club[];
   premiumClubIds: string[];
   selectCurrentClub: (clubId: string) => void;
   userStats: {
@@ -91,6 +93,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [currentClub, setCurrentClub] = useState<Club | null>(null);
   const [ownedClubs, setOwnedClubs] = useState<Club[]>([]);
+  const [retainedSeasonOneState, setRetainedSeasonOneState] = useState<{ userId: string; clubs: Club[] } | null>(null);
+  // Never display a previous signed-in user's clubs while authentication changes.
+  // At cold start BOTH user and retainedSeasonOneState are null. Comparing
+  // optional IDs then yields undefined === undefined, which must never be
+  // treated as verified ownership (and would dereference null.clubs).
+  const retainedSeasonOneClubs = retainedSeasonOneState !== null && user !== null &&
+    retainedSeasonOneState.userId === user.id
+    ? retainedSeasonOneState.clubs : [];
   const [premiumClubIds, setPremiumClubIds] = useState<string[]>([]);
   const [userStats, setUserStats] = useState<{
     matchesPlayed: number;
@@ -106,6 +116,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [clubUnavailable, setClubUnavailable] = useState(false);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<string>('season-2026-27');
+  // Ignore out-of-order ownership responses when the user switches season
+  // quickly (European cups <-> Season 2 registration).
+  const ownershipRequestVersion = useRef(0);
+
   useEffect(() => {
     if (import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless' || !user?.isAdmin) { setPremiumClubIds([]); return; }
     let mounted = true;
@@ -165,8 +179,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchUserData = useCallback(async (seasonId: string) => {
+    const requestVersion = ++ownershipRequestVersion.current;
     try {
       const meRes = await api.getMe(seasonId);
+      // A slower request from the previous season must never overwrite newer
+      // verified club ownership after the user enters/leaves Leagues.
+      if (requestVersion !== ownershipRequestVersion.current) return;
       setUser(meRes.user);
       setClubUnavailable(meRes.currentClubStatus === 'unavailable');
       if (meRes.currentClubStatus !== 'unavailable') {
@@ -191,14 +209,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshNotifications]);
 
-  // Season selection must refresh season-scoped ownership. Do not reuse the
-  // previous season's clubs while a new club admission is being displayed.
+  // Changing the league tab must not erase the player's last verified
+  // identity before the next season-scoped ownership read succeeds. An error
+  // is "unavailable", not proof of no club. A successful response below
+  // still replaces the list with the server-verified clubs for that season.
   useEffect(() => {
     if (authStatus !== 'AUTHENTICATED' || !user || isDesignPreview) return;
     if (import.meta.env.VITE_EFL_API_TRANSPORT === 'telegram-serverless') {
       let cancelled = false;
-      // Clear the previous season immediately to avoid a cross-season owner
-      // showing as an eligible current club while native identity is rechecked.
       setOwnedClubs([]);
       setCurrentClub(null);
       setClubUnavailable(true);
@@ -218,10 +236,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       return () => { cancelled = true; };
     }
-    setOwnedClubs([]);
-    setCurrentClub(null);
     void fetchUserData(activeSeasonId);
   }, [activeSeasonId, authStatus, user?.id, fetchUserData]);
+
+  // Keep cup ownership from Season 1 independently of Season 2 league admission.
+  // A navigation change must not make existing European / Super Cup clubs vanish.
+  // The server checks actual active memberships; never derive ownership from
+  // archived fixtures or the previous season's client-side cache.
+  useEffect(() => {
+    if (!user || authStatus !== 'AUTHENTICATED' || isDesignPreview) return;
+    let cancelled = false;
+    void api.getMyClubState('season-2026-27').then(result => {
+      if (cancelled || result.currentClubStatus !== 'resolved') return;
+      const clubs = result.ownedClubs || (result.currentClub ? [result.currentClub] : []);
+      setRetainedSeasonOneState({ userId: user.id, clubs });
+    }).catch(() => {
+      // Do not erase the last verified Season 1 clubs on a transient database error.
+    });
+    return () => { cancelled = true; };
+  }, [user?.id, authStatus, activeSeasonId]);
 
   // Initialize App & Telegram SDK with deterministic state transitions
   useEffect(() => {
@@ -269,9 +302,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const session = await loadNativeEflBootstrap();
           if (!isMounted) return;
           if (!session.user) {
-            // Serverless bootstrap verified the Telegram launch, but its
-            // isolated staging database has no imported EFLUZ user yet.
-            // Never misreport this as "open the Mini App inside Telegram".
             setUser(null);
             setOwnedClubs([]);
             setCurrentClub(null);
@@ -330,7 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await loadLoginBootstrap(api, tgCtx.initData, getDevUserId() || 'user-dev-a', seasons => {
           if (!isMounted) return;
           setSeasons(seasons);
-          const season = seasons.find(item => item.id === 'season-2026-27' && item.status === 'active') || seasons.find(item => item.status === 'active') || seasons[0];
+          const season = seasons.find(item => item.id === 'season-2027-28' && item.status === 'active') || seasons.find(item => item.status === 'active') || seasons[0];
           if (season) {
             targetSeasonId = season.id;
             setActiveSeasonId(season.id);
@@ -533,6 +563,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         currentClub,
         ownedClubs,
+        retainedSeasonOneClubs,
         premiumClubIds: user?.isAdmin ? premiumClubIds : [],
         selectCurrentClub: (clubId) => {
           const club = ownedClubs.find((item) => item.id === clubId);

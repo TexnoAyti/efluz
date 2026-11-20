@@ -4,8 +4,8 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
-  // Until feature parity, Telegram must host ONLY the isolated read-only
-  // smoke app. The legacy React UI still calls Vercel for key operations.
+  // Telegram staging uses a separate static root. The real EFLUZ UI is built
+  // into its own directory before it is copied into the tgcloud package.
   const staging = process.env.EFL_TGCLOUD_STATIC === '1';
   const originalPreview = process.env.EFL_ORIGINAL_UI_PREVIEW === '1';
   const serverlessUiPreview = process.env.EFL_SERVERLESS_UI_PREVIEW === '1';

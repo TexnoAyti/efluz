@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feat/tgcloud-bulk-terminal-validation-20261111
+      - feat/tgcloud-staging-8533963416-20261111
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,5 +21,7 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Run whole Serverless suite in one terminal command
         run: node scripts/verifyEflTgcloudBatch.mjs
+      - name: Verify approved staging ID and protected deployment gates
+        run: node --test scripts/serverlessStagingGate.test.mjs scripts/serverlessStagingIdentity.test.mjs
       - name: Typecheck native frontend adapters
         run: bun run lint

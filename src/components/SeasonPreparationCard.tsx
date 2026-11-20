@@ -21,9 +21,9 @@ export function SeasonPreparationCard({ compact = false, onOpenLeagues }: { comp
   const c = copy[language];
   const intl = internationalCopy[language];
   const labels = {
-    uz: { clubs: 'klub', rounds: 'tur', matches: 'o‘yin', season: 'Real mavsum', verified: 'Tekshirilgan', source: 'Rasmiy manba', format: 'Ikki davra · uy va safar', ranking:'Teng ochkoda', review:'Yakuniy tekshiruv kerak', cups:'Milliy kuboklar', europe:'UEFA turnirlari', missing:'Qatnashchilar tekshirilmoqda', entries:'qatnashchi', perClub:'Har klubga', slots:'Saralash yo‘llari rasmiy UEFA ro‘yxati bo‘yicha tayyorlanmoqda.' },
-    ru: { clubs: 'клубов', rounds: 'туров', matches: 'матчей', season: 'Реальный сезон', verified: 'Проверено', source: 'Официальный источник', format: 'Два круга · дома и в гостях',ranking:'При равенстве очков',review:'Нужна финальная проверка',cups:'Национальные кубки',europe:'Турниры УЕФА',missing:'Участники проверяются',entries:'участников',perClub:'На клуб',slots:'Пути квалификации готовятся по официальному списку УЕФА.' },
-    en: { clubs: 'clubs', rounds: 'rounds', matches: 'matches', season: 'Real season', verified: 'Verified', source: 'Official source', format: 'Two legs · home and away',ranking:'Level on points',review:'Final review required',cups:'Domestic cups',europe:'UEFA competitions',missing:'Entrants under review',entries:'entrants',perClub:'Per club',slots:'Qualification paths are being prepared from the official UEFA access list.' },
+    uz: { clubs: 'klub', rounds: 'tur', matches: 'o‘yin', season: 'Real mavsum', verified: 'Tekshirilgan', source: 'Rasmiy manba', format: 'Bir davra · har juftlik bir marta', ranking:'Teng ochkoda', review:'Yakuniy tekshiruv kerak', cups:'Milliy kuboklar', europe:'UEFA turnirlari', missing:'Qatnashchilar tekshirilmoqda', entries:'qatnashchi', perClub:'Har klubga', slots:'Saralash yo‘llari rasmiy UEFA ro‘yxati bo‘yicha tayyorlanmoqda.' },
+    ru: { clubs: 'клубов', rounds: 'туров', matches: 'матчей', season: 'Реальный сезон', verified: 'Проверено', source: 'Официальный источник', format: 'Один круг · одна встреча с каждым',ranking:'При равенстве очков',review:'Нужна финальная проверка',cups:'Национальные кубки',europe:'Турниры УЕФА',missing:'Участники проверяются',entries:'участников',perClub:'На клуб',slots:'Пути квалификации готовятся по официальному списку УЕФА.' },
+    en: { clubs: 'clubs', rounds: 'rounds', matches: 'matches', season: 'Real season', verified: 'Verified', source: 'Official source', format: 'Single round · each pair meets once',ranking:'Level on points',review:'Final review required',cups:'Domestic cups',europe:'UEFA competitions',missing:'Entrants under review',entries:'entrants',perClub:'Per club',slots:'Qualification paths are being prepared from the official UEFA access list.' },
   }[language];
   const cupCopy = {
     uz:{custom:'EFL formati',source:'EFL kubok qoidasi',single:'Har juftlikda 1 o‘yin',playIn:'Saralash',bye:'1/8 finalga bevosita',direct:'Barcha 16 klub 1/8 finaldan',pending:'Qur’a 2-mavsum liga jadvali asosida tuziladi.'},
@@ -35,13 +35,10 @@ export function SeasonPreparationCard({ compact = false, onOpenLeagues }: { comp
     ru:{goalDifference:'разница голов',goalsFor:'забитые голы',won:'победы',awayGoals:'гостевые голы',awayWins:'гостевые победы',h2hForfeits:'технические поражения в личных встречах',h2hPoints:'очки в личных встречах',h2hGoalDifference:'разница личных встреч',h2hGoalsFor:'голы в личных встречах',h2hAwayGoals:'гостевые голы личных встреч',discipline:'дисциплина',forfeits:'технические поражения'},
     en:{goalDifference:'goal difference',goalsFor:'goals scored',won:'wins',awayGoals:'away goals',awayWins:'away wins',h2hForfeits:'head-to-head forfeits',h2hPoints:'head-to-head points',h2hGoalDifference:'head-to-head goal difference',h2hGoalsFor:'head-to-head goals',h2hAwayGoals:'head-to-head away goals',discipline:'discipline',forfeits:'forfeits'},
   }[language];
-  const asianChampionsLeague = EFL_SECOND_SEASON.internationalCompetitions[0];
-  const sourceLeagues = EFL_SECOND_SEASON.leagues.filter(league =>
-    asianChampionsLeague.qualification.sourceLeagueIds.some(id => id === league.id));
   const content = <>
-    {(['EUROPE', 'ASIA'] as const).map(group => <div key={group} className="season-preparation-group">
-      <h4>{group === 'EUROPE' ? c.europe : c.asia}</h4>
-      <ul>{EFL_SECOND_SEASON.leagues.filter(league => league.group === group).map(league => <li key={league.id}>
+    <div className="season-preparation-group">
+      <h4>{language==='uz'?'2-mavsum ligalari':language==='ru'?'Лиги второго сезона':'Season 2 leagues'}</h4>
+      <ul>{EFL_SECOND_SEASON.leagues.map(league => <li key={league.id}>
         <details className="season-preparation-roster">
           <summary>
             <span aria-hidden="true">{league.flag}</span><span className="season-preparation-name">{league.name}</span>
@@ -55,16 +52,6 @@ export function SeasonPreparationCard({ compact = false, onOpenLeagues }: { comp
           <a className="season-preparation-source" href={league.roster.sources[0].url} target="_blank" rel="noopener noreferrer">{labels.source}</a>
         </details>
       </li>)}</ul>
-    </div>)}
-    <div className="season-preparation-international">
-      <h4>{intl.title}</h4>
-      <div className="season-preparation-header"><h3>{intl.name}</h3><span>{`${asianChampionsLeague.qualification.totalTeams} ${intl.teams}`}</span></div>
-      <p className="season-preparation-note">{intl.qualification}:</p>
-      <ul className="season-preparation-sources">{sourceLeagues.map(league => <li key={league.id}>
-        <span aria-hidden="true">{league.flag}</span> {league.name} · {asianChampionsLeague.qualification.slotsByLeague[league.id as keyof typeof asianChampionsLeague.qualification.slotsByLeague]} {intl.places}
-      </li>)}</ul>
-      <p className="season-preparation-note">{intl.pending}</p>
-      <p className="season-preparation-note">{intl.format}</p>
     </div>
     <details className="season-preparation-regulations"><summary>{labels.europe}</summary>
       <p className="season-preparation-note">{labels.slots}</p>

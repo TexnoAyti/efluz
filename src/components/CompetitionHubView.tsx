@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../context/AuthContext';
+import { RetainedSeasonOneClubs } from './RetainedSeasonOneClubs';
 import { EFL_SECOND_SEASON } from '../lib/seasonPreparation';
 import { ClubsView } from './ClubsView';
 import { CupBracketsView } from './CupBracketsView';
@@ -41,8 +42,11 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
   useEffect(() => {
     if (authStatus === 'AUTH_LOADING') return;
     if (subTab === 'leagues') {
+      // Only the league registration view defaults to second-season clubs.
       setActiveSeasonId(EFL_SECOND_SEASON.id);
     } else if (subTab === 'cups' || subTab === 'european') {
+      // Cups and European competitions are ongoing season-one tournaments.
+      // Avoid leaking the second-season club registration scope into their API calls.
       setActiveSeasonId('season-2026-27');
     }
   }, [subTab, authStatus, setActiveSeasonId]);
@@ -133,6 +137,7 @@ export const CompetitionHubView: React.FC<CompetitionHubViewProps> = ({
       {/* 3. Category Content */}
       <div className="min-w-0">
         {subTab === 'awards'&&<Suspense fallback={<p role="status">Mukofotlar yuklanmoqda…</p>}><SeasonAwardsPanel/></Suspense>}
+        {subTab === 'leagues' && <RetainedSeasonOneClubs onNavigateTab={onNavigateTab} />}
         {subTab === 'leagues' && <ClubsView key={activeSeasonId} onNavigateTab={onNavigateTab} />}
         {subTab === 'cups' && <CupBracketsView onNavigateTab={onNavigateTab} />}
         {subTab === 'european' && <ChampionsLeagueView onNavigateTab={onNavigateTab} />}

@@ -113,6 +113,7 @@ export interface Competition {
   fixturesCount?: number;
   generationStatus?: 'not_generated' | 'generated';
   currentMatchday?: number;
+  resultEntryThroughMatchday?: number;
   totalMatchdays?: number;
   isMatchdayOpen?: boolean;
   matchdayOpenedAt?: string;
@@ -160,6 +161,7 @@ export interface FixtureUserInfo {
 }
 
 export interface Fixture {
+  europeanDrawId?: string | null;
   venue?: string | null;
   adminScheduledAt?: string;
   id: string;

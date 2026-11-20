@@ -81,7 +81,7 @@ export function validateImportBatch(input) {
   // Telegram Serverless calls must remain bounded even if the row count is small.
   // This also prevents one oversized JSON document from exhausting the isolate.
   let packetBytes;
-  try { packetBytes = JSON.stringify(input).length; }
+  try { packetBytes = new TextEncoder().encode(JSON.stringify(input)).byteLength; }
   catch { throw new Error('INVALID_BATCH_ENCODING'); }
   if (packetBytes > 98304) throw new Error('INVALID_BATCH_BYTES');
   const { table, batchId, rows } = input;
@@ -268,11 +268,11 @@ export function validateImportBatch(input) {
       (row.replay_policy!=='HISTORICAL_ONLY'||
        !row.source_record||typeof row.source_record!=='object'||
        Array.isArray(row.source_record)||
-       row.source_record.userId!==row.user_id||
-       row.source_record.seasonId!==row.season_id||
-       String(row.source_record.telegramId)!==row.telegram_id||
-       row.source_record.appliedTag!==row.applied_tag||
-       row.source_record.managed!==row.source_managed))
+       String(row.source_record.userId)!==String(row.user_id)||
+       String(row.source_record.seasonId)!==String(row.season_id)||
+       String(row.source_record.telegramId)!==String(row.telegram_id)||
+       String(row.source_record.appliedTag ?? '')!==String(row.applied_tag ?? '')||
+       Boolean(row.source_record.managed)!==Boolean(row.source_managed)))
       throw Error('INVALID_TELEGRAM_TAG_HISTORY_IMPORT');
     if(table==='telegramTagStateHistory'&&
       (row.replay_policy!=='HISTORICAL_ONLY'||

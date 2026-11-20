@@ -4,6 +4,7 @@ import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
 import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
 import { randomUUID } from 'node:crypto';
+import {handleClubOwnerGroupExit,listClubOwnerGroupExits} from '../services/clubOwnerGroupExitService';
 import { Router, Request, Response } from 'express';
 import {
   handleTelegramStart,
@@ -92,6 +93,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       return;
     }
 
+    const ownerExitOutcome = await handleClubOwnerGroupExit(update);
     const sourceMessage = update.channel_post || update.edited_channel_post || update.edited_message || update.message;
     console.info('[TELEGRAM_UPDATE_RECEIVED]', JSON.stringify({ updateId: update.update_id, kind: update.callback_query ? 'callback' : update.message ? 'message' : Object.keys(update).filter(key => key !== 'update_id').join(','), chatId: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null, threadId: update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? null, hasText: typeof update.message?.text === 'string', command: /^\/([a-z_]+)/i.exec(update.message?.text || '')?.[1] || null, anonymous: Boolean(update.message?.sender_chat), hasPhoto:Boolean(sourceMessage?.photo?.length), imageDocument:Boolean(sourceMessage?.document&&['image/jpeg','image/png'].includes(sourceMessage.document.mime_type)), forwarded:Boolean(sourceMessage?.forward_origin||sourceMessage?.forward_from||sourceMessage?.forward_from_chat), groupMatched:sourceMessage?.chat?.username?.toLowerCase()==='efleagueuz' }));
     // Result ingestion must not wait for the optional community archive.
@@ -109,7 +111,9 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
 
     let response: Record<string, unknown> = { ok: true, ignored: 'unhandled_update_type' };
     const topicResult = earlyTopicResult || await handleTopicResultUpdate(update);
-    if (topicResult.handled) {
+    if (ownerExitOutcome !== 'ignored') {
+      response = {ok:true,handled:'club_owner_group_membership',outcome:ownerExitOutcome};
+    } else if (topicResult.handled) {
       console.info('[TELEGRAM_TOPIC_RESULT_OUTCOME]',JSON.stringify({updateId:update.update_id,threadId:sourceMessage?.message_thread_id??update.callback_query?.message?.message_thread_id,result:topicResult.result}));
       response = {ok:true,handled:'topic_result',result:topicResult.result};
     } else if(typeof update.callback_query?.data==='string'&&/^android_login:(approve|deny):[a-f0-9]{32}$/.test(update.callback_query.data)){
@@ -146,7 +150,19 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       const message = update.message;
       const emojiText = message?.text || message?.caption || '';
       const emojiPalette = extractAiCustomEmoji(emojiText, message?.entities || message?.caption_entities || []);
-      if (archivedCommunityPost && message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) && message.forward_origin?.type === 'channel' && !message.photo?.length && !['image/jpeg','image/png'].includes(message.document?.mime_type)) {
+      if (message?.chat?.type === 'private' && isPrimaryOwner(message.from?.id) &&
+        /^\/group_leavers(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(String(message.text||''))) {
+        const owners=await listClubOwnerGroupExits();
+        const lines=owners.slice(0,25).map((o,index)=>(index+1)+'. '+o.name+
+          (o.username?' (@'+o.username+')':'')+' — '+o.clubs.map(c=>c.clubName).join(', ')+
+          ' — '+o.exitedAt.slice(0,16).replace('T',' '));
+        const text='EFLUZ guruhdan chiqqan klub egalari: '+owners.length+'\n\n'+
+          (lines.length?lines.join('\n'):'Hozircha kuzatuvda qayd etilgan klub egasi yo‘q.')+
+          '\n\nBu ro‘yxat Telegram bot olgan chiqish hodisalariga asoslangan.';
+        const sent=await sendTelegramMessage(message.chat.id,text,{parse_mode:null});
+        if(!sent.ok)throw new Error('GROUP_LEAVERS_REPORT_NOT_DELIVERED');
+        response={ok:true,handled:'group_club_owner_leavers_report'};
+      } else if (archivedCommunityPost && message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) && message.forward_origin?.type === 'channel' && !message.photo?.length && !['image/jpeg','image/png'].includes(message.document?.mime_type)) {
         await sendTelegramMessage(message.chat.id, `Kanal posti AI manbasiga saqlandi:\n${archivedCommunityPost.url}\nMatn yoki rasm ostidagi yozuv o‘qildi. Rasm ichidagi matn avtomatik o‘qilmaydi.`, { parse_mode: null, reply_to_message_id: message.message_id });
         response = { ok: true, handled: 'ai_channel_post_imported' };
       } else if (message?.chat?.type === 'private' && isPrimaryOwner(message?.from?.id) &&
@@ -354,6 +370,18 @@ telegramRouter.get('/status', async (req: Request, res: Response) => {
  * Uses authenticated Telegram user ID (never trusts arbitrary req.body.userId).
  * Always calls verifyTelegramGroupMembership with forceRefresh: true.
  */
+/** Admin-only group-leaver report. Unknown prior departures are not inferred. */
+telegramRouter.get('/admin/group-club-owners-left', requireAdmin, async (_req, res) => {
+ try {
+  res.setHeader('Cache-Control','private, no-store');
+  const owners=await listClubOwnerGroupExits();
+  res.json({ok:true,total:owners.length,owners});
+ } catch (error) {
+  console.error('[CLUB_OWNER_LEAVERS_READ_FAILED]',error);
+  res.status(503).json({ok:false,error:'GROUP_LEAVERS_UNAVAILABLE'});
+ }
+});
+
 telegramRouter.post('/check-membership', requireAuth, async (req: Request, res: Response) => {
   const telegramId = req.user?.telegramId;
   if (!telegramId) {

@@ -57,6 +57,21 @@ test('global leagues and clubs create unique copies for each season',()=>{
  for(const [table,records] of Object.entries(rows))
   if(records.length)assert.ok(validateImportBatch({table,batchId:table+':00000000',rows:records}));
 });
+test('active season-two owners use the verified prepared club catalog',()=>{
+ const d=sample();
+ d.seasons.push(doc('season-2027-28',{name:'Season 2',status:'active',
+  createdAt:'2026-11-01T00:00:00Z'}));
+ d.club_occupancies.push(doc('season-2027-28_club-al-hilal',{
+  seasonId:'season-2027-28',clubId:'club-al-hilal',userId:'user-1',
+  status:'active',claimedAt:'2026-11-01T00:00:00Z'
+ }));
+ const {rows}=convertEflCore(d);
+ const owner=rows.clubOccupancies.find(row=>row.id==='season-2027-28_club-al-hilal');
+ assert.ok(owner);
+ const club=rows.clubs.find(row=>row.id===owner.club_id);
+ assert.equal(club.name,'Al Hilal');
+ assert.equal(club.league_id,'s14:season-2027-28:league-saudi-pro-league');
+});
 test('cannot import duplicate owner, unknown user or cross-season fixtures',()=>{
  const d=sample();
  d.club_occupancies.push(doc('dup',{...d.club_occupancies[0].data,userId:'user-2'}));

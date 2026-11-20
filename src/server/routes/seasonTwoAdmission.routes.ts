@@ -44,11 +44,11 @@ seasonTwoAdmissionRouter.get('/status', async (_req, res) => {
     // Avoid repeating a serializable database transaction for every visitor.
     const seasonRef = getFirestoreDb().collection('seasons').doc(TARGET);
     let doc = await seasonRef.get();
-    let enabled = doc.data()?.registrationOpen === true && String(doc.data()?.status).toLowerCase() === 'registration';
+    let enabled = doc.data()?.registrationOpen === true && ['registration', 'active'].includes(String(doc.data()?.status).toLowerCase());
     if (!enabled && Date.now() >= Date.parse(S2_OPENS_AT)) {
       await autoActivateSecondSeasonWhenDue();
       doc = await seasonRef.get();
-      enabled = doc.data()?.registrationOpen === true && String(doc.data()?.status).toLowerCase() === 'registration';
+      enabled = doc.data()?.registrationOpen === true && ['registration', 'active'].includes(String(doc.data()?.status).toLowerCase());
     }
     res.setHeader('Cache-Control', 'no-store');
     res.json({ seasonId: TARGET, sourceSeasonId: SOURCE, phase: enabled ? phase() : 'NOT_ACTIVATED',

@@ -5,6 +5,9 @@ export const ADMIN_LEAGUES = [
   { id: 'league-serie-a', name: 'Serie A', competitionId: 'comp-serie-a-2026', cupCompetitionId: 'comp-coppa-italia-2026' },
   { id: 'league-bundesliga', name: 'Bundesliga', competitionId: 'comp-bundesliga-2026', cupCompetitionId: 'comp-dfb-pokal-2026' },
   { id: 'league-ligue-1', name: 'Ligue 1', competitionId: 'comp-ligue-1-2026', cupCompetitionId: 'comp-coupe-de-france-2026' },
+  // Season 2 catalog entries. Planned Asian competitions must not be reported
+  // as live until an authoritative competition record exists.
+  { id: 'league-uzbekistan-superliga', name: 'O‘zbekiston Superligasi', competitionId: 'comp-uzbekistan-superliga-2027', cupCompetitionId: '' },
 ];
 export function isLeagueAdmin(user: Pick<User, 'adminPermissions'>): boolean {
   return user.adminPermissions != null && user.adminPermissions.scope !== 'ALL';
@@ -20,5 +23,19 @@ export function canUseDangerZone(user?: Pick<User, 'id' | 'telegramId' | 'isAdmi
   return Boolean(user?.isAdmin && !user.isSuspended && String(user.telegramId) === MAIN_ADMIN_TELEGRAM_ID && user.id === `user-${MAIN_ADMIN_TELEGRAM_ID}`);
 }
 export function permittedAdminCompetitionIds(user: Pick<User, 'adminPermissions'>): string[] {
-  return permittedAdminLeagues(user).flatMap(league => [league.competitionId, league.cupCompetitionId]);
+  return permittedAdminLeagues(user).flatMap(league => [
+    league.competitionId,
+    league.competitionId.replace(/-2026$/, '-2027'),
+    league.cupCompetitionId,
+  ].filter(Boolean));
+}
+
+/** Restrict fixture editing to the primary owner or an explicitly scoped admin. */
+export function canManageFixture(
+  user: Pick<User, 'id' | 'telegramId' | 'isAdmin' | 'isSuspended' | 'adminPermissions'> | null | undefined,
+  competitionId: string,
+): boolean {
+  if (!user?.isAdmin || user.isSuspended || !competitionId) return false;
+  if (canUseDangerZone(user)) return true;
+  return isLeagueAdmin(user) && permittedAdminCompetitionIds(user).includes(competitionId);
 }

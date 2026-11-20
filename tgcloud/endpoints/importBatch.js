@@ -17,6 +17,6 @@ export default async function(input={},ctx) {
     const code = String(error?.message || 'IMPORT_FAILED');
     const safe = /^(INVALID_|UNKNOWN_COLUMN|MISSING_COLUMN|DUPLICATE_IN_BATCH|ROW_CONFLICT|BATCH_CONFLICT)/.test(code);
     if (!safe) throw error;
-    throw new EndpointError('Import tekshiruvidan o‘tmadi.', {code});
+    throw new EndpointError(`Import tekshiruvidan o‘tmadi: ${code}`, {code});
   }
 }

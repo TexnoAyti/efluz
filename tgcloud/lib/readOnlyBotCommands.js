@@ -25,20 +25,14 @@ export async function handleReadOnlyBotCommand(db,message){
   const chatId=chat.id;
   if(command==='/serverless-check')
     return {chat_id:chatId,text:'EFLUZ Serverless sinov kanali ishlayapti. Production bot hali eski tizimda.'};
-  if(command==='/start'||command==='/help')
-    return {chat_id:chatId,text:'EFLUZ Serverless sinov boti. Quyidagi bo‘limlarni faqat o‘qish mumkin. Klub tanlash, natija kiritish va tur almashishi o‘chirilgan.',
+  if(command==='/start'||command==='/help'){
+    const firstName=String(from.first_name||'do‘st').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').slice(0,80);
+    return {chat_id:chatId,parse_mode:'HTML',text:`Assalomu alaykum, <b>${firstName}</b>!\n\n⚽ <b>EFL UZ</b> — eFootball O‘zbekiston Rasmiy Ligasi platformasiga xush kelibsiz!\n\n🏆 <b>Top 5 Yevropa Ligaları:</b>\n• 🇬🇧 Premier League\n• 🇪🇸 La Liga\n• 🇮🇹 Serie A\n• 🇩🇪 Bundesliga\n• 🇫🇷 Ligue 1\n\n⚔️ <b>Asosiy Imkoniyatlar:</b>\n• Sevimli klubingizni tanlang va boshqaring\n• Real-vaqt matchmarkaz va eFootball bahslari\n• Ikki tomonlama natija tasdiqlash va hakamlik\n• UEFA Chempionlar Ligasi saralash tizimi\n\nQuyidagi tugma orqali ilovani oching va o‘z klubingizni band qiling!`,
       reply_markup:{inline_keyboard:[
-        [{text:'Klubim',callback_data:'efl:myclub'},
-         {text:'Uchrashuvlarim',callback_data:'efl:myfixtures'}],
-        [{text:'Ligalar',callback_data:'efl:leagues'},
-         {text:'Kuboklar',callback_data:'efl:cups'}],
-        [{text:'UZEFLIFE',callback_data:'efl:uzeflife'},
-         {text:'UZEFLIFE turi',callback_data:'efl:bracket'}],
-        [{text:'TEAMS',callback_data:'efl:teams'}],
-        [{text:'Admin: turlar',callback_data:'efl:rounds'}],
-        [{text:'Bildirishnomalar',callback_data:'efl:inbox'},
-         {text:'Aloqa',callback_data:'efl:status'}]
+        [{text:'⚽ Ilovani ochish (EFL UZ)',web_app:{url:'https://efluz1.vercel.app/'}}],
+        [{text:'📢 Rasmiy guruh (@efleagueuz)',url:'https://t.me/efleagueuz'}]
       ]}};
+  }
   const telegramId=String(from.id);
   const profile=await db.get('SELECT id,is_banned FROM efl_users WHERE telegram_id=:telegram',
     {':telegram':telegramId});

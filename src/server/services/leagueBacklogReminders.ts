@@ -15,6 +15,10 @@ export const BACKLOG_SCAN_VERSION = 3;
 export interface LeagueReminderGuard {competitionId: string; seasonId: string; day: string}
 const html = (s: unknown) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 export const reminderDay = (now = Date.now()) => new Date(now + 5 * 3600000).toISOString().slice(0,10);
+export const backlogReminderWindowOpen = (now = Date.now()) => {
+  const hour = new Date(now + 5 * 3600000).getUTCHours();
+  return hour >= 8 && hour < 21;
+};
 export const backlogCompetitionEnabled = (c: any) => ['LEAGUE','KNOCKOUT','SUPER_CUP','EUROPEAN_LEAGUE_PHASE','EUROPEAN_KNOCKOUT'].includes(c.type) && !c.hidden && !['completed','cancelled','archived','draft','inactive','upcoming'].includes(String(c.status || '').toLowerCase()) && isSeasonCompetitionEnabled(c.id,c.seasonId);
 const enabled=backlogCompetitionEnabled;
 
@@ -90,8 +94,10 @@ export async function freshLeagueReminder(guard: LeagueReminderGuard,userId: str
  * Only explicit authenticated workers call this; ordinary page reads do not. */
 export async function processLeagueBacklogReminders(options: {now?:number; deadline?:number; enqueue?:typeof enqueueSmartTelegramNotification; requestId?:string; scope?:{category:'ALL'|'LEAGUES'|'CUPS';competitionId?:string}}={}) {
   if(process.env.MIGRATION_WRITE_FREEZE==='true'||process.env.DATABASE_PROVIDER!=='supabase'||process.env.SUPABASE_DATA_NAMESPACE!=='production')return false;
-  const hour=new Date((options.now??Date.now())+5*3600000).getUTCHours();
-  if(hour<9 || hour>=21)return false;
+  // The production Vercel cron runs at 03:00 UTC (08:00 Tashkent).
+  // Keep the daytime guard aligned with that authenticated worker so the
+  // daily current-round/backlog digest is actually produced.
+  if(!backlogReminderWindowOpen(options.now))return false;
   const store=getRuntimeStateStore();if(!store)throw Error('LEAGUE_REMINDER_STORAGE_UNAVAILABLE');
   const token=randomUUID(),lock='efluz:v1:league-backlog-worker';
   if(!await store.set(lock,token,{nx:true,ex:120}))return false;

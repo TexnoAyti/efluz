@@ -1,11 +1,11 @@
 import {db,EndpointError} from 'sdk';
 import {verifiedTelegramId} from '../lib/auth.js';
-import {MUTATION_CONTROL} from '../lib/mutationControl.js';
+import {NOTIFICATION_DELIVERY_CONTROL} from '../lib/notificationDeliveryControl.js';
 import {queueNotificationDelivery} from '../lib/notificationDeliveryQueue.js';
 
 // Staging-only queue insert. No outbound Telegram API call is made.
 export default async function(input={},ctx){
- if(!MUTATION_CONTROL.enabled)
+ if(!NOTIFICATION_DELIVERY_CONTROL.enabled)
   throw new EndpointError('Bildirishnomalarni yuborish navbati hali o‘chirilgan.',
    {code:'SHADOW_WRITE_DISABLED'});
  const actor=verifiedTelegramId(ctx);

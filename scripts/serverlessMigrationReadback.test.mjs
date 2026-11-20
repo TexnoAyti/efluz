@@ -31,8 +31,12 @@ test('allowlist and cursor bounds prevent arbitrary SQL and unbounded export',()
    /INVALID_READBACK_TABLE/);
  assert.throws(()=>validateMigrationReadback({table:'users',limit:1000}),
    /INVALID_READBACK_LIMIT/);
- assert.throws(()=>validateMigrationReadback({table:'users',cursor:"a' OR 1=1"}),
+ assert.throws(()=>validateMigrationReadback({table:'users',cursor:''}),
    /INVALID_READBACK_CURSOR/);
+ assert.throws(()=>validateMigrationReadback({table:'users',cursor:'a'.repeat(161)}),
+   /INVALID_READBACK_CURSOR/);
+ assert.equal(validateMigrationReadback({table:'users',cursor:'club.2026/27'}).cursor,
+   'club.2026/27');
  assert.throws(()=>validateMigrationReadback({table:'users',userId:'other'}),
    /INVALID_READBACK_REQUEST/);
  assert.deepEqual(validateMigrationReadback({table:'users'}),{
@@ -72,4 +76,15 @@ test('rejects malformed or cross-schema target rows',async()=>{
 test('oversized target payload fails instead of unbounded disclosure',async()=>{
  const big=source([{...user('a','1'),first_name:'X'.repeat(70000)}]);
  await assert.rejects(readMigrationPage(big,{table:'users'}),/READBACK_PAGE_TOO_LARGE/);
+});
+
+test('readback safely paginates punctuation-containing IDs using bound cursor',async()=>{
+ const first=user('season.2/club:001','1'),second=user('season.2/club:002','2');
+ const db=source([first,second]);
+ const page1=await readMigrationPage(db,{table:'users',limit:1});
+ assert.equal(page1.nextCursor,first.id);
+ const page2=await readMigrationPage(db,{table:'users',cursor:page1.nextCursor,limit:1});
+ assert.deepEqual(page2.rows.map(r=>r.id),[second.id]);
+ assert.deepEqual(db.calls[1].params,{':cursor':first.id,':limit':2});
+ assert.ok(!db.calls[1].sql.includes(first.id),'cursor must be bound, never embedded in SQL');
 });

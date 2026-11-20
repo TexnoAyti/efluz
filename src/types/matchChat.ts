@@ -6,6 +6,9 @@ export interface MatchChatMessage {
   senderName: string;
   text: string;
   createdAt: string;
+  avatarUrl?: string | null;
+  replyTo?: { id: string; senderName: string; text: string } | null;
+  replyToId?: string;
 }
 
 export interface MatchChatView {
@@ -17,6 +20,8 @@ export interface MatchChatView {
   opponentId: string;
   opponentName: string;
   opponentUsername?: string | null;
+  viewerSide?: 'home' | 'away';
+  opponentPhotoUrl?: string | null;
   messages: MatchChatMessage[];
   unreadCount: number;
   blocked: boolean;
@@ -26,6 +31,11 @@ export interface MatchChatView {
   canSend: boolean;
   quickMessages: string[];
   updatedAt: string;
+  pinnedMessage?: MatchChatMessage | null;
+  pinnedMessageId?: string | null;
+  opponentReadThroughId?: string | null;
+  opponentTyping?: boolean;
+  matchInfo?: {homeName:string;awayName:string;homeLogoUrl?:string|null;awayLogoUrl?:string|null;homeScore:number|null;awayScore:number|null;status:string;matchday:number;viewerSide?:'home'|'away'} | null;
 }
 
 export interface MatchChatAdminReport {

@@ -1,5 +1,5 @@
 export function isDomesticCupResult(competitionId: string): boolean {
-  return ['comp-fa-cup-2026', 'comp-copa-del-rey-2026', 'comp-coppa-italia-2026', 'comp-dfb-pokal-2026', 'comp-coupe-de-france-2026'].includes(competitionId);
+  return ['comp-fa-cup-2026', 'comp-copa-del-rey-2026', 'comp-coppa-italia-2026', 'comp-dfb-pokal-2026', 'comp-coupe-de-france-2026', 'comp-community-shield-2026', 'comp-dfl-supercup-2026', 'comp-supercopa-espana-2026', 'comp-supercoppa-italiana-2026', 'comp-trophee-champions-2026', 'comp-trophee-des-champions-2026', 'comp-uefa-super-cup-2026'].includes(competitionId);
 }
 
 export interface CupResultScores {

@@ -17,10 +17,6 @@ export const EFL_SECOND_SEASON = {
     { id: 'league-bundesliga', name: 'Bundesliga', country: 'Germany', flag: '🇩🇪', group: 'EUROPE', change: 'CONTINUING' },
     { id: 'league-ligue-1', name: 'Ligue 1', country: 'France', flag: '🇫🇷', group: 'EUROPE', change: 'OPENING' },
     { id: 'league-uzbekistan-superliga', name: 'O‘zbekiston Superligasi', country: 'Uzbekistan', flag: '🇺🇿', group: 'ASIA', change: 'OPENING' },
-    { id: 'league-saudi-pro-league', name: 'Saudi Pro League', country: 'Saudi Arabia', flag: '🇸🇦', group: 'ASIA', change: 'OPENING' },
-    { id: 'league-j1', name: 'J1 League', country: 'Japan', flag: '🇯🇵', group: 'ASIA', change: 'OPENING' },
-    // EFL competition grouping follows the organizer's season plan.
-    { id: 'league-turkey-super-lig', name: 'Süper Lig', country: 'Turkey', flag: '🇹🇷', group: 'ASIA', change: 'OPENING' },
   ].map(league => {
     const roster = SEASON_TWO_ROSTERS[league.id];
     if (!roster || roster.clubs.length !== roster.expectedClubCount) throw new Error(`Invalid season-two roster: ${league.id}`);
@@ -31,10 +27,10 @@ export const EFL_SECOND_SEASON = {
       rankingRule: PREPARED_TIE_RULES[league.id],
       format: {
         type: 'ROUND_ROBIN' as const,
-        homeAndAway: true,
+        homeAndAway: false,
         totalTeams: roster.clubs.length,
-        totalMatchdays: (roster.clubs.length - 1) * 2,
-        totalFixtures: roster.clubs.length * (roster.clubs.length - 1),
+        totalMatchdays: roster.clubs.length - 1,
+        totalFixtures: roster.clubs.length * (roster.clubs.length - 1) / 2,
         points: { win: 3, draw: 1, loss: 0 },
       },
     };
@@ -42,34 +38,8 @@ export const EFL_SECOND_SEASON = {
   domesticCups: PREPARED_DOMESTIC_CUPS,
   superCups: PREPARED_SUPER_CUPS,
   europeanCompetitions: PREPARED_UEFA_COMPETITIONS,
-  internationalCompetitions: [
-    {
-      id: 'comp-asian-champions-league-2027',
-      name: 'Osiyo Chempionlar ligasi',
-      group: 'ASIA',
-      status: 'PREPARATION',
-      registrationOpen: false,
-      sourceSeasonId: 'season-2027-28',
-      qualification: {
-        // EFL grouping includes Turkey by the organizer's choice.
-        sourceLeagueIds: ['league-uzbekistan-superliga', 'league-saudi-pro-league', 'league-j1', 'league-turkey-super-lig'],
-        slotsByLeague: {
-          'league-uzbekistan-superliga': 8,
-          'league-saudi-pro-league': 8,
-          'league-j1': 8,
-          'league-turkey-super-lig': 8,
-        },
-        totalTeams: 32,
-        selection: 'TOP_RANKED',
-        fromPosition: 1,
-      },
-      format: {
-        templateCompetitionId: 'comp-champions-league-2026',
-        type: 'LEAGUE_PHASE',
-        config: { leaguePhaseTeams: 32, matchesPerTeam: 8, directQualifiers: 8, playoffTeams: 16, knockoutTeams: 16 },
-      },
-    },
-  ],
+  // Deferred until a format for Uzbekistan as the sole Asian league is chosen.
+  internationalCompetitions: [],
   pendingDecisions: ['UEFA_ACCESS_LIST', 'START_DATE', 'RUNTIME_TRANSITION', 'ACTIVATION'],
 } as const;
 

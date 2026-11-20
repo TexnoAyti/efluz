@@ -12,6 +12,7 @@ import { I18nProvider, useI18n } from './i18n';
 import { AppTheme, Header } from './components/Header';
 import { Navigation, TabType } from './components/Navigation';
 import { ContentBoundary } from './components/ContentBoundary';
+import { AppCrashBoundary } from './components/AppCrashBoundary';
 import { APP_BUILD_ID } from './context/AuthContext';
 import { Fixture, AdminPermissions, Club } from './types';
 import { readUzeflifeLaunch } from './lib/uzeflifeLinks';
@@ -22,7 +23,8 @@ import { readGuideStatus, saveGuideStatus, type GuideStatus } from './lib/firstV
 import { isDesignPreview } from './designPreview';
 import { EFL_2_DESIGN_ENABLED, WELCOME_STORAGE_VERSION } from './releaseDesign';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
-import {MatchChatHost} from './components/MatchChatHost';
+const MatchChatHost = lazy(() => import('./components/MatchChatHost').then(m => ({default:m.MatchChatHost})));
+
 
 const loadHome = () => import('./components/MatchdayHomeView').then(module => ({ default: module.MatchdayHomeView }));
 const MatchdayHomeView = lazy(loadHome);
@@ -56,14 +58,9 @@ function getInitialTab(): TabType {
 }
 
 const AppContent: React.FC = () => {
-  const { isLoading, user, toastMessage, authStatus, authError, activeSeasonId, setActiveSeasonId, currentClub } = useAuth();
+  const { isLoading, user, toastMessage, authStatus, authError, telegramDiagnostics, activeSeasonId, currentClub } = useAuth();
   const { t } = useI18n();
   const [activeTab, setActiveTabState] = useState<TabType>(getInitialTab);
-  useEffect(() => {
-    if (activeTab === 'admin' && activeSeasonId === 'season-2027-28') {
-      setActiveSeasonId('season-2026-27');
-    }
-  }, [activeTab, activeSeasonId, setActiveSeasonId]);
   useEffect(() => {
     // Download the home view alongside identity verification, rather than before it.
     if (activeTab === 'dashboard') void loadHome().catch(() => {});
@@ -221,7 +218,32 @@ const AppContent: React.FC = () => {
   if (isLoading) return <AppLoading mode="screen" />;
 
   if(isAndroidApp&&(authStatus==='AUTH_ANONYMOUS'||authStatus==='AUTH_ERROR'))return <AndroidLoginView/>;
-  if (authStatus === 'AUTH_ANONYMOUS' || authStatus === 'AUTH_ERROR') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-5"><div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-7 text-center shadow-2xl"><div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-emerald-400 text-slate-950 flex items-center justify-center text-2xl font-black">eF</div><h1 className="text-2xl font-black mb-2">EFL UZ</h1><p className="text-slate-300 text-sm leading-6">{authError === 'SERVERLESS_ACCOUNT_NOT_IMPORTED' ? 'Telegram orqali kirish aniqlandi, ammo bu akkauntning EFLUZ ma’lumotlari Serverless sinov bazasiga hali ko‘chirilmagan. Production EFLUZ botidan foydalanishda davom eting.' : authStatus === 'AUTH_ERROR' ? 'Telegram orqali kirish tasdiqlanmadi. Mini Appni Telegram ichidan qayta oching.' : 'Bu turnir platformasi Telegram Mini App orqali ishlaydi. Davom etish uchun uni Telegram ichidan oching.'}</p>{authError && authError !== 'SERVERLESS_ACCOUNT_NOT_IMPORTED' && <p className="mt-3 text-xs text-rose-300">{authError}</p>}<a href="https://t.me/efleagueuz" target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-emerald-300">Telegram kanaliga o‘tish</a></div></div>;
+  if (authStatus === 'AUTH_ANONYMOUS' || authStatus === 'AUTH_ERROR') {
+    const accountNotImported = authError === 'SERVERLESS_ACCOUNT_NOT_IMPORTED';
+    const serverUnavailable = authStatus === 'AUTH_ERROR' && !accountNotImported &&
+      (Number(telegramDiagnostics.authHttpStatus) >= 500 ||
+        /firestore|postgres|database|initial error|failed to fetch|couldn't connect|timed out|timeout|unavailable|resource_exhausted/i.test(authError || ''));
+    const helpText = accountNotImported
+      ? 'Telegram orqali kirish aniqlandi, ammo bu akkauntning EFLUZ ma’lumotlari Serverless staging bazasiga hali ko‘chirilmagan.'
+      : serverUnavailable
+      ? 'Ma’lumotlar bazasi yoki server vaqtincha javob bermayapti. Bu xabar hisobingiz yoki klublaringiz o‘chirilganini anglatmaydi. Qayta urinib ko‘ring.'
+      : authStatus === 'AUTH_ERROR'
+      ? 'Telegram orqali kirish tasdiqlanmadi. Mini Appni Telegram ichidan qayta oching.'
+      : 'Bu turnir platformasi Telegram Mini App orqali ishlaydi. Davom etish uchun uni Telegram ichidan oching.';
+    return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-5">
+      <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-7 text-center shadow-2xl">
+        <div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-emerald-400 text-slate-950 flex items-center justify-center text-2xl font-black">eF</div>
+        <h1 className="text-2xl font-black mb-2">EFL UZ</h1>
+        <p className="text-slate-300 text-sm leading-6">{helpText}</p>
+        {authStatus === 'AUTH_ERROR' && <button type="button" onClick={() => window.location.reload()}
+          className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-black text-slate-950 hover:bg-emerald-300">
+          Qayta urinish
+        </button>}
+        <a href="https://t.me/efleagueuz" target="_blank" rel="noopener noreferrer"
+          className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-slate-600 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800">Telegram kanaliga o‘tish</a>
+      </div>
+    </div>;
+  }
 
   if (user && !welcomeCompleted) return <WelcomeScreen seasonId={activeSeasonId} theme={theme} onThemeChange={changeTheme} onStart={completeWelcome} />;
 
@@ -334,13 +356,13 @@ const AppContent: React.FC = () => {
             )}
 
             {currentTab === 'notifications' && <NotificationsView onNavigateTab={setActiveTab} />}
-            {currentTab === 'admin' && user?.isAdmin && activeSeasonId !== 'season-2027-28' && <AdminView />}
+            {currentTab === 'admin' && user?.isAdmin && <AdminView />}
             </>}
           </ContentBoundary>
       </main>
       <footer className="border-t border-slate-900 bg-slate-950/80 px-4 py-3 pb-24 lg:pb-3 text-[11px] text-slate-400"><div className="max-w-7xl mx-auto flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">EFL UZ</span><span className="text-slate-600">•</span><span>Official 2026/27 European Competitions</span></div><div className="flex items-center gap-3"><span className="font-mono text-emerald-400 font-semibold">{APP_BUILD_ID}</span></div></div></footer>
       {isNotificationOpen && <ContentBoundary><NotificationModal isOpen onClose={() => setIsNotificationOpen(false)} /></ContentBoundary>}
-      <MatchChatHost />
+      <Suspense fallback={null}><MatchChatHost /></Suspense>
       {canUseGlobalAdminTools && isDiagnosticsOpen && <ContentBoundary><TelegramDiagnosticsModal isOpen onClose={() => setIsDiagnosticsOpen(false)} currentRoute={activeTab} /></ContentBoundary>}
       {isSearchOpen && <ContentBoundary><GlobalSearchModal
         isOpen={isSearchOpen}
@@ -367,4 +389,4 @@ const AppContent: React.FC = () => {
   );
 };
 
-export default function App() { return <I18nProvider><AuthProvider><UserProfileProvider><AppContent /></UserProfileProvider></AuthProvider></I18nProvider>; }
+export default function App() { return <AppCrashBoundary><I18nProvider><AuthProvider><UserProfileProvider><AppContent /></UserProfileProvider></AuthProvider></I18nProvider></AppCrashBoundary>; }

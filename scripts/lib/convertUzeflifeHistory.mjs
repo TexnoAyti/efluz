@@ -35,11 +35,16 @@ export function convertUzeflifeHistory(collections){
    occurred_at:millis(data.at),details:data.details??{},source_record:data};
  });
  const noticeHistory=notices.map(({id,data})=>{
+  // A never-leased legacy batch can omit both optional lease metadata fields.
+  // It is still archived as history only and is never restored to a live queue.
+  const retryState=data.retryIndices===undefined||Array.isArray(data.retryIndices);
+  const leaseState=typeof data.lease==='string'||
+   (data.lease===undefined&&data.leaseUntil===0);
   if(!string(data.status)||!Number.isSafeInteger(data.cursor)||data.cursor<0||
      !Number.isSafeInteger(data.deliveryVersion)||data.deliveryVersion<0||
-     !Array.isArray(data.notices)||!Array.isArray(data.retryIndices)||
+     !Array.isArray(data.notices)||!retryState||
      !Number.isSafeInteger(data.leaseUntil)||data.leaseUntil<0||
-     typeof data.lease!=='string')
+     !leaseState)
    throw Error('INVALID_UZEFLIFE_NOTICE_HISTORY');
   return {id,source_status:data.status,created_at:millis(data.createdAt),
    notice_count:data.notices.length,

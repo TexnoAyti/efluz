@@ -91,10 +91,14 @@ if (ok) {
   if(ok)results.push({step:'all-runtime-module-syntax',ok:true,files:files.length});
 }
 if (ok&&!arg.includes('--skip-build')) {
-  if (!step('build-isolated-telegram-miniapp','bun',['run','build:tgcloud'],180000))ok=false;
+  // GitHub's staging runner installs Bun, while Work Mode may only provide Node/npm.
+  const runner = spawnSync('bun',['--version'],{stdio:'ignore'}).status===0
+    ? ['bun',['run']]
+    : ['npm',['run']];
+  if (!step('build-isolated-telegram-miniapp',runner[0],[...runner[1],'build:tgcloud'],180000))ok=false;
   if (ok&&!step('verify-isolated-static-output',process.execPath,['scripts/verifyTgcloudStatic.mjs']))ok=false;
-  if (ok&&!step('build-full-react-shadow-ui','bun',['run','build:tgcloud:real-ui'],180000))ok=false;
-  if (ok&&!step('verify-full-react-shadow-ui','bun',['run','verify:tgcloud:real-ui'],90000))ok=false;
+  if (ok&&!step('build-full-react-shadow-ui',runner[0],[...runner[1],'build:tgcloud:real-ui'],180000))ok=false;
+  if (ok&&!step('verify-full-react-shadow-ui',runner[0],[...runner[1],'verify:tgcloud:real-ui'],90000))ok=false;
 }
 console.log(JSON.stringify({ok,mode:'offline',deploy:false,import:false,webhookUnchanged:true,
   suites:suites.length,results},null,2));

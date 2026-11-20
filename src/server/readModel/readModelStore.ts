@@ -691,17 +691,13 @@ export async function readThroughReadModel<T>(options: TieredReadOptions<T>): Pr
   // main club/leagues screens on every revisit.
   const memoryHit = getFromProcessMemory<ReadModelSnapshot<T>>(cleanKey);
   if (!cleanKey.endsWith(':fixtures') && memoryHit && memoryHit.data !== undefined && Date.now() - Date.parse(memoryHit.generatedAt) < Math.min(ttlSeconds * 1000, PROCESS_MEMORY_TTL_MS)) {
-    // A still-fresh L1 value is safe to serve, but must be explicitly marked
-    // stale/degraded when the authoritative source circuit is open.
-    const fastCircuit = firestoreCircuitBreaker.getStatus();
-    const sourceUnavailable = fastCircuit.state !== 'CLOSED' || fastCircuit.softLimitExceeded;
     return {
       data: memoryHit.data,
-      source: sourceUnavailable ? 'memory_stale' : 'memory',
+      source: 'memory',
       generatedAt: memoryHit.generatedAt,
       sourceVersion: memoryHit.sourceVersion,
-      stale: sourceUnavailable || Boolean(memoryHit.stale),
-      degraded: sourceUnavailable || Boolean(memoryHit.degraded),
+      stale: Boolean(memoryHit.stale),
+      degraded: Boolean(memoryHit.degraded),
     };
   }
 
@@ -1226,8 +1222,8 @@ export function normalizeFixtureSnapshot(doc: any, seasonId = 'season-2026-27'):
     const updatedAt = doc.updatedAt ?? doc.updated_at;
     const docSeasonId = doc.seasonId ?? doc.season_id;
 
-    const homeClubSeed = SEED_CLUBS.find((c) => c.id === homeClubId);
-    const awayClubSeed = SEED_CLUBS.find((c) => c.id === awayClubId);
+    const homeClubSeed = seasonClubs(docSeasonId || seasonId).find((c) => c.id === homeClubId);
+    const awayClubSeed = seasonClubs(docSeasonId || seasonId).find((c) => c.id === awayClubId);
 
     return {
       id: doc.id,
@@ -1535,7 +1531,19 @@ export async function getCompetitionsFromReadModel(
     validateData: (data) => Array.isArray(data) && data.length > 0,
   });
 
-  const competitions = result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>withSeasonQualificationPolicy(c,seasonId));
+  const competitions = result.data.filter(c=>isSeasonCompetitionEnabled(c.id,seasonId)).map(c=>{
+    const visible = withSeasonQualificationPolicy(c,seasonId);
+    if (c.type !== 'EUROPEAN_LEAGUE_PHASE' && c.type !== 'EUROPEAN_KNOCKOUT') return visible;
+    const european = c as Competition & {
+      europeanQualificationMode?: string; europeanQualificationToken?: string;
+      europeanDrawId?: string; europeanDrawQualificationToken?: string;
+    };
+    return {...visible,europeanDrawPublished: Boolean(
+      european.europeanQualificationMode === 'final' &&
+      european.europeanQualificationToken && european.europeanDrawId &&
+      european.europeanDrawQualificationToken === european.europeanQualificationToken
+    )};
+  });
   return {
     competitions: options.leagueSummary ? competitions.filter(c=>c.type === 'LEAGUE') : await (await import('../services/competitionFixtureCounts')).withVisibleFixtureCounts(competitions, seasonId),
     source: result.source,
@@ -2083,11 +2091,45 @@ export async function getCompetitionFixturesFromReadModel(
   });
   if (options.matchday !== undefined) fixtures = fixtures.filter(f => Number(f.matchday) === Number(options.matchday));
   if (options.status && options.status !== 'ALL') fixtures = fixtures.filter(f => f.status === options.status);
+  // The result entry policy must never be inferred from old isPlayable flags
+  // stored in a shared fixture snapshot. Refresh only active legacy cups.
+  const requiresLivePermission = seasonId === 'season-2027-28' || (seasonId === 'season-2026-27' &&
+    /(?:champions-league|europa-league|supercup|supercopa|supercoppa|shield)/.test(competitionId));
+  const { enrichFixturesWithAuthoritativeOwners, refreshFixtureMatchdayRules } = await import('../firebase/firestoreStore');
   try {
-    const { enrichFixturesWithAuthoritativeOwners } = await import('../firebase/firestoreStore');
     fixtures = await enrichFixturesWithAuthoritativeOwners(fixtures, seasonId);
   } catch (err) {
-    console.warn('[COMPETITION_FIXTURES] Ownership enrichment fallback:', err);
+    console.warn('[COMPETITION_FIXTURES] Owner read unavailable:', err);
+  }
+  if (requiresLivePermission) {
+    // A failure here is a temporary unavailable state, NOT an admin-locked
+    // round. Never silently turn every score button into Qulflangan.
+    try {
+      fixtures = await refreshFixtureMatchdayRules(fixtures, seasonId);
+    } catch (err) {
+      console.error('[COMPETITION_FIXTURES] Authoritative cup eligibility unavailable:', err);
+      throw new ReadModelNotWarmedError('Competition matchday eligibility temporarily unavailable');
+    }
+    if (seasonId === 'season-2026-27') {
+    try {
+      // Historical cup ownership is match-scoped. Do not reactivate a former
+      // club in domestic standings or change Season 2 registration records.
+      const db = getFirestoreDb();
+      const formerOwners = await db.collection(COLLECTIONS.CLUB_OCCUPANCIES)
+        .where('seasonId','==',seasonId).where('status','==','released').get();
+      const released = new Map(formerOwners.docs.map(d => {
+        const v = d.data();
+        return [String(v.clubId||''),String(v.userId||'')] as const;
+      }).filter(([club,user]) => club && user));
+      fixtures = fixtures.map(f => ({
+        ...f,
+        homeOwnerId: f.homeOwnerId || (f.homeClubId ? released.get(f.homeClubId) : undefined),
+        awayOwnerId: f.awayOwnerId || (f.awayClubId ? released.get(f.awayClubId) : undefined),
+      }));
+    } catch (err) {
+      console.warn('[COMPETITION_FIXTURES] Historical cup participants unavailable:', err);
+    }
+    }
   }
   return {
     fixtures: fixtures.sort((a,b) => compareAdminFixtures(a,b,true)),
