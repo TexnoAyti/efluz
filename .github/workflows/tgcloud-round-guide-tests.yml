@@ -1,0 +1,21 @@
+name: TGCloud round guide safe delivery tests
+on:
+  push:
+    branches:
+      - feat/tgcloud-round-guide-broadcast-20261120
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify immutable guide and bounded delivery
+        run: node --test scripts/serverlessRoundGuideBroadcast.test.mjs scripts/serverlessRoundGuideOnUpdate.test.mjs
+      - name: Verify Telegram Cloud source structure
+        run: node scripts/checkTgcloudModules.mjs

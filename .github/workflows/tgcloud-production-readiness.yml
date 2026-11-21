@@ -1,0 +1,62 @@
+name: EFLUZ Telegram Cloud production readiness (read-only)
+on:
+  push:
+    branches:
+      - feat/tgcloud-round-guide-broadcast-20261120
+    paths:
+      - .github/workflows/tgcloud-production-readiness.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tgcloud-production-readiness-readonly
+  cancel-in-progress: false
+jobs:
+  production-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_PRODUCTION_TOKEN || secrets.TGCLOUD_PROD_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check production CLI secret without exposing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TGCLOUD_TOKEN:-}" ]; then
+            echo 'PRODUCTION_TGCLOUD_TOKEN_NOT_CONFIGURED'
+            echo 'Required repository secret: TGCLOUD_PRODUCTION_TOKEN'
+            exit 1
+          fi
+          case "$TGCLOUD_TOKEN" in
+            app8785073471:*) echo 'PRODUCTION_APP_TOKEN_MATCH_OK';;
+            *) echo 'PRODUCTION_TOKEN_IS_NOT_APP_8785073471'; exit 1;;
+          esac
+          if [ "${#TGCLOUD_TOKEN}" -lt 25 ]; then
+            echo 'PRODUCTION_TOKEN_FORMAT_INVALID'; exit 1
+          fi
+      - name: Read-only production cloud API health
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This job NEVER pushes, migrates or modifies Telegram webhooks.
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          if npx --yes --package=@tgcloud/cli tgcloud run endpoints/health '{}' >"$log" 2>&1; then
+            if grep -Eq 'ok[[:space:]]*:[[:space:]]*true|"ok"[[:space:]]*:[[:space:]]*true' "$log"; then
+              echo 'PRODUCTION_TGCLOUD_HEALTH_OK'
+            else
+              echo 'PRODUCTION_TGCLOUD_HEALTH_UNEXPECTED'
+              exit 1
+            fi
+          else
+            # Output may contain private provider details, never print it.
+            echo 'PRODUCTION_TGCLOUD_HEALTH_FAILED_OR_NOT_DEPLOYED'
+            exit 1
+          fi
+          echo 'PRODUCTION_READONLY_COMPLETE; no deployment, webhook, or DB changes'
