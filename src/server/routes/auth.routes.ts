@@ -50,9 +50,19 @@ authRouter.post('/telegram', validateBody(telegramAuthSchema), async (req: Reque
 
   try {
     const started = performance.now();
-    const user = await getOrCreateTelegramUser(verifyResult.user,true);
+    const user = await getOrCreateTelegramUser(verifyResult.user);
     const identityMs = performance.now() - started;
-    const clubState = await getLoginClubState(user.id);
+    // Identity verification must not fail merely because the optional
+    // ownership/read model is temporarily unavailable.  Returning a degraded
+    // authenticated session lets the Mini App open and retry club data without
+    // erasing the user's verified identity or existing clubs.
+    let clubState: Awaited<ReturnType<typeof getLoginClubState>>;
+    try {
+      clubState = await getLoginClubState(user.id);
+    } catch (ownershipError: any) {
+      console.warn('[TELEGRAM AUTH OWNERSHIP DEGRADED]', ownershipError?.message || ownershipError);
+      clubState = { currentClub: null, ownedClubs: [], currentClubStatus: 'unavailable', degraded: true };
+    }
     // Home and Club load standings independently. Do not rebuild/publish tables
     // while the client is waiting for identity verification.
     const previousTiming = res.getHeader('Server-Timing');
