@@ -326,6 +326,21 @@ Quyidagi tugma orqali ilovani oching va o‘z klubingizni band qiling!`;
     reply_markup: replyMarkup,
   });
 
+  // Telegram reply keyboard appears in the chat input area, not as a game card.
+  // Keep the existing inline WebApp buttons in the welcome message intact.
+  if (msgRes.ok && Number(chatId) > 0) {
+    const menu = await sendTelegramMessage(chatId,
+      '⚽ Penalti o‘yinini ochish uchun pastdagi tugmani bosing.', {
+      parse_mode: null,
+      reply_markup: {
+        keyboard: [[{ text: '⚽ Penalti o‘ynash' }]],
+        resize_keyboard: true,
+        is_persistent: true,
+      },
+    });
+    if (!menu.ok) console.warn('[PENALTY_MENU] Could not install reply keyboard');
+  }
+
   return {
     ok: msgRes.ok,
     stickerSent,
