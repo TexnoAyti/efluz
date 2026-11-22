@@ -31,3 +31,15 @@ jobs:
           cd "$RUNNER_TEMP/relay"
           npx --yes --package=@tgcloud/cli tgcloud run endpoints/check '{}' > "$RUNNER_TEMP/ai-check.log"
           grep -Fq EFL_AI_STAGING_ROUTE_OK "$RUNNER_TEMP/ai-check.log"
+      - name: Verify staging Gemini access
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          const key = process.env.GEMINI_API_KEY;
+          if (!key) throw Error('STAGING_GEMINI_API_KEY_MISSING');
+          const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+            headers: {'x-goog-api-key':key}, signal:AbortSignal.timeout(10000)
+          });
+          if (!r.ok) throw Error('STAGING_GEMINI_HTTP_' + r.status);
+          JS
