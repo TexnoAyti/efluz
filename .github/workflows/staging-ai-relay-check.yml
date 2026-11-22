@@ -1,7 +1,7 @@
 name: EFL AI staging runtime check
 on:
-  push:
-    branches: [feat/restore-existing-ai-photo-relay]
+  pull_request:
+    branches: [feat/tgcloud-staging-8533963416-20261111]
     paths:
       - '.github/workflows/staging-ai-relay-check.yml'
       - 'scripts/stagingAiRelayProbe.js'
@@ -11,6 +11,7 @@ permissions:
   contents: read
 jobs:
   check:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/restore-existing-ai-photo-relay')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment: tgcloud-staging
