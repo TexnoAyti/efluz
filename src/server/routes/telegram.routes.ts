@@ -3,7 +3,7 @@ import {offerAndroidLogin,markAndroidOfferDelivered,answerAndroidLogin} from '..
 import {applyBanControl} from '../services/clubSelectionBan';
 import {respondTeamTelegramInvitation} from '../services/teamMembershipService';
 import { clubMemberTagsStatus } from '../services/telegramClubMemberTags';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual, createHash } from 'node:crypto';
 import {handleClubOwnerGroupExit,listClubOwnerGroupExits} from '../services/clubOwnerGroupExitService';
 import { Router, Request, Response } from 'express';
 import {
@@ -44,6 +44,28 @@ import { archiveCommunityMessage, communityPost, communitySourceStats } from '..
 import { extractAiCustomEmoji, saveAiCustomEmoji } from '../services/telegramAiCustomEmoji';
 
 export const telegramRouter = Router();
+telegramRouter.post('/ai-photo', async (req: Request, res: Response) => {
+  const token = process.env.EFL_AI_PHOTO_RELAY_TOKEN;
+  const digest = (s: string) => createHash('sha256').update(s).digest();
+  if (!token || token.length < 32 || !timingSafeEqual(digest(req.get('authorization') || ''), digest('Bearer ' + token))) {
+    res.sendStatus(401);
+    return;
+  }
+  const {updateId, messageId, fileId} = req.body || {};
+  if (!Number.isSafeInteger(updateId) || updateId < 0 || !Number.isSafeInteger(messageId) || messageId <= 0 ||
+      typeof fileId !== 'string' || !/^[\w-]{1,256}$/.test(fileId)) {
+    res.sendStatus(400);
+    return;
+  }
+  const owner = Number(PRIMARY_OWNER_TELEGRAM_ID);
+  try {
+    await handleTelegramAiMessage({updateId, messageId, chatId:owner, threadId:0, fromUser:{id:owner},
+      text:'Rasmdagi o‘yin natijasini o‘qi', photoFileId:fileId});
+    res.sendStatus(204);
+  } catch {
+    res.sendStatus(503);
+  }
+});
 async function handleTelegramAiMessage(payload: Parameters<typeof processTelegramAiMessage>[0]) {
   const result = await processTelegramAiMessage(payload);
   if (result.retryable) throw new Error('AI_ADMISSION_UNAVAILABLE');
