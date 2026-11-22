@@ -1,6 +1,10 @@
 import { table, integer, text, boolean, json, index, uniqueIndex, sql } from 'sdk/db';
 
 // EFLUZ Serverless core schema. Relations are enforced in application code.
+export const aiPhotoRelay = table('efl_ai_photo_relay', {
+  target: text('target').primaryKey(),
+  credential: text('credential').notNull()
+});
 export const users = table('efl_users', {
   id: text('id').primaryKey(), telegramId: text('telegram_id').notNull().unique(),
   username: text('username'), firstName: text('first_name').notNull().default(''),
