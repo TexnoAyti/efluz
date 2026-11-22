@@ -1,0 +1,32 @@
+name: EFL AI staging runtime check
+on:
+  push:
+    branches: [feat/restore-existing-ai-photo-relay]
+    paths:
+      - '.github/workflows/staging-ai-relay-check.yml'
+      - 'scripts/stagingAiRelayProbe.js'
+      - 'tgcloud/lib/ai*Relay.js'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: tgcloud-staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble isolated runtime probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/relay/tgcloud"/{endpoints,lib}
+          cp tgcloud/lib/{aiForumRelay,aiPhotoRelay}.js "$RUNNER_TEMP/relay/tgcloud/lib/"
+          cp scripts/stagingAiRelayProbe.js "$RUNNER_TEMP/relay/tgcloud/endpoints/check.js"
+          echo '{}' > "$RUNNER_TEMP/relay/tgcloud.jsonc"
+      - name: Run in Telegram staging
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_STAGING_TOKEN }}
+        run: |
+          [[ "$TGCLOUD_TOKEN" =~ ^app8533963416:[^[:space:]]+$ ]] || { echo 'Staging credential missing or mismatched'; exit 1; }
+          cd "$RUNNER_TEMP/relay"
+          npx --yes --package=@tgcloud/cli tgcloud run endpoints/check '{}' > "$RUNNER_TEMP/ai-check.log"
+          grep -Fq EFL_AI_STAGING_ROUTE_OK "$RUNNER_TEMP/ai-check.log"
